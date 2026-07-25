@@ -6,31 +6,44 @@ ncnotices.com and tnpublicnotice.com, saves results to SQLite.
 ## Quick Start
 
 ```bash
-# 1. Clone
-git clone https://github.com/<user>/investclosure.git
-cd investclosure
+# Bootstrap (one-command setup)
+chmod +x bootstrap.sh && ./bootstrap.sh
 
-# 2. Configure
-cp .env.example .env
-# Edit .env — set TWO_CAPTCHA_API_KEY (required for captcha solving)
-
-# 3. Run
-python -m scraper                  # Run both NC + TN scrapers
-python -m scraper --scraper ncforeclosures   # NC only
-python -m scraper --list                 # List scrapers
-python -m scraper --status               # DB stats
-python -m scraper --new                  # New properties
-python -m scraper --archive              # Archive small parcels
-python -m scraper --cron                 # Continuous mode
-python -m scraper --cron --interval 60   # Every 60 min
-
-# 4. Docker
+# Or Docker
 docker compose up --build
+
+# Run
+python3 -m scraper                  # Run both NC + TN
+python3 -m scraper --scraper ncforeclosures   # NC only
+python3 -m scraper --list                  # List scrapers
+python3 -m scraper --status                # DB stats
+python3 -m scraper --new                   # New properties
+python3 -m scraper --archive               # Archive small parcels
+python3 -m scraper --cron                  # Continuous mode (every 6h)
 ```
 
-## Configuration
+## Requirements
 
-All settings configurable via environment variables (or `.env` file):
+### System
+- **Python 3.10+** (3.12 recommended)
+- **Playwright Chromium** — installed automatically via `python3 -m playwright install chromium`
+- **Docker/Docker Compose** — for containerized deployment (port 5001)
+
+### Python Packages
+```
+playwright>=1.40    # Headless Chromium automation
+requests>=2.31      # HTTP client for 2captcha API
+```
+
+### Services
+| Service | Required? | Purpose |
+|---|---|---|
+| 2captcha.com | Yes | Solves reCAPTCHA v2 on foreclosure sites |
+| HTTP proxy | No | Optional proxy for bypassing IP blocks |
+
+### Environment Variables
+
+All configurable via `.env` file or shell environment. See `.env.example`:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -61,10 +74,8 @@ Dedup via SHA-256 on address+coords and source+listing_id.
 
 ## Deployment
 
-Docker Compose runs on port 5001 (configurable via `FLASK_PORT`).
+Docker Compose runs on port 5001 (configurable via `FLASK_PORT` env var).
 
 ```bash
 docker compose up -d --build
 ```
-
-See `Dockerfile` for full dependency list.
