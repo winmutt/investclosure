@@ -1,0 +1,33 @@
+playwright-playwright
+*env
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+*.log
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.stestr/
+.mypy_cache/
+.tox/
+.eggs/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env.*
+*.key
+*.pem
+*.crt
+
+# Sensitive / PII
+reports/
+*.json
+# OS
+.DS_Store
+Thumbs.db
