@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}InvestClosure — Foreclosure Properties{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='investclosure/css/style.css') }}">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <a href="{{ url_for('landing') }}">
+                    <span class="brand-icon">🏚️</span>
+                    InvestClosure
+                </a>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('landing') }}" class="{% if request.endpoint == 'landing' %}active{% endif %}">
+                    <span class="nav-icon">🏠</span> Dashboard
+                </a>
+                <a href="{{ url_for('properties') }}" class="{% if request.endpoint == 'properties' %}active{% endif %}">
+                    <span class="nav-icon">🔍</span> Search
+                </a>
+                <a href="{{ url_for('new') }}" class="{% if request.endpoint == 'new' %}active{% endif %}">
+                    <span class="nav-icon">✨</span> New Listings
+                </a>
+            </nav>
+
+            <nav class="sidebar-nav sidebar-nav-secondary">
+                <a href="{{ url_for('run_scraper') }}">
+                    <span class="nav-icon">▶️</span> Run Scrapers
+                </a>
+                <a href="{{ url_for('enrich') }}">
+                    <span class="nav-icon">📊</span> Enrich (TNMap)
+                </a>
+                <a href="{{ url_for('export') }}">
+                    <span class="nav-icon">📤</span> Export JSON
+                </a>
+            </nav>
+
+            {% if global_stats %}
+            <div class="sidebar-stats">
+                <div class="sidebar-stats-title">Stats</div>
+                <div class="stat-item">
+                    <span class="stat-item-label">Active</span>
+                    <span class="stat-item-value white">{{ global_stats.total_active }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-item-label">New Today</span>
+                    <span class="stat-item-value green">{{ global_stats.today_new or 0 }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-item-label">Archived</span>
+                    <span class="stat-item-value">{{ global_stats.total_archived or 0 }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-item-label">Scraper Runs</span>
+                    <span class="stat-item-value">{{ global_stats.scrape_runs or 0 }}</span>
+                </div>
+                {% if global_stats.get('by_source') %}
+                <div class="stat-item">
+                    <span class="stat-item-label">By Source</span>
+                    <span class="stat-item-value small">{{ global_stats.by_source | join(', ') }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="topbar">
+                <div>
+                    <div class="topbar-title">{% block topbar_title %}Dashboard{% endblock %}</div>
+                    <div class="topbar-subtitle">{% block topbar_subtitle %}{% endblock %}</div>
+                </div>
+                <div class="topbar-right">
+                    {% block topbar_actions %}{% endblock %}
+                </div>
+            </div>
+
+            <main class="content">
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        <div class="flash-messages">
+                            {% for message in messages %}
+                                <div class="flash-message">{{ message }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </main>
+
+            <footer class="footer">
+                InvestClosure — NC & TN Foreclosure Properties
+            </footer>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='investclosure/js/app.js') }}"></script>
+</body>
+</html>

@@ -2,44 +2,125 @@
 
 For full project context, available commands, and architecture, read **[README.md](./README.md)** first.
 
+## Guiding Rules
+
+### Top Priority
+- **Never write to `/tmp` or use heredocs (`<<EOF`/`<< 'EOF'`).** The host `/tmp` is not visible in the container and heredocs can be escaped unpredictably. For temporary files, use `scraper/tmp/` (volume-mounted under `./scraper`) or `/tmp/opencode/` for workspace-external scratch files. Always run shell commands in the container via `podman exec investclosure`.
+- **Always run shell commands inside the container.** Use `podman exec investclosure python3 ...` — never `python3` bare on the host for scraper/db work. For file edits, edit the host path (`scraper/`, `templates/`, etc.) which sync via volume mount.
+- **Always `rm -rf /app/scraper/__pycache__` after editing `.py` files in the container.** Stale bytecode will cause old code to run silently.
+- **Always run the scraper in the container after editing.** The local `tmp` dir is `scraper/tmp/` (volume-mounted via `./scraper:/app/scraper`).
+
+### Operational Safety
+- **Rate limit all HTTP/curl calls to 2 requests per second.** Space out requests with `time.sleep(0.5)` or random delay `(0.25, 0.75)`. Never burst-request external APIs.
+- **Never make assumptions about infrastructure status.** Always verify podman/docker is running before attempting container operations. Prompt the user for help if container commands fail.
+- **Check DNS connectivity explicitly.** If DNS resolution fails (especially for external sites like `nc1map.gov`, `zls-nc.com`, `zillow.com`, or ArcGIS services), inform the user and ask for network troubleshooting help — do not retry indefinitely or assume the network will recover.
+- **Report errors immediately.** When a scraper, GIS lookup, or database query fails, log the error and alert the user with context (what was failing, what was attempted, what succeeded).
+- **Verify before acting.** After any database modification, scraper run, or container rebuild, verify the result before declaring success.
+- **Use existing code patterns.** Always read the source before editing. Match indentation (4 spaces), use type hints, follow existing logging patterns (`logger.info`, `logger.warning`, `logger.error`).
+- **Read before editing.** Always `read` a file at least once before using `edit`. Use `grep` or `glob` for targeted searches.
+- **Never modify production data without explicit user consent.** Database archiving, schema changes, or data deletions require user confirmation.
+
+### Debugging: Error Detection Without Full Output Capture
+When running long commands (scraper runs, tests) that may produce errors mid-stream, **never rely solely on `tail -20`** — critical failures can be silently missed. Use this pattern instead:
+
+```bash
+# 1. Write both stdout and stderr to a log file, then check for errors
+podman exec investclosure python3 -m scraper --scraper kania_law > scraper/tmp/debug.log 2>&1
+# 2. Check exit code and grep for error patterns
+grep -c "ERROR\|Exception\|Traceback\|Error.*HTTP\|400\|500" scraper/tmp/debug.log
+# 3. Show only lines containing errors + context (1 line before/after)
+grep -B1 -A1 -i "error\|exception\|traceback" scraper/tmp/debug.log | tail -30
+# 4. Check DB state to confirm impact
+podman exec investclosure python3 -c "import sqlite3; conn=sqlite3.connect('/app/data/investclosure.db'); print(conn.execute('SELECT COUNT(*) FROM properties WHERE status=\"active\"').fetchone())"
+```
+
+For scraper runs specifically, always check the `scrape_runs` table for `status` and `error_message` columns:
+```bash
+podman exec investclosure python3 -c "
+import sqlite3; conn=sqlite3.connect('/app/data/investclosure.db')
+runs = conn.execute('SELECT id, source, status, properties_found, error_message FROM scrape_runs ORDER BY id DESC LIMIT 3').fetchall()
+for r in runs: print(r)
+"
+```
+
+If errors are found but unclear, capture the last 50 lines as a diagnostic:
+```bash
+sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug.log
+```
+
 ## Quick Reference
 
 | File | Purpose |
 |---|---|
-| `scraper/base.py` | BaseForeclosureScraper — captcha solving, acreage parsing, chromium detection |
-| `scraper/config.py` | Central config — all paths/thresholds env-overridable, no frozen dataclass |
+| `scraper/base.py` | BaseScraper — captcha solving, acreage parsing, chromium detection |
+| `scraper/kania_law.py` | Kania Law scraper — NC tax foreclosure auctions, NC OneMap enrichment |
+| `scraper/zillow.py` | Zillow scraper — NC foreclosure listings (anti-bot blocked) |
+| `scraper/zls_nc.py` | ZLS-NC scraper — Zacchaeus Legal foreclosure listings, filtered to NC mountain counties |
+| `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties |
+| `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
-| `scraper/ncforeclosures.py` | NC ForeclosureScraper — ncnotices.com, 21 counties |
-| `scraper/tnforeclosures.py` | TN ForeclosureScraper — tnpublicnotice.com, 95 counties |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
-| `.env.example` | Template for all environment variables |
+| `scraper/server.py` | Flask dashboard — port 5001, auto-refresh listing |
+| `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 21 mountain counties |
+| `.env.example` | Template for environment variables |
 | `data/` | Runtime data — SQLite DB, backups, logs |
 
 ## Scrapers
 
-| Scraper | Source | Target | Captcha |
-|---|---|---|---|
-| `ncforeclosures` | ncnotices.com | 21 NC mountain counties | 2captcha |
-| `tnforeclosures` | tnpublicnotice.com | 95 TN counties | 2captcha |
+| Scraper | Source | Target | Captcha | GIS Enrichment |
+|---|---|---|---|---|
+| `kania_law` | kaniabailbond.com | NC (filtered) | None | NC OneMap statewide |
+| `zillow` | zillow.com | All NC (blocked) | None | Google Maps fallback |
+| `zls_nc` | zls-nc.com/listings | NC mountain only | None | NC OneMap statewide |
 
-Both are ASP.NET WebForms scrapers with the same architecture:
-1. Navigate to site, extract ASP.NET session ID from URL
-2. Select "Foreclosure" from dropdown
-3. Parse GridView rows (Python JS evaluation to extract pk_id, sp_case, county)
-4. For each target county: navigate detail page, solve captcha, extract acreage from notice text
+All scrapers use **MIN_ACREAGE = 5.0** (configurable via `INVESTCLOSURE_MIN_ACRES`). Kania Law scrapes ALL 183 records from the API but only processes the 21 qualifying NC mountain counties. ZLS NC scrapes all listings but filters to NC mountain counties only.
+
+## Qualified Counties
+
+Qualifying counties: **21 NC mountain counties** (elevation >1700ft, within 250mi of Atlanta):
+
+`alleghany, ashe, avery, buncombe, burke, caldwell, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
+
+**Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).
+
+**GA data unavailable**: Georgia's state data hub (data-hub.gio.georgia.gov) contains 0 parcel data sources. Would require per-county research.
+
+## GIS Integration
+
+- **NC OneMap statewide service**: `https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1` — single query for all 100 NC counties
+- Primary acreage field: `gisacres` (Double type)
+- Key fields: `parno` (parcel number), `ownname` (owner), `siteaddr` (address), `usecd` (land use code)
+- GIS lookup via `scraper/nc_gis_lookup.py` with `NC1MapService.by_parcel(parcel_clean)` method
+- Falls back to Google Maps parcel search: `https://www.google.com/maps/search/parcel+{parcel}+in+{county}+NC`
 
 ## CLI Commands
 
 ```bash
 python3 -m scraper --list            # List available scrapers
-python3 -m scraper --scraper ncforeclosures   # Run NC only
-python3 -m scraper --scraper tnforeclosures   # Run TN only
-python3 -m scraper                   # Run both (default)
-python3 -m scraper --status          # Show DB stats
-python3 -m scraper --new             # Show new properties since last run
-python3 -m scraper --archive         # Archive below MIN_ACRES
-python3 -m scraper --cron            # Continuous mode (every 360 min)
-python3 -m scraper --cron --interval 60      # Every 60 min
+python3 -m scraper                   # Run all scrapers
+python3 -m scraper --scraper kania_law  # Run Kania Law only
+python3 -m scraper --scraper zls_nc     # Run ZLS-NC only
+python3 -m scraper --status              # DB stats
+python3 -m scraper --new                 # New properties since last run
+python3 -m scraper --archive             # Archive below MIN_ACRES
+python3 -m scraper --cron                # Continuous mode (every 360 min)
+python3 -m scraper --help                # Show all options
+```
+
+## Docker / Podman
+
+```bash
+# Rebuild and run (source volume-mounted — no rebuild needed for code changes)
+podman compose up --build
+podman compose up -d          # Run in background
+docker compose up --build      # Docker alternative
+
+# Inspect running container
+podman ps          # Check container status
+podman logs investclosure  # View logs
+podman exec investclosure python3 -m scraper --status  # Run inside container
+
+# Volume mount: ./scraper:/app/scraper — code changes take effect immediately
 ```
 
 ## Configuration
@@ -52,56 +133,33 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_DB_PATH` | `./data/investclosure.db` | SQLite database path |
 | `INVESTCLOSURE_BACKUPS_DIR` | `./data/backups` | DB backups directory |
 | `INVESTCLOSURE_LOGS_DIR` | `./data/logs` | Log files directory |
-| `INVESTCLOSURE_MIN_ACRES` | `10.0` | Minimum acreage filter |
+| `INVESTCLOSURE_MIN_ACRES` | `5.0` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
-| `TWO_CAPTCHA_API_KEY` | *(required)* | 2captcha API key |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
-
-## Run standalone from Python
-
-```python
-from scraper.ncforeclosures import NCForeclosureScraper
-from scraper.tnforeclosures import TNForeclosureScraper
-
-# Run NC scraper
-props = NCForeclosureScraper().run()
-
-# Run with custom settings
-scraper = TNForeclosureScraper(
-    solve_captcha=True,
-    use_proxy=True,
-    delay=2.0,  # seconds between requests
-)
-props = scraper.run()
-```
-
-## Debugging
-
-- **Captcha failures**: Check 2captcha balance at https://2captcha.com/in/login, ensure balance > $0.10
-- **Chromium not found**: Playwright manages chromium at `~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome`
-- **ASP.NET session issues**: ncnotices.com/tnpublicnotice.com session expires; scraper handles gracefully
-- **Rate limiting**: Both sites block aggressive scraping; respect `INVESTCLOSURE_PROXY` if needed
-- **Logs**: Written to `INVESTCLOSURE_LOGS_DIR/investclosure.log`
-
-## Testing
-
-No test suite yet — the primary test is running scrapers against live sites and verifying
-property counts in the DB match expectations.
-
-```bash
-# Dry run — no captcha solving
-python3 -c "
-from scraper.ncforeclosures import NCForeclosureScraper
-s = NCForeclosureScraper(solve_captcha=False)
-props = s.run()
-print(f'Found {len(props)} properties (no captcha)')
-"
-```
 
 ## Recent Updates
 
-- **2026-07-25**: Initial standalone project split from land-scout
-  - Two scrapers: NC (21 counties), TN (95 counties)
-  - All paths configurable via env vars
-  - SQLite DB with dedup and scraping status tracking
-  - CLI with --status, --new, --archive, --cron commands
+- **2026-07-29**: ZLS NC scraper — filtered to NC mountain counties (21 counties), NC OneMap GIS enrichment
+- **2026-07-29**: Kania Law scraper — county filtering to 21 NC mountain counties added
+- **2026-07-29**: DB cleaned — archived 62 properties from non-qualifying counties (Rowan, Burke, etc.)
+- **2026-07-29**: NC OneMap statewide parcel service replaces per-county portal lookups
+- **2026-07-26**: Dashboard overhaul — parcel + address on tiles, topo/GIS links, last_seen ordering
+- **2026-07-26**: GIS county portal registry for 21 NC mountain counties
+- **2026-07-26**: ZLS-NC scraper — all-page size (241 rows), no pagination
+- **2026-07-26**: Kania Law — ArcGIS LAND_UNITS acreage, 5-acre filter, GIS enrichment
+
+## Tests
+
+Integration tests cover DB operations, archive filtering, county filtering, and GIS enrichment:
+
+```bash
+python3 -m pytest tests/test_scraper.py -v          # Run all tests
+python3 -m pytest tests/test_scraper.py::TestArchiveBelowAcres -v  # Archive tests only
+```
+
+### Test Coverage
+- **DB CRUD**: insert, dedup, get stats, scrape run tracking
+- **Archive**: parameter ordering fix (critical bug), source filtering, acres threshold
+- **ZLS NC**: county filtering (mountain vs coastal), GIS enrichment
+- **Kania Law**: scraper initialization, county count verification
+- **Dedup hash**: case-insensitive, with/without coordinates

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}InvestClosure — Foreclosure Properties{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+{% block topbar_subtitle %}NC & TN foreclosure properties{% endblock %}
+
+{% block content %}
+<div class="tiles">
+    {% for prop in properties %}
+    <div class="tile">
+        {% if prop.source_listing_id %}
+        <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-header-link">
+        {% endif %}
+        <div class="tile-badge-badge">
+            {% if prop.seen_count <= 3 %}
+            <span class="badge badge-green">New</span>
+            {% endif %}
+            <span class="badge badge-blue">{{ prop.source }}</span>
+            {% if prop.get('tnmap_owner') or prop.get('gis_url') %}
+            <span class="badge badge-green">Enriched</span>
+            {% endif %}
+        </div>
+        <div class="tile-body">
+            <div class="tile-address">{{ prop.address or 'No address' }}</div>
+            <div class="tile-parcel-line">
+                {% if prop.parcel_number %}
+                <span class="tile-parcel-tag">{{ prop.parcel_number }}</span>
+                {% endif %}
+                <span class="tile-county">{{ prop.county }} County, {{ prop.state }}</span>
+            </div>
+            <div class="tile-meta">
+                <span>
+                    {% if prop.acres and prop.acres > 0 %}
+                        {{ prop.acres }} ac
+                    {% else %}
+                        N/A ac
+                    {% endif %}
+                </span>
+                {% if prop.price %}
+                <span class="tile-meta-divider">·</span>
+                <span>${{ "%.0f"|format(prop.price / 100) }}</span>
+                {% endif %}
+            </div>
+            <div class="tile-seen">Updated: {{ prop.last_seen }}</div>
+        </div>
+        {% if prop.source_listing_id %}
+        </a>
+        {% endif %}
+       <div class="tile-actions">
+            {% if prop.google_maps_topo_url %}
+            <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener" class="tile-action-btn tile-action-btn-google" title="View on Google Maps (Topo)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                Map
+            </a>
+            {% endif %}
+            {% if prop.gis_url %}
+            <a href="{{ prop.gis_url }}" target="_blank" rel="noopener" class="tile-action-btn" title="View on GIS Viewer">
+                GIS
+            </a>
+            {% endif %}
+            <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-action-btn">Details</a>
+            <form action="{{ url_for('archive_property', property_id=prop.id) }}" method="POST" style="display:inline; flex:1">
+                <button type="submit" class="tile-action-btn tile-action-btn-archive" onclick="return confirm('Archive this property?')">
+                    Archive
+                </button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="tile tile-empty">
+        <p>No properties found. Run the scrapers to populate listings.</p>
+        <a href="{{ url_for('run_scraper') }}" class="btn" style="margin-top:1rem">Run Scrapers</a>
+        <a href="{{ url_for('new') }}" class="btn btn-secondary" style="margin-top:1rem">View New Listings</a>
+    </div>
+    {% endfor %}
+</div>
+
+{% if properties|length > 0 %}
+<div class="pagination-info">
+    <span>{{ properties|length }} of {{ global_stats.total_active if global_stats else 0 }} active properties</span>
+</div>
+{% endif %}
+{% endblock %}

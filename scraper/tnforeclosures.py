@@ -187,12 +187,22 @@ class TNForeclosureScraper(BaseForeclosureScraper):
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
 
         try:
-            page.goto(detail_url, wait_until="networkidle", timeout=30000)
+            page.goto(detail_url, wait_until="load", timeout=60000)
         except Exception as e:
             logger.warning("Failed to load detail page: %s", e)
             return None
 
-        page.wait_for_timeout(1000)
+        # Wait for ASP.NET AJAX content to render
+        page.wait_for_timeout(5000)
+
+        # Verify content loaded by checking for notice-related text
+        page_text = page.evaluate("() => document.body.innerText")
+        if len(page_text) < 500:
+            page.wait_for_timeout(5000)
+            page_text = page.evaluate("() => document.body.innerText")
+            if len(page_text) < 500:
+                logger.warning("Content too short (%d chars), page may not have loaded: %s", len(page_text), pk_id)
+                return None
 
         has_captcha = page.evaluate(
             "() => !!document.getElementById('g-recaptcha-response')"
@@ -239,9 +249,18 @@ class TNForeclosureScraper(BaseForeclosureScraper):
         return prop
 
 
-# ---------------------------------------------------------------------------
-# Convenience
-# ---------------------------------------------------------------------------
+def scrape_with_enrichment(
+    solve_captcha: bool = True,
+    enrich: bool = True,
+) -> list[PropertyData]:
+    """Run TN foreclosure scraper with optional TNMap enrichment."""
+    from .tnforeclosures import TNForeclosureScraper
+    from .tnmap import enrich_with_tnmap
 
-def scrape_all() -> list[PropertyData]:
-    return TNForeclosureScraper().run()
+    scraper = TNForeclosureScraper(solve_captcha=solve_captcha)
+    properties = scraper.run()
+
+    if enrich and properties:
+        properties = enrich_with_tnmap(properties)
+
+    return properties

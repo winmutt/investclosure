@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block title %}InvestClosure — Property #{{ prop.id }}{% endblock %}
+{% block topbar_title %}Property Details{% endblock %}
+{% block topbar_subtitle %}{{ prop.address or 'No address' }}{% endblock %}
+
+{% block content %}
+<div class="property-detail">
+    <div class="prop-main">
+        <div class="prop-header">
+            <h1>{{ prop.address or 'No address' }}</h1>
+            <div class="prop-badges">
+                <span class="badge badge-blue">{{ prop.source }}</span>
+                {% if prop.get('gis_url') %}
+                <span class="badge badge-green">GIS Enriched</span>
+                {% endif %}
+                {% if prop.get('tnmap_owner') %}
+                <span class="badge badge-green">TNMap Enriched</span>
+                {% endif %}
+                {% if prop.status == 'archived' %}
+                <span class="badge badge-red">Archived</span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="prop-details">
+            <div class="prop-detail-section">
+                <h3>Location</h3>
+                <p><strong>County:</strong> {{ prop.county or 'N/A' }} {{ prop.state }}</p>
+                <p><strong>Zip Code:</strong> {{ prop.zip_code or 'N/A' }}</p>
+                {% if prop.parcel_number %}
+                <p><strong>Parcel Number:</strong> {{ prop.parcel_number }}</p>
+                {% endif %}
+                {% if prop.latitude and prop.longitude %}
+                <p><strong>Coordinates:</strong> {{ "%.4f"|format(prop.latitude) }}°, {{ "%.4f"|format(prop.longitude) }}°</p>
+                {% endif %}
+            </div>
+            
+            <div class="prop-detail-section">
+                <h3>Property Info</h3>
+                {% if prop.price %}
+                <p><strong>Price:</strong> ${{ "%.2f"|format(prop.price / 100) }}</p>
+                {% endif %}
+                <p><strong>Acreage:</strong>
+    {% if prop.manual_acres_set %}
+    <span title="Manually set on {{ prop.manual_acres_set }}">
+        {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres <span style="color:#f59e0b">&#128274;</span> manual
+    </span>
+    {% else %}
+    {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres
+    {% endif %}
+</p>
+                {% if prop.get('tnmap_deeded_acres') %}
+                <p><strong>Deeded Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_deeded_acres) }} acres</p>
+                {% endif %}
+                {% if prop.get('tnmap_calculated_acres') %}
+                <p><strong>Calculated Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_calculated_acres) }} acres</p>
+                {% endif %}
+            </div>
+            
+            <div class="prop-detail-section">
+                <h3>Maps & GIS Links</h3>
+                {% if prop.address and prop.county %}
+                <p><strong>Google Maps:</strong> <a href="{{ prop.google_maps_url }}" target="_blank" rel="noopener">{{ prop.google_maps_url }}</a></p>
+                <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
+                {% elif prop.google_maps_topo_url %}
+                <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
+                {% endif %}
+                {% if prop.gis_url %}
+                <p><strong>GIS Viewer:</strong> <a href="{{ prop.gis_url }}" target="_blank" rel="noopener">{{ prop.gis_url }}</a></p>
+                {% endif %}
+                {% if prop.taxnet_url %}
+                <p><strong>TaxNet:</strong> <a href="{{ prop.taxnet_url }}" target="_blank" rel="noopener">{{ prop.taxnet_url }}</a></p>
+                {% endif %}
+                {% if prop.gislink %}
+                <p><strong>GIS Link:</strong> {{ prop.gislink }}</p>
+                {% endif %}
+            </div>
+            
+            {% if prop.get('tnmap_owner') %}
+            <div class="prop-detail-section">
+                <h3>TNMap Assessment Data</h3>
+                <p><strong>Owner:</strong> {{ prop.tnmap_owner }}</p>
+                {% if prop.get('tnmap_owner2') %}
+                <p><strong>Owner 2:</strong> {{ prop.tnmap_owner2 }}</p>
+                {% endif %}
+                {% if prop.get('tnmap_address') %}
+                <p><strong>Address (TNMap):</strong> {{ prop.tnmap_address }}</p>
+                {% endif %}
+                {% if prop.get('tnmap_gislink') %}
+                <p><strong>Parcel/GIS Link:</strong> {{ prop.tnmap_gislink }}</p>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <div class="prop-detail-section">
+                <h3>Timeline</h3>
+                <p><strong>First Seen:</strong> {{ prop.first_seen }}</p>
+                <p><strong>Last Seen:</strong> {{ prop.last_seen }}</p>
+                <p><strong>Seen Count:</strong> {{ prop.seen_count }}</p>
+            </div>
+            
+            {% if prop.description %}
+            <div class="prop-detail-section">
+                <h3>Description</h3>
+                <div class="prop-description">{{ prop.description[:2000] }}</div>
+            </div>
+            {% endif %}
+            
+            {% if prop.tags %}
+            <div class="prop-detail-section">
+                <h3>Tags</h3>
+                <p>{{ prop.tags }}</p>
+            </div>
+            {% endif %}
+            
+            <div class="prop-detail-section">
+                <h3>Notes</h3>
+                <div id="notes-container" onclick="if(!document.getElementById('notes-editor').style.display){toggleNotes()}" style="cursor:pointer">
+                    <p id="notes-display">{% if prop.notes %}{{ prop.notes[:500] }}{% if prop.notes|length > 500 %}...{% endif %}{% else %}Click to add notes{% endif %}</p>
+                </div>
+                <textarea id="notes-editor" rows="6" style="display:none;width:100%;margin-top:8px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-family:monospace;font-size:13px">{{ prop.notes or '' }}</textarea>
+                <button id="notes-save-btn" class="btn btn-secondary" style="display:none;margin-top:8px" onclick="event.stopPropagation();saveNotes({{ prop.id }})">Save Notes</button>
+            </div>
+            
+            {% if prop.get('tnmap_gislink') %}
+            <div class="prop-detail-section">
+                <h3>External Links</h3>
+                <p>
+                    <a href="https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={{ prop.tnmap_gislink }}" 
+                       target="_blank" class="btn">
+                        View on TN Comptroller (TPAD)
+                    </a>
+                </p>
+            </div>
+            {% endif %}
+            {% if prop.source == 'newspaper_notices' and prop.url %}
+            <div class="prop-detail-section">
+                <h3>Source Notice</h3>
+                <p>
+                    <a href="{{ prop.url }}" target="_blank" rel="noopener" class="btn">
+                        View Original Notice
+                    </a>
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+     <div class="prop-actions">
+        <div id="nav-buttons" style="display:flex;gap:8px;margin-right:16px"></div>
+        {% if not prop.manual_acres_set %}
+        <form id="acres-form" style="display:inline-flex;align-items:center;gap:8px;margin-right:16px">
+            <input type="number" step="0.01" min="0" placeholder="Set acreage" id="manual-acres-input" style="width:120px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px">
+            <button type="button" class="btn btn-secondary" onclick="lockAcres({{ prop.id }})" style="padding:6px 12px;font-size:13px">Lock Acreage</button>
+        </form>
+        {% else %}
+        <span style="display:inline-block;padding:6px 12px;font-size:13px;background:#fef3c7;color:#92400e;border-radius:6px;margin-right:16px">&#128274; Acreage locked</span>
+        {% endif %}
+        <form action="{{ url_for('archive_property', property_id=prop.id) }}" method="POST" style="display:inline">
+            <button type="submit" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Archive</button>
+        </form>
+        {% if prop.status == 'archived' %}
+        <form action="{{ url_for('unarchive_property', property_id=prop.id) }}" method="POST" style="display:inline">
+            <button type="submit" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Unarchive</button>
+        </form>
+        {% endif %}
+        <a href="{{ url_for('landing') }}" class="btn">Back to Dashboard</a>
+    </div>
+</div>
+
+<script>
+function toggleNotes() {
+    const display = document.getElementById('notes-display');
+    const editor = document.getElementById('notes-editor');
+    const saveBtn = document.getElementById('notes-save-btn');
+    display.style.display = 'none';
+    editor.style.display = 'block';
+    editor.value = '';
+    fetch('/api/property/{{ prop.id }}')
+        .then(r => r.json()).then(data => {
+            editor.value = data.notes || '';
+        });
+    saveBtn.style.display = 'inline-block';
+    editor.focus();
+}
+
+function saveNotes(id) {
+    const editor = document.getElementById('notes-editor');
+    const saveBtn = document.getElementById('notes-save-btn');
+    const display = document.getElementById('notes-display');
+    fetch('/api/property/' + id + '/notes', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({notes: editor.value})
+    }).then(r => r.json()).then(d => {
+        display.textContent = d.notes || 'Click to add notes';
+        display.style.display = 'block';
+        editor.style.display = 'none';
+        saveBtn.style.display = 'none';
+    }).catch(() => alert('Failed to save notes'));
+}
+
+function lockAcres(id) {
+    const input = document.getElementById('manual-acres-input');
+    const acres = parseFloat(input.value);
+    if (isNaN(acres) || acres < 0) return alert('Enter a valid acreage value');
+    fetch('/api/property/' + id + '/acres', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({acres: acres})
+    }).then(r => r.json()).then(d => {
+        if (d.error) return alert(d.error);
+        location.reload();
+    }).catch(e => alert('Failed: ' + e));
+}
+
+fetch('/api/property/{{ prop.id }}/navigation')
+    .then(r => r.json())
+    .then(nav => {
+        const container = document.getElementById('nav-buttons');
+        if (!nav.previous && !nav.next) return;
+        if (nav.previous) {
+            container.innerHTML = `<a href="/property/${nav.previous.id}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">&larr; Prev</a>`;
+            if (nav.next) {
+                container.innerHTML += `<a href="/property/${nav.next.id}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Next &rarr;</a>`;
+            }
+        } else {
+            container.innerHTML = `<a href="/property/${nav.next.id}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Next &rarr;</a>`;
+        }
+    });
+</script>
+{% endblock %}

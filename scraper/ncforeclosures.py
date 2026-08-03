@@ -90,14 +90,44 @@ class NCForeclosureScraper(BaseForeclosureScraper):
                 self._search_foreclosures(page)
                 print("done")
 
-                print("  [3/4] Parsing results ...")
-                records = self._parse_grid_records(page)
-                print(f"  Found {len(records)} total notices")
+                # Get total pages
+                total_pages = int(page.evaluate("""() => {
+                    const el = document.getElementById('ctl00_ContentPlaceHolder1_WSExtendedGridNP1_GridView1_ctl01_lblTotalPages');
+                    const m = (el?.textContent || '').match(/of\\s+(\\d+)/);
+                    return m ? parseInt(m[1]) : 1;
+                }""") or 1)
+                print(f"\n  Total pages: {total_pages}")
 
-                target_records = [r for r in records if (r.get("county") or "").lower() in COUNTY_SET]
-                print(f"  {len(target_records)} in target counties")
+                print("  [3/4] Collecting records from all pages ...")
+                all_records = []
+                seen_pk = set()
 
-                print(f"  [4/4] Extracting details ({len(target_records)} cases) ...")
+                for page_num in range(1, total_pages + 1):
+                    # Parse records from current page
+                    records = self._parse_grid_records(page)
+                    print(f"    Page {page_num}/{total_pages}: {len(records)} notices", end="", flush=True)
+
+                    for r in records:
+                        pk = r.get("pk_id")
+                        if pk in seen_pk:
+                            continue
+                        seen_pk.add(pk)
+                        if (r.get("county") or "").lower() in COUNTY_SET:
+                            all_records.append(r)
+
+                    print(f" (target: {len(all_records)})", flush=True)
+
+                    # Stop if no more pages
+                    if page_num >= total_pages:
+                        break
+
+                    # Navigate to next page
+                    self._go_to_page(page, page_num + 1)
+                    page.wait_for_timeout(8000)
+
+                print(f"\n  Total qualifying notices: {len(all_records)}")
+
+                print(f"  [4/4] Extracting details ({len(all_records)} cases) ...")
                 for i, rec in enumerate(target_records):
                     print(f"    [{i+1}/{len(target_records)}] {rec['sp_case'] or rec['pk_id']} - {rec.get('county', '?')}",
                           end=" ", flush=True)
@@ -121,6 +151,20 @@ class NCForeclosureScraper(BaseForeclosureScraper):
             NCFORECLOSURES_POPULAR_SEARCH_VALUE,
         )
         page.wait_for_timeout(8000)
+
+    def _go_to_page(self, page, page_num: int) -> None:
+        """Navigate to a specific page number via ASP.NET postback."""
+        page.evaluate(f"""() => {{
+            const target = document.querySelector('input[name="__EVENTTARGET"]');
+            const arg = document.querySelector('input[name="__EVENTARGUMENT"]');
+            if (target && arg) {{
+                target.value = 'ctl00$ContentPlaceHolder1$WSExtendedGridNP1$GridView1';
+                arg.value = 'Page${page_num}';
+                if (typeof __doPostBack === 'function') {{
+                    __doPostBack('ctl00$ContentPlaceHolder1$WSExtendedGridNP1$GridView1', 'Page${page_num}');
+                }}
+            }}
+        }}""")
 
     def _parse_grid_records(self, page):
         """Parse ASP.NET GridView rows into record dicts."""
@@ -157,6 +201,11 @@ class NCForeclosureScraper(BaseForeclosureScraper):
                     const cm2 = fullText.match(/(?:SUPERIOR|DISTRICT)\\s+Court\\s+DIVISION\\s+([A-Z][A-Za-z]+)\\s+COUNTY/i);
                     if (cm2) county = cm2[1].trim();
                 }
+                // "NORTH CAROLINA\\nCOUNTYNAME COUNTY" or "COUNTYNAME, NORTH CAROLINA" 
+                if (!county) {
+                    const cm3 = fullText.match(/NORTH\\s+CAROLINA[\\s,]+([A-Z][A-Za-z]+)[\\s,]+COUNTY/i);
+                    if (cm3) county = cm3[1].trim();
+                }
 
                 const btn2 = row.querySelector('input[id*="btnView2"]');
                 let detailUrl = null;
@@ -183,12 +232,22 @@ class NCForeclosureScraper(BaseForeclosureScraper):
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
 
         try:
-            page.goto(detail_url, wait_until="networkidle", timeout=30000)
+            page.goto(detail_url, wait_until="load", timeout=60000)
         except Exception as e:
             logger.warning("Failed to load detail page: %s", e)
             return None
 
-        page.wait_for_timeout(1000)
+        # Wait for ASP.NET AJAX content to render
+        page.wait_for_timeout(5000)
+
+        # Verify content loaded by checking for notice-related text
+        page_text = page.evaluate("() => document.body.innerText")
+        if len(page_text) < 500:
+            page.wait_for_timeout(5000)
+            page_text = page.evaluate("() => document.body.innerText")
+            if len(page_text) < 500:
+                logger.warning("Content too short (%d chars), page may not have loaded: %s", len(page_text), pk_id)
+                return None
 
         has_captcha = page.evaluate(
             "() => !!document.getElementById('g-recaptcha-response')"

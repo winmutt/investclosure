@@ -1,10 +1,11 @@
 from __future__ import annotations
 import logging
 import re
+import random
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Optional, TypedDict, List
+from typing import Any, Optional, TypedDict, List
 
 from .config import config
 
@@ -33,6 +34,70 @@ class PropertyData(TypedDict, total=False):
     close_date: Optional[str]
     upset_bid: Optional[str]
     foreclosure_key: Optional[str]
+    # Book/deed reference (alternative to parcel_number)
+    deed_book: Optional[str]
+    # TNMap enrichment fields
+    tnmap_owner: Optional[str]
+    tnmap_owner2: Optional[str]
+    tnmap_address: Optional[str]
+    tnmap_city: Optional[str]
+    tnmap_deeded_acres: Optional[float]
+    tnmap_calculated_acres: Optional[float]
+    tnmap_gislink: Optional[str]
+    tnmap_cmap: Optional[str]
+    # GIS enrichment fields
+    acres_source: Optional[str]
+    coord_source: Optional[str]        
+    source_enriched: Optional[str]
+    owner_name: Optional[str]
+    assessed_land_value: Optional[float]
+    assessed_improvement_value: Optional[float]
+    assessed_value: Optional[int]
+    deed_info: Optional[str]
+    mailing_address: Optional[str]
+    land_use: Optional[str]
+    gis_url: Optional[str]
+    taxnet_url: Optional[str]
+    google_maps_url: Optional[str]
+    google_maps_topo_url: Optional[str]
+    # Sale/deed info
+    sale_date: Optional[str]
+    sale_price: Optional[float]
+    zoning: Optional[str]
+    tnmap_gp: Optional[str]
+    tnmap_parcel: Optional[str]
+    # GIS/parcel enrichment
+    gis_url: Optional[str]
+    acres_source: Optional[str]
+
+
+class BaseScraper(ABC):
+    """Base class for simple HTTP-based scrapers (curl_cffi)."""
+    SOURCE_NAME: str = "unknown"
+
+    def __init__(
+        self,
+        delay_range: tuple[float, float] = (0.5, 1.5),
+        use_selenium: bool = False,
+        **kwargs: Any,
+    ):
+        self.delay_range = delay_range
+        self.use_selenium = use_selenium
+        self.use_browser_manager = kwargs.get('use_browser_manager', False)
+        self.session = __import__("requests").Session()
+
+    def _random_delay(self) -> None:
+        """Sleep for a random duration in the configured range."""
+        time.sleep(random.uniform(*self.delay_range))
+
+    @abstractmethod
+    def scrape(self) -> list[PropertyData]:
+        """Scrape and return list of PropertyData."""
+        ...
+
+    def run(self) -> list[PropertyData]:
+        """Alias for scrape()."""
+        return self.scrape()
 
 
 class BaseForeclosureScraper(ABC):
@@ -226,3 +291,33 @@ class BaseForeclosureScraper(ABC):
             elif c and os.path.isfile(c):
                 return c
         return None
+
+
+def get_gis_url(county: str, state: str = "NC", parcel_number: str = "") -> str:
+    """Construct GIS parcel viewer URL for a property.
+    
+    Uses GIS_PARCEL_URLS from config for known county templates.
+    Falls back to a generic county GIS URL pattern.
+    """
+    from .config import GIS_PARCEL_URLS
+    
+    county_lower = (county or "").lower().strip()
+    state_upper = (state or "").upper().strip()
+    parcel = (parcel_number or "").strip()
+    
+    county_data = GIS_PARCEL_URLS.get(county_lower, {})
+    
+    # Try as nested dict with state key
+    if isinstance(county_data, dict):
+        template = county_data.get(state_upper, "")
+    else:
+        template = str(county_data) if county_data else ""
+    
+    if template:
+        # Handle both parcel= and address= style templates
+        return template.replace("{parcel}", parcel).replace("{address}", parcel)
+    
+    # Fallback: generic county GIS URL
+    if parcel:
+        return f"https://www.{county_lower}{state_upper.lower()}.countyassessor.org/parcel/{parcel}"
+    return ""

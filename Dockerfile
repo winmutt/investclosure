@@ -20,14 +20,23 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Application code
 COPY scraper/ ./scraper/
 
+# Copy static files and templates
+COPY static/ /app/static/
+COPY templates/ /app/templates/
+
 # Create data directories
-RUN mkdir -p /app/data /app/data/backups /app/data/logs
+RUN mkdir -p /app/data /app/data/backups /app/data/logs /app/reports
+
+# Entrypoint — runs web server + scraper
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 ENV PYTHONPATH=/app
 
-# Configurable port for health check / HTTP endpoints (default 5001)
+# Configurable cron interval in minutes (default 360 = 6 hours)
+ENV SCRAPE_INTERVAL=360
 ENV FLASK_PORT=5001
 
 EXPOSE 5001
 
-CMD ["python", "-m", "scraper"]
+CMD ["/app/entrypoint.sh"]

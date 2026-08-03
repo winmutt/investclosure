@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS properties (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    source            TEXT NOT NULL,
+    source            TEXT,
     source_listing_id TEXT,
     url               TEXT,
     address           TEXT,
@@ -42,14 +42,23 @@ CREATE TABLE IF NOT EXISTS properties (
     close_date        TEXT,
     upset_bid         TEXT,
     foreclosure_key   TEXT,
-    first_seen        TEXT NOT NULL,
-    last_seen         TEXT NOT NULL,
+    parcel_number     TEXT,
+    deed_book         TEXT,
+    first_seen        TEXT,
+    last_seen         TEXT,
     seen_count        INTEGER DEFAULT 1,
     dedup_hash        TEXT,
     status            TEXT DEFAULT 'active',
     tags              TEXT,
     notes             TEXT,
-    scraped_at        TEXT
+    scraped_at        TEXT,
+    google_maps_url   TEXT,
+    google_maps_topo_url TEXT,
+    gis_url           TEXT,
+    elevation_ft      REAL,
+    parcel_screenshot TEXT,
+    manual_acres_set TEXT,
+    manual_acres_override REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_properties_source ON properties(source);
@@ -85,8 +94,34 @@ def _ensure_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+
+    # Incremental schema migrations
+    _apply_migrations(conn)
+
     conn.row_factory = sqlite3.Row
     return conn
+
+
+_SCHEMAS_VERSION = 2
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Add new columns to properties table if missing."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(properties)").fetchall()}
+
+    migrations = [
+        ("deed_book", "ALTER TABLE properties ADD COLUMN deed_book TEXT"),
+        ("manual_acres_set", "ALTER TABLE properties ADD COLUMN manual_acres_set TEXT"),
+        ("manual_acres_override", "ALTER TABLE properties ADD COLUMN manual_acres_override REAL"),
+    ]
+    for col, sql in migrations:
+        if col not in existing:
+            try:
+                conn.execute(sql)
+                conn.commit()
+                logger.info("Migration: added column %s to properties", col)
+            except Exception as e:
+                logger.warning("Migration failed (column may exist): %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +155,7 @@ def compute_dedup_hash(
 
 def _upsert_property(
     conn: sqlite3.Connection,
-    source: str,
+    source: Optional[str],
     source_listing_id: Optional[str],
     url: Optional[str],
     address: Optional[str],
@@ -130,8 +165,8 @@ def _upsert_property(
     zip_code: Optional[str],
     latitude: Optional[float],
     longitude: Optional[float],
-    price_cents: int,
-    acres: float,
+    price_cents: Optional[int],
+    acres: Optional[float] = None,
     description: Optional[str] = None,
     property_type: Optional[str] = "foreclosure",
     listing_date: Optional[str] = None,
@@ -139,15 +174,29 @@ def _upsert_property(
     close_date: Optional[str] = None,
     upset_bid: Optional[str] = None,
     foreclosure_key: Optional[str] = None,
+    parcel_number: Optional[str] = None,
+    deed_book: Optional[str] = None,
+    first_seen: Optional[str] = None,
+    last_seen: Optional[str] = None,
+    google_maps_url: Optional[str] = None,
+    google_maps_topo_url: Optional[str] = None,
+    gis_url: Optional[str] = None,
+    elevation_ft: Optional[float] = None,
+    parcel_screenshot: Optional[str] = None,
 ) -> Tuple[str, sqlite3.Row]:
-    """
-    Insert or update a property row.
-    Returns ("new" | "duplicate", row).
+    """Insert or update a property row.
+
+    If the existing row has ``manual_acres_set`` populated, the acres
+    column is NOT overwritten — it is considered manually locked.
     """
     dedup_hash = compute_dedup_hash(
         address or "", city or "", county or "", state or "",
         zip_code or "", latitude, longitude
     )
+
+    today = date.today().isoformat()
+    first_seen_val = first_seen or today
+    last_seen_val = last_seen or today
 
     # Check for exact source + listing_id match first
     existing = None
@@ -164,22 +213,79 @@ def _upsert_property(
         ).fetchone()
 
     if existing:
+        # For Kania Law source, detect foreclosure detail changes.
+        # If the foreclosure_key differs, treat as a new record.
+        if source == "kania_law" and foreclosure_key is not None:
+            existing_key = (existing["foreclosure_key"] or "")
+            new_key = foreclosure_key
+            if existing_key != new_key:
+                logger.debug(
+                    "Property %s: foreclosure_key changed from '%s' to '%s' — inserting as new",
+                    source_listing_id or existing["source_listing_id"],
+                    existing_key,
+                    new_key,
+                )
+                cur = conn.execute(
+                    """INSERT INTO properties
+                       (source, source_listing_id, url, address, city, county, state, zip_code,
+                        latitude, longitude, price_cents, acres, description, property_type,
+                        listing_date, auction_date, close_date, upset_bid, foreclosure_key,
+                        parcel_number, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+                        first_seen, last_seen, seen_count, dedup_hash, status)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        source, source_listing_id, url, address, city, county, state, zip_code,
+                        latitude, longitude, price_cents, acres, description, property_type,
+                        listing_date, auction_date, close_date, upset_bid, foreclosure_key,
+                        parcel_number, deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+                        first_seen_val, last_seen_val, 1, dedup_hash, "active",
+                    ),
+                )
+                conn.commit()
+                new_row = conn.execute(
+                    "SELECT * FROM properties WHERE id=?", (cur.lastrowid,)
+                ).fetchone()
+                return "new", new_row
+
         updates = [
             "last_seen = ?",
             "seen_count = seen_count + 1",
-            "acres = ?",
+        ]
+        values: list[Any] = [
+            last_seen_val,
+        ]
+        # Only overwrite acres if manual override is not set
+        manual_set = existing["manual_acres_set"]
+        if not (manual_set or "").strip():
+            updates.append("acres = ?")
+            values.append(acres)
+        updates.extend([
             "price_cents = ?",
             "description = ?",
+        ])
+        values.extend([
+            price_cents, description,
+        ])
+        # Only update parcel_number if existing record doesn't already have one
+        if not existing["parcel_number"] and parcel_number:
+            updates.append("parcel_number = ?")
+            values.append(parcel_number)
+        updates.extend([
             "auction_date = ?",
             "close_date = ?",
             "upset_bid = ?",
             "foreclosure_key = ?",
-        ]
-        values: list[Any] = [
-            date.today().isoformat(),
-            acres, price_cents, description,
+            "deed_book = ?",
+            "google_maps_url = ?",
+            "google_maps_topo_url = ?",
+            "gis_url = ?",
+            "elevation_ft = ?",
+            "parcel_screenshot = ?",
+        ])
+        values.extend([
             auction_date, close_date, upset_bid, foreclosure_key,
-        ]
+            deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+        ])
         values.append(existing["id"])
         conn.execute(
             f"UPDATE properties SET {', '.join(updates)} WHERE id=?",
@@ -192,19 +298,20 @@ def _upsert_property(
         return "duplicate", updated
 
     # New property
-    today = date.today().isoformat()
     cur = conn.execute(
         """INSERT INTO properties
            (source, source_listing_id, url, address, city, county, state, zip_code,
             latitude, longitude, price_cents, acres, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
+            parcel_number, deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
             first_seen, last_seen, seen_count, dedup_hash, status)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             source, source_listing_id, url, address, city, county, state, zip_code,
             latitude, longitude, price_cents, acres, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-            today, today, 1, dedup_hash, "active",
+            parcel_number, deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            first_seen_val, last_seen_val, 1, dedup_hash, "active",
         ),
     )
     conn.commit()
@@ -216,7 +323,7 @@ def _upsert_property(
 
 def insert_property(
     conn: sqlite3.Connection,
-    source: str,
+    source: Optional[str],
     source_listing_id: Optional[str],
     url: Optional[str],
     address: Optional[str],
@@ -226,8 +333,8 @@ def insert_property(
     zip_code: Optional[str],
     latitude: Optional[float],
     longitude: Optional[float],
-    price_cents: int,
-    acres: float,
+    price_cents: Optional[int],
+    acres: Optional[float] = None,
     description: Optional[str] = None,
     property_type: Optional[str] = "foreclosure",
     listing_date: Optional[str] = None,
@@ -235,6 +342,15 @@ def insert_property(
     close_date: Optional[str] = None,
     upset_bid: Optional[str] = None,
     foreclosure_key: Optional[str] = None,
+    parcel_number: Optional[str] = None,
+    deed_book: Optional[str] = None,
+    first_seen: Optional[str] = None,
+    last_seen: Optional[str] = None,
+    google_maps_url: Optional[str] = None,
+    google_maps_topo_url: Optional[str] = None,
+    gis_url: Optional[str] = None,
+    elevation_ft: Optional[float] = None,
+    parcel_screenshot: Optional[str] = None,
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property record."""
     return _upsert_property(
@@ -243,7 +359,11 @@ def insert_property(
         description=description, property_type=property_type,
         listing_date=listing_date, auction_date=auction_date,
         close_date=close_date, upset_bid=upset_bid,
-        foreclosure_key=foreclosure_key,
+        foreclosure_key=foreclosure_key, parcel_number=parcel_number,
+        deed_book=deed_book,
+        first_seen=first_seen, last_seen=last_seen,
+        google_maps_url=google_maps_url, google_maps_topo_url=google_maps_topo_url,
+        gis_url=gis_url, elevation_ft=elevation_ft, parcel_screenshot=parcel_screenshot,
     )
 
 
@@ -321,15 +441,26 @@ def archive_below_acres(
     conn: sqlite3.Connection,
     min_acres: float,
     source: Optional[str] = None,
+    include_sources: Optional[list[str]] = None,
 ) -> int:
-    """Archive properties where acres < min_acres."""
+    """Archive properties where acres < min_acres.
+    
+    Args:
+        source: Single source to filter by (legacy)
+        include_sources: List of sources to archive (new, takes precedence)
+    """
     source_filter = ""
-    params: list[Any] = [min_acres]
-    if source:
+    params: list[Any] = ["archived"]
+    params.append(date.today().isoformat())  
+    params.append(min_acres)
+    
+    if include_sources:
+        placeholders = ",".join(["?"] * len(include_sources))
+        source_filter = f" AND source IN ({placeholders})"
+        params.extend(include_sources)
+    elif source:
         source_filter = " AND source = ?"
         params.append(source)
-    params.append("archived")
-    params.append(date.today().isoformat())
 
     conn.execute(
         f"""\

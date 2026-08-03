@@ -8,4 +8,23 @@ services:
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
+      - ./scraper:/app/scraper
+      - ./templates:/app/templates
+      - ./static:/app/static
+    depends_on:
+      - flaresolverr
+    restart: unless-stopped
+    environment:
+      # Override scrape interval (default 360 = 6 hours)
+      # SCRAPE_INTERVAL: 360
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    ports:
+      - "8191:8191"
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - TZ=UTC
     restart: unless-stopped

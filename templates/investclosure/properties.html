@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}InvestClosure — Search{% endblock %}
+{% block topbar_title %}Search Properties{% endblock %}
+{% block topbar_subtitle %}Filter by county, address, or acreage{% endblock %}
+
+{% block content %}
+<div class="search-bar">
+    <form method="GET" action="{{ url_for('properties') }}">
+        <input type="text" name="q" value="{{ query or '' }}" placeholder="Search address, county..." class="search-input">
+        <select name="county" class="filter-select">
+            <option value="">All Counties</option>
+            {% for c in county_options %}
+            <option value="{{ c['county'] }}" {% if county == c['county'] %}selected{% endif %}>{{ c['county'] }}</option>
+            {% endfor %}
+        </select>
+        <input type="number" name="min_acres" value="{{ min_acres or '' }}" placeholder="Min acres" class="filter-input" step="0.1">
+        <select name="status" class="filter-select">
+            <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+            <option value="archived" {% if status == 'archived' %}selected{% endif %}>Archived</option>
+        </select>
+        <button type="submit" class="btn">Search</button>
+        <a href="{{ url_for('properties') }}" class="btn btn-secondary">Clear</a>
+    </form>
+</div>
+
+<div class="list">
+    {% for prop in properties %}
+    <div class="list-item">
+        <div class="list-item-body">
+            <div class="list-item-header">
+                <a href="{{ url_for('property_detail', property_id=prop.id) }}">{{ prop.address or 'No address' }}</a>
+                <span class="badge badge-blue">{{ prop.source }}</span>
+            </div>
+    <div class="list-item-row">
+                <span>{{ prop.county or 'N/A' }} County, {{ prop.state }}</span>
+                <span>
+                    {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres
+                    {% if prop.manual_acres_set %}
+                    <span title="Manually set on {{ prop.manual_acres_set }}" style="color:#f59e0b">&#128274;</span>
+                    {% endif %}
+                </span>
+                <span>First seen: {{ prop.first_seen }}</span>
+            </div>
+            {% if prop.get('tnmap_owner') %}
+            <div class="list-item-enriched">
+                Owner: {{ prop.tnmap_owner }} · Parcel: {{ prop.tnmap_gislink or 'N/A' }}
+            </div>
+            {% endif %}
+        </div>
+        <div class="list-item-actions">
+            <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-action-btn">View</a>
+             <form action="{{ url_for('archive_property', property_id=prop.id) }}" method="POST" style="display:inline">
+                <button type="submit" class="btn btn-sm">Archive</button>
+            </form>
+            {% if prop.status == 'archived' %}
+            <form action="{{ url_for('unarchive_property', property_id=prop.id) }}" method="POST" style="display:inline">
+                <button type="submit" class="btn btn-sm">Unarchive</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="list-empty">
+        <p>No properties match your search.</p>
+    </div>
+    {% endfor %}
+</div>
+
+{% if properties|length > 0 %}
+<div class="pagination">
+    <div>
+        Page {{ page }} of {{ (total + per_page - 1) // per_page }}
+        · {{ total }} total results
+    </div>
+   <div class="pagination-links">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}{{ '&q=' + query if query else '' }}{{ '&county=' + county if county else '' }}{{ '&min_acres=' + min_acres if min_acres else '' }}{{ '&status=' + status if status else '' }}" class="btn btn-sm">Previous</a>
+        {% endif %}
+        {% if page * per_page < total %}
+        <a href="?page={{ page + 1 }}{{ '&q=' + query if query else '' }}{{ '&county=' + county if county else '' }}{{ '&min_acres=' + min_acres if min_acres else '' }}{{ '&status=' + status if status else '' }}" class="btn btn-sm">Next</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

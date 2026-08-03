@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}InvestClosure — New Listings{% endblock %}
+{% block topbar_title %}New Listings{% endblock %}
+{% block topbar_subtitle %}Properties seen in the last {{ days }} days{% endblock %}
+
+{% block content %}
+<div class="search-bar">
+    <form method="GET" action="{{ url_for('new') }}">
+        <select name="days" class="filter-select">
+            <option value="1" {% if days == 1 %}selected{% endif %}>Last 24 hours</option>
+            <option value="3" {% if days == 3 %}selected{% endif %}>Last 3 days</option>
+            <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 days</option>
+            <option value="14" {% if days == 14 %}selected{% endif %}>Last 14 days</option>
+            <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 days</option>
+        </select>
+        <button type="submit" class="btn">View</button>
+    </form>
+</div>
+
+<div class="list">
+    {% for prop in properties[:100] %}
+    <div class="list-item">
+        <div class="list-item-body">
+            <div class="list-item-header">
+                <a href="{{ url_for('property_detail', property_id=prop.id) }}">{{ prop.address or 'No address' }}</a>
+                <span class="badge badge-blue">{{ prop.source }}</span>
+            </div>
+            <div class="list-item-row">
+                <span>{{ prop.county or 'N/A' }} County, {{ prop.state }}</span>
+                <span>{{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres</span>
+                <span>First seen: {{ prop.first_seen }}</span>
+            </div>
+        </div>
+        <div class="list-item-actions">
+            <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-action-btn">View</a>
+        </div>
+    </div>
+    {% else %}
+    <div class="list-empty">
+        <p>No new properties in the last {{ days }} days.</p>
+    </div>
+    {% endfor %}
+</div>
+
+{% if properties|length > 100 %}
+<div class="pagination">
+    <div>Showing {{ 100 }} of {{ properties|length }} results</div>
+</div>
+{% endif %}
+{% endblock %}

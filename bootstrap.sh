@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # bootstrap.sh — One-command setup for investclosure
-# Usage: ./bootstrap.sh [--no-docker]
+# Usage: ./bootstrap.sh [--no-docker] [--podman]
 #
 # What it does:
 #   1. Creates .env from template (interactive if TWO_CAPTCHA_API_KEY missing)
 #   2. Creates data directories
 #   3. Installs Python deps (via pip or pipx)
-#   4. Installs Playwright Chromium (if not using Docker)
+#   4. Installs Playwright Chromium (if not using Docker/Podman)
 #   5. Runs a test --list to verify setup
 
 set -euo pipefail
@@ -21,6 +21,17 @@ NC='\033[0m'
 info()    { echo -e "${GREEN}✓${NC} $*"; }
 warn()    { echo -e "${YELLOW}!${NC} $*"; }
 fail()    { echo -e "${RED}✗${NC} $*"; exit 1; }
+
+# Detect mode
+DOCKER_MODE="docker"
+if [[ "${1:-}" == "--no-docker" ]]; then
+    RUN_MODE="native"
+elif [[ "${1:-}" == "--podman" ]]; then
+    RUN_MODE="podman"
+    DOCKER_MODE="podman"
+else
+    RUN_MODE="docker"
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Environment
@@ -58,7 +69,7 @@ info "Data dirs: $DATA_DIR"
 # ---------------------------------------------------------------------------
 echo "─── Step 3/5: Python dependencies ───"
 
-if [[ "${1:-}" == "--no-docker" ]]; then
+if [[ "$RUN_MODE" == "native" ]]; then
     # Check Python version
     python3 -V 2>&1 || fail "python3 not found"
 
@@ -83,7 +94,7 @@ if [[ "${1:-}" == "--no-docker" ]]; then
     $VIRTUALENV -m pip install -r requirements.txt
     info "Python deps installed"
 else
-    info "Skipping Python deps (Docker mode — handled in Dockerfile)"
+    info "Skipping Python deps (${DOCKER_MODE} mode — handled in Dockerfile)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -91,7 +102,7 @@ fi
 # ---------------------------------------------------------------------------
 echo "─── Step 4/5: Playwright Chromium ───"
 
-if [[ "${1:-}" == "--no-docker" ]]; then
+if [[ "$RUN_MODE" == "native" ]]; then
     PLAYWRIGHT_DIR="${HOME}/.cache/ms-playwright"
     if ls "$PLAYWRIGHT_DIR"/*/chrome-linux64/chrome &>/dev/null 2>&1; then
         info "Chromium already installed at $PLAYWRIGHT_DIR"
@@ -102,7 +113,7 @@ if [[ "${1:-}" == "--no-docker" ]]; then
         info "Chromium installed"
     fi
 else
-    info "Skipping Chromium install (Docker handles this)"
+    info "Skipping Chromium install (${DOCKER_MODE} handles this)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -110,15 +121,16 @@ fi
 # ---------------------------------------------------------------------------
 echo "─── Step 5/5: Verification ───"
 
-if [[ "${1:-}" == "--no-docker" ]]; then
+if [[ "$RUN_MODE" == "native" ]]; then
     $VIRTUALENV -m scraper --list
     info "Setup complete! Run: $VIRTUALENV -m scraper"
 else
-    docker compose build
-    info "Docker image built. Run: docker compose up"
+    $DOCKER_MODE compose build
+    info "${DOCKER_MODE^} image built. Run: $DOCKER_MODE compose up"
 fi
 
 echo ""
 echo "─── Done ───"
-echo "  Docker:  docker compose up"
-echo "  Native:  python3 -m scraper"
+echo "  Docker:   docker compose up"
+echo "  Podman:   podman compose up"
+echo "  Native:   python3 -m scraper"

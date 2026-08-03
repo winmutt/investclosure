@@ -112,66 +112,125 @@ TNFORECLOSURES_CAPTCHA_SITE_KEY = _site_env(
 
 
 # ---------------------------------------------------------------------------
-# Default qualifying counties (NC + TN mountain counties)
+# Full qualifying county lists (5-state scope)
+# Source: realestate/scraper/config.py QUALIFYING_COUNTIES
+# Criteria: within 250mi of Atlanta, peak elevation >= 1700ft
 # ---------------------------------------------------------------------------
 
-# NC counties (21 targeted by NC Foreclosures scraper)
+# GA counties (11)
+GA_FORECLOSURE_COUNTIES = [
+    "dawson", "fannin", "gilmer", "habersham", "lumpkin",
+    "murray", "pickens", "rabun", "towns", "union", "white",
+]
+
+# AL counties (5)
+AL_FORECLOSURE_COUNTIES = [
+    "blount", "cherokee", "cleburne", "dekalb", "talladega",
+]
+
+# KY counties (5)
+KY_FORECLOSURE_COUNTIES = [
+    "bell", "harlan", "knox", "perry", "whitley",
+]
+
+# NC counties (26)
 NC_FORECLOSURE_COUNTIES = [
     "alleghany", "ashe", "avery", "buncombe", "burke",
-    "caldwell", "catawba", "cherokee", "clay", "graham",
-    "haywood", "henderson", "jackson", "madison", "mcdowell",
-    "mitchell", "swain", "transylvania", "watauga", "wilkes", "yancey",
+    "caldwell", "catawba", "cherokee", "clay", "cleveland",
+    "franklin", "graham", "haywood", "henderson", "jackson",
+    "macon", "madison", "mcdowell", "mitchell", "polk", "rutherford",
+    "swain", "transylvania", "watauga", "wilkes", "yancey",
 ]
 
-# TN counties (indexed by tnforeclosures county checkbox indices)
+# SC counties (4)
+SC_FORECLOSURE_COUNTIES = [
+    "anderson", "greenville", "oconee", "pickens",
+]
+
+# TN counties (37) — mountain counties only
 TN_FORECLOSURE_COUNTIES = [
-    "anderson", "bedford", "benton", "bledsoe", "blount",
-    "bradley", "campbell", "cannon", "carroll", "carter",
-    "cheatham", "chester", "claiborne", "clay", "cocke",
-    "coffee", "crockett", "cumberland", "davidson", "decatur",
-    "dekalb", "dickson", "dyer", "fayette", "fentress",
-    "franklin", "gibson", "giles", "grainger", "greene",
-    "grundy", "hamblen", "hamilton", "hancock", "hardeman",
-    "hardin", "hawkins", "haywood", "henderson", "henry",
-    "hickman", "houston", "humphreys", "jackson", "jefferson",
-    "johnson", "knox", "lake", "lauderdale", "lawrence",
-    "lewis", "lincoln", "loudon", "macon", "madison",
-    "marion", "marshall", "maury", "mcminn", "mcnairy",
-    "meigs", "monroe", "montgomery", "moore", "morgan",
-    "obion", "overton", "perry", "pickett", "polk",
-    "putnam", "rhea", "roane", "robertson", "rutherford",
-    "scott", "sequatchie", "sevier", "shelby", "smith",
-    "stewart", "sullivan", "sumner", "tipton", "trousdale",
-    "unicoi", "union", "vanburen", "warren", "washington",
-    "wayne", "weakley", "white", "williamson", "wilson",
+    "anderson", "bledsoe", "blount", "campbell", "carter", "claiborne",
+    "cocke", "coffee", "cumberland", "fentress", "grainger", "greene",
+    "grundy", "hamblen", "hamilton", "hancock", "hawkins", "jefferson",
+    "johnson", "knox", "marion", "mcminn", "monroe", "morgan", "overton",
+    "pickett", "polk", "roane", "scott", "sequatchie", "sevier",
+    "sullivan", "unico", "union", "van_buren", "warren", "washington", "white",
 ]
 
-# TN county checkbox indices (0-based) for TNForeclosureScraper
-TNFORECLOSURES_COUNTY_INDICES: Dict[str, int] = {
-    "anderson": 0, "bedford": 1, "benton": 2, "bledsoe": 3, "blount": 4,
-    "bradley": 5, "campbell": 6, "cannon": 7, "carroll": 8, "carter": 9,
-    "cheatham": 10, "chester": 11, "claiborne": 12, "clay": 13, "cocke": 14,
-    "coffee": 15, "crockett": 16, "cumberland": 17, "davidson": 18, "decatur": 19,
-    "dekalb": 20, "dickson": 21, "dyer": 22, "fayette": 23, "fentress": 24,
-    "franklin": 25, "gibson": 26, "giles": 27, "grainger": 28, "greene": 29,
-    "grundy": 30, "hamblen": 31, "hamilton": 32, "hancock": 33, "hardeman": 34,
-    "hardin": 35, "hawkins": 36, "haywood": 37, "henderson": 38, "henry": 39,
-    "hickman": 40, "houston": 41, "humphreys": 42, "jackson": 43, "jefferson": 44,
-    "johnson": 45, "knox": 46, "lake": 47, "lauderdale": 48, "lawrence": 49,
-    "lewis": 50, "lincoln": 51, "loudon": 52, "macon": 53, "madison": 54,
-    "marion": 55, "marshall": 56, "maury": 57, "mcminn": 58, "mcnairy": 59,
-    "meigs": 60, "monroe": 61, "montgomery": 62, "moore": 63, "morgan": 64,
-    "obion": 65, "overton": 66, "perry": 67, "pickett": 68, "polk": 69,
-    "putnam": 70, "rhea": 71, "roane": 72, "robertson": 73, "rutherford": 74,
-    "scott": 75, "sequatchie": 76, "sevier": 77, "shelby": 78, "smith": 79,
-    "stewart": 80, "sullivan": 81, "sumner": 82, "tipton": 83, "trousdale": 84,
-    "unicoi": 85, "union": 86, "vanburen": 87, "warren": 88, "washington": 89,
-    "wayne": 90, "weakley": 91, "white": 92, "williamson": 93, "wilson": 94,
+# All states with county lists
+QUALIFYING_STATES = ["GA", "AL", "KY", "NC", "SC", "TN"]
+
+QUALIFYING_COUNTIES: Dict[str, List[str]] = {
+    "GA": GA_FORECLOSURE_COUNTIES,
+    "AL": AL_FORECLOSURE_COUNTIES,
+    "KY": KY_FORECLOSURE_COUNTIES,
+    "NC": NC_FORECLOSURE_COUNTIES,
+    "SC": SC_FORECLOSURE_COUNTIES,
+    "TN": TN_FORECLOSURE_COUNTIES,
 }
 
-# Popular search dropdown values (used by both ASP.NET scrapers)
-NCFORECLOSURES_POPULAR_SEARCH_VALUE = "6"
-TNFORECLOSURES_POPULAR_SEARCH_VALUE = "4"
+# All county names flattened (lowercase)
+TARGET_COUNTIES: List[str] = [
+    c for clist in QUALIFYING_COUNTIES.values() for c in clist
+]
+
+# =============================================================================
+# NC County GIS Parcel URLs for Kania Law enrichment
+# =============================================================================
+
+GIS_PARCEL_URLS: Dict[str, Dict[str, Any]] = {
+    "Alleghany": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Alleghany_Cadastral/FeatureServer/0",
+        "field_name": "PARCELID",
+        "portal_type": "arcgis",
+    },
+
+    "Cherokee": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Cadastral/FeatureServer/0",
+        "field_name": "NEWPIN",
+        "portal_type": "arcgis",
+    },
+    "Haywood": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Haywood_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Henderson": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Henderson_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Madison": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Madison_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Transylvania": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Transylvania_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Jackson": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Jackson_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Clay": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Clay_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Graham": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Graham_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+    "Swain": {
+        "arcgis_url": "https://services6.arcgis.com/GYPQqV4e8e7G5hJz/ArcGIS/rest/services/Swain_Cadastral/FeatureServer/0",
+        "field_name": "PARCELIDN",
+        "portal_type": "arcgis",
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -251,13 +310,26 @@ class Config:
         self.MAX_PRICE = _opt_int("INVESTCLOSURE_MAX_PRICE", 0)  # no cap for foreclosures
 
         # Proxy (env overridable)
-        proxy = _opt_str("INVESTCLOSURE_PROXY", "")
+        proxy = _opt_str("INVESTCLOSURE_PROXY", "winmutt.com:8088")
         self.PROXY_URL = f"http://{proxy}" if proxy else None
 
         # Scraper defaults
         self.DELAY_RANGE = (1.5, 3.0)
+        self.DELAY_RANGES = {
+            "kania_law": (2.0, 4.0),
+            "ncforeclosures": (1.5, 3.0),
+            "tnforeclosures": (1.5, 3.0),
+            "zls_nc": (2.0, 4.0),
+            "hutchens_law": (2.0, 4.0),
+            "newspaper_notices": (2.0, 4.0),
+            "default": (1.5, 3.0),
+        }
+
         self.CAPTCHA_ENABLED = True
         self.PROXY_ENABLED = True
+
+        # Per-scraper overrides
+        self.SCRAPER_OVERRIDES: dict[str, dict[str, Any]] = {}
 
         # Ensure directories exist
         for d in [self.data_dir, self.backups_dir, self.logs_dir]:
@@ -265,6 +337,24 @@ class Config:
                 d.mkdir(parents=True, exist_ok=True)
             except OSError as exc:
                 print(f"WARNING: Cannot create directory {d}: {exc}", file=sys.stderr)
+
+    def get_delay_range(self, name: str) -> tuple[float, float]:
+        """Return (min, max) delay range for a scraper."""
+        return self.DELAY_RANGES.get(name, self.DELAY_RANGES.get("default", (1.5, 3.0)))
+
+    def get_min_acres(self, name: str) -> float:
+        """Get minimum acres, with scraper override."""
+        overrides = self.SCRAPER_OVERRIDES.get(name, {})
+        return overrides.get("min_acres", self.MIN_ACRES)
+
+    def get_max_price(self, name: str) -> int:
+        """Get maximum price, with scraper override."""
+        overrides = self.SCRAPER_OVERRIDES.get(name, {})
+        return overrides.get("max_price", self.MAX_PRICE)
+
+    def should_use_proxy(self, name: str) -> bool:
+        """Check if proxy should be used for this scraper."""
+        return self.PROXY_ENABLED
 
 
 # Singleton
