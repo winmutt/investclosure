@@ -110,6 +110,15 @@ TNFORECLOSURES_CAPTCHA_SITE_KEY = _site_env(
     "6LdtSg8sAAAAADTdRyZxJ2R2sS82pKALNMvMqSyL"
 )
 
+NCFORECLOSURES_POPULAR_SEARCH_VALUE = _site_env(
+    "NCFORECLOSURES", "POPULAR_SEARCH_VALUE",
+    "Foreclosures"
+)
+TNFORECLOSURES_POPULAR_SEARCH_VALUE = _site_env(
+    "TNFORECLOSURES", "POPULAR_SEARCH_VALUE",
+    "Foreclosures"
+)
+
 
 # ---------------------------------------------------------------------------
 # Full qualifying county lists (5-state scope)

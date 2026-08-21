@@ -44,8 +44,10 @@ CREATE TABLE IF NOT EXISTS properties (
     foreclosure_key   TEXT,
     parcel_number     TEXT,
     deed_book         TEXT,
+    court_case        TEXT,
     first_seen        TEXT,
     last_seen         TEXT,
+    last_updated      TEXT,
     seen_count        INTEGER DEFAULT 1,
     dedup_hash        TEXT,
     status            TEXT DEFAULT 'active',
@@ -58,7 +60,15 @@ CREATE TABLE IF NOT EXISTS properties (
     elevation_ft      REAL,
     parcel_screenshot TEXT,
     manual_acres_set TEXT,
-    manual_acres_override REAL
+    manual_acres_override REAL,
+    initial_auction_date TEXT,
+    upset_bid_end TEXT,
+    raw_source_text TEXT,
+    raw_parcel_text TEXT,
+    raw_deed_text TEXT,
+    raw_paragraph TEXT,
+    extracted_deed_plat TEXT,
+    extracted_pin TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_properties_source ON properties(source);
@@ -90,7 +100,7 @@ def _ensure_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open (or create) the SQLite DB and apply schema."""
     path = db_path or config.db_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=30, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
@@ -102,19 +112,29 @@ def _ensure_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-_SCHEMAS_VERSION = 2
+_SCHEMAS_VERSION = 4
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
     """Add new columns to properties table if missing."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(properties)").fetchall()}
 
-    migrations = [
+    col_migrations = [
         ("deed_book", "ALTER TABLE properties ADD COLUMN deed_book TEXT"),
+        ("court_case", "ALTER TABLE properties ADD COLUMN court_case TEXT"),
+        ("last_updated", "ALTER TABLE properties ADD COLUMN last_updated TEXT"),
         ("manual_acres_set", "ALTER TABLE properties ADD COLUMN manual_acres_set TEXT"),
         ("manual_acres_override", "ALTER TABLE properties ADD COLUMN manual_acres_override REAL"),
+        ("initial_auction_date", "ALTER TABLE properties ADD COLUMN initial_auction_date TEXT"),
+        ("upset_bid_end", "ALTER TABLE properties ADD COLUMN upset_bid_end TEXT"),
+    ("raw_source_text", "ALTER TABLE properties ADD COLUMN raw_source_text TEXT"),
+    ("raw_parcel_text", "ALTER TABLE properties ADD COLUMN raw_parcel_text TEXT"),
+    ("raw_deed_text", "ALTER TABLE properties ADD COLUMN raw_deed_text TEXT"),
+    ("raw_paragraph", "ALTER TABLE properties ADD COLUMN raw_paragraph TEXT"),
+    ("extracted_deed_plat", "ALTER TABLE properties ADD COLUMN extracted_deed_plat TEXT"),
+    ("extracted_pin", "ALTER TABLE properties ADD COLUMN extracted_pin TEXT"),
     ]
-    for col, sql in migrations:
+    for col, sql in col_migrations:
         if col not in existing:
             try:
                 conn.execute(sql)
@@ -122,6 +142,34 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
                 logger.info("Migration: added column %s to properties", col)
             except Exception as e:
                 logger.warning("Migration failed (column may exist): %s", e)
+
+    # Data migrations: copy existing auction_date → initial_auction_date
+    has_initial = "initial_auction_date" in existing
+    auction_col_exists = "auction_date" in existing
+    if not has_initial and auction_col_exists:
+        try:
+            conn.execute(
+                "UPDATE properties SET initial_auction_date = auction_date "
+                "WHERE initial_auction_date IS NULL AND auction_date IS NOT NULL "
+                "AND auction_date != '' AND auction_date != 'not yet set' AND 'not yet set' NOT LIKE auction_date"
+            )
+            conn.commit()
+            logger.info("Migration: copied auction_date → initial_auction_date")
+        except Exception as e:
+            logger.warning("Migration _migrate_initial_auction failed: %s", e)
+
+    has_upset = "upset_bid_end" in existing
+    close_col_exists = "close_date" in existing
+    if not has_upset and close_col_exists:
+        try:
+            conn.execute(
+                "UPDATE properties SET upset_bid_end = close_date "
+                "WHERE upset_bid_end IS NULL AND close_date IS NOT NULL AND close_date != ''"
+            )
+            conn.commit()
+            logger.info("Migration: copied close_date → upset_bid_end")
+        except Exception as e:
+            logger.warning("Migration _migrate_upset_end failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +224,9 @@ def _upsert_property(
     foreclosure_key: Optional[str] = None,
     parcel_number: Optional[str] = None,
     deed_book: Optional[str] = None,
+    court_case: Optional[str] = None,
+    initial_auction_date: Optional[str] = None,
+    upset_bid_end: Optional[str] = None,
     first_seen: Optional[str] = None,
     last_seen: Optional[str] = None,
     google_maps_url: Optional[str] = None,
@@ -183,11 +234,21 @@ def _upsert_property(
     gis_url: Optional[str] = None,
     elevation_ft: Optional[float] = None,
     parcel_screenshot: Optional[str] = None,
+    raw_source_text: Optional[str] = None,
+    raw_parcel_text: Optional[str] = None,
+    raw_deed_text: Optional[str] = None,
+    raw_paragraph: Optional[str] = None,
+    extracted_deed_plat: Optional[str] = None,
+    extracted_pin: Optional[str] = None,
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property row.
 
     If the existing row has ``manual_acres_set`` populated, the acres
     column is NOT overwritten — it is considered manually locked.
+
+    ``last_updated`` is only set when the sale/auction details change
+    (auction date or price), so the UI can surface genuinely-updated
+    properties without bumping on every scrape.
     """
     dedup_hash = compute_dedup_hash(
         address or "", city or "", county or "", state or "",
@@ -206,47 +267,13 @@ def _upsert_property(
             (source, source_listing_id),
         ).fetchone()
 
-    # Fall back to dedup hash
-    if not existing:
+    # Dedup hash fallback — only used when no unique source_listing_id exists
+    if not existing and not source_listing_id:
         existing = conn.execute(
             "SELECT * FROM properties WHERE dedup_hash=? LIMIT 1", (dedup_hash,)
         ).fetchone()
 
     if existing:
-        # For Kania Law source, detect foreclosure detail changes.
-        # If the foreclosure_key differs, treat as a new record.
-        if source == "kania_law" and foreclosure_key is not None:
-            existing_key = (existing["foreclosure_key"] or "")
-            new_key = foreclosure_key
-            if existing_key != new_key:
-                logger.debug(
-                    "Property %s: foreclosure_key changed from '%s' to '%s' — inserting as new",
-                    source_listing_id or existing["source_listing_id"],
-                    existing_key,
-                    new_key,
-                )
-                cur = conn.execute(
-                    """INSERT INTO properties
-                       (source, source_listing_id, url, address, city, county, state, zip_code,
-                        latitude, longitude, price_cents, acres, description, property_type,
-                        listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-                        parcel_number, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
-                        first_seen, last_seen, seen_count, dedup_hash, status)
-                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        source, source_listing_id, url, address, city, county, state, zip_code,
-                        latitude, longitude, price_cents, acres, description, property_type,
-                        listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-                        parcel_number, deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
-                        first_seen_val, last_seen_val, 1, dedup_hash, "active",
-                    ),
-                )
-                conn.commit()
-                new_row = conn.execute(
-                    "SELECT * FROM properties WHERE id=?", (cur.lastrowid,)
-                ).fetchone()
-                return "new", new_row
-
         updates = [
             "last_seen = ?",
             "seen_count = seen_count + 1",
@@ -270,22 +297,88 @@ def _upsert_property(
         if not existing["parcel_number"] and parcel_number:
             updates.append("parcel_number = ?")
             values.append(parcel_number)
+        # Backfill extracted IDs only when the record has none yet
+        if not existing["extracted_pin"] and extracted_pin:
+            updates.append("extracted_pin = ?")
+            values.append(extracted_pin)
+        if not existing["extracted_deed_plat"] and extracted_deed_plat:
+            updates.append("extracted_deed_plat = ?")
+            values.append(extracted_deed_plat)
+        # Foreclosure-specific fields — always update
         updates.extend([
             "auction_date = ?",
             "close_date = ?",
             "upset_bid = ?",
             "foreclosure_key = ?",
             "deed_book = ?",
-            "google_maps_url = ?",
-            "google_maps_topo_url = ?",
-            "gis_url = ?",
-            "elevation_ft = ?",
-            "parcel_screenshot = ?",
         ])
         values.extend([
-            auction_date, close_date, upset_bid, foreclosure_key,
-            deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            auction_date, close_date, upset_bid, foreclosure_key, deed_book,
         ])
+        # Only update Google Maps / GIS URLs if the scraper actually provided them
+        if google_maps_url:
+            updates.append("google_maps_url = ?")
+            values.append(google_maps_url)
+        if google_maps_topo_url:
+            updates.append("google_maps_topo_url = ?")
+            values.append(google_maps_topo_url)
+        if gis_url:
+            updates.append("gis_url = ?")
+            values.append(gis_url)
+        if elevation_ft is not None:
+            updates.append("elevation_ft = ?")
+            values.append(elevation_ft)
+        if parcel_screenshot:
+            updates.append("parcel_screenshot = ?")
+            values.append(parcel_screenshot)
+
+        # Backfill court_case when the incoming record carries one
+        if not existing["court_case"] and court_case:
+            updates.append("court_case = ?")
+            values.append(court_case)
+
+        # Detect sale/auction detail changes — auction date or price.
+        # last_updated is ONLY set here, never on routine re-sightings.
+        auction_date_new = str(auction_date or "").strip()
+        auction_date_old = str(existing["auction_date"] or "").strip()
+        price_new = int(price_cents or 0)
+        price_old = int(existing["price_cents"] or 0)
+        upset_new = str(upset_bid or "").strip()
+        upset_old = str(existing["upset_bid"] or "").strip()
+        sale_details_changed = (
+            auction_date_new != auction_date_old
+            or price_new != price_old
+            or upset_new != upset_old
+        )
+        if sale_details_changed:
+            updates.append("last_updated = ?")
+            values.append(today)
+
+        # Detect initial_auction_date changes
+        if initial_auction_date is not None:
+            existing_initial = (existing["initial_auction_date"] or "").strip()
+            new_initial = str(initial_auction_date).strip()
+            if not existing_initial:
+                updates.append("initial_auction_date = ?")
+                values.append(initial_auction_date)
+            elif existing_initial != new_initial:
+                updates.append("initial_auction_date = ?")
+                values.append(initial_auction_date)
+
+        # Detect upset_bid_end changes
+        if upset_bid_end is not None:
+            existing_end = (existing["upset_bid_end"] or "").strip()
+            new_end = str(upset_bid_end).strip()
+            if not existing_end:
+                updates.append("upset_bid_end = ?")
+                values.append(upset_bid_end)
+            elif existing_end != new_end:
+                updates.append("upset_bid_end = ?")
+                values.append(upset_bid_end)
+
+        if "last_seen = ?" not in updates:
+            updates.insert(0, "last_seen = ?")
+
         values.append(existing["id"])
         conn.execute(
             f"UPDATE properties SET {', '.join(updates)} WHERE id=?",
@@ -303,14 +396,18 @@ def _upsert_property(
            (source, source_listing_id, url, address, city, county, state, zip_code,
             latitude, longitude, price_cents, acres, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-            parcel_number, deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
+            extracted_deed_plat, extracted_pin,
             first_seen, last_seen, seen_count, dedup_hash, status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             source, source_listing_id, url, address, city, county, state, zip_code,
             latitude, longitude, price_cents, acres, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-            parcel_number, deed_book, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
+            extracted_deed_plat, extracted_pin,
             first_seen_val, last_seen_val, 1, dedup_hash, "active",
         ),
     )
@@ -344,6 +441,9 @@ def insert_property(
     foreclosure_key: Optional[str] = None,
     parcel_number: Optional[str] = None,
     deed_book: Optional[str] = None,
+    court_case: Optional[str] = None,
+    initial_auction_date: Optional[str] = None,
+    upset_bid_end: Optional[str] = None,
     first_seen: Optional[str] = None,
     last_seen: Optional[str] = None,
     google_maps_url: Optional[str] = None,
@@ -351,19 +451,34 @@ def insert_property(
     gis_url: Optional[str] = None,
     elevation_ft: Optional[float] = None,
     parcel_screenshot: Optional[str] = None,
+    raw_source_text: Optional[str] = None,
+    raw_parcel_text: Optional[str] = None,
+    raw_deed_text: Optional[str] = None,
+    raw_paragraph: Optional[str] = None,
+    extracted_deed_plat: Optional[str] = None,
+    extracted_pin: Optional[str] = None,
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property record."""
     return _upsert_property(
         conn, source, source_listing_id, url, address, city, county, state,
         zip_code, latitude, longitude, price_cents, acres,
+        extracted_deed_plat=extracted_deed_plat,
+        extracted_pin=extracted_pin,
         description=description, property_type=property_type,
         listing_date=listing_date, auction_date=auction_date,
         close_date=close_date, upset_bid=upset_bid,
         foreclosure_key=foreclosure_key, parcel_number=parcel_number,
         deed_book=deed_book,
+        court_case=court_case,
+        initial_auction_date=initial_auction_date,
+        upset_bid_end=upset_bid_end,
         first_seen=first_seen, last_seen=last_seen,
         google_maps_url=google_maps_url, google_maps_topo_url=google_maps_topo_url,
         gis_url=gis_url, elevation_ft=elevation_ft, parcel_screenshot=parcel_screenshot,
+        raw_source_text=raw_source_text,
+        raw_parcel_text=raw_parcel_text,
+        raw_deed_text=raw_deed_text,
+        raw_paragraph=raw_paragraph,
     )
 
 
@@ -411,11 +526,11 @@ def get_new_since(
     """Return properties first_seen on or after since_date."""
     if source:
         return conn.execute(
-            "SELECT * FROM properties WHERE first_seen >= ? AND source = ? AND status = 'active' ORDER BY first_seen DESC LIMIT ?",
+            "SELECT * FROM properties WHERE first_seen >= ? AND source = ? AND status = 'active' ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ?",
             (since_date, source, limit),
         ).fetchall()
     return conn.execute(
-        "SELECT * FROM properties WHERE first_seen >= ? AND status = 'active' ORDER BY first_seen DESC LIMIT ?",
+        "SELECT * FROM properties WHERE first_seen >= ? AND status = 'active' ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ?",
         (since_date, limit),
     ).fetchall()
 
@@ -428,12 +543,29 @@ def get_all_active(
     """Return active properties."""
     if source:
         return conn.execute(
-            "SELECT * FROM properties WHERE status = 'active' AND source = ? ORDER BY first_seen DESC LIMIT ?",
+            "SELECT * FROM properties WHERE status = 'active' AND source = ? ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ?",
             (source, limit),
         ).fetchall()
     return conn.execute(
-        "SELECT * FROM properties WHERE status = 'active' ORDER BY first_seen DESC LIMIT ?",
+        "SELECT * FROM properties WHERE status = 'active' ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ?",
         (limit,),
+    ).fetchall()
+
+
+def get_by_court_case(
+    conn: sqlite3.Connection,
+    court_case: str,
+    exclude_id: Optional[int] = None,
+) -> List[sqlite3.Row]:
+    """Return active properties sharing a court case (for cross-source matching)."""
+    if exclude_id is not None:
+        return conn.execute(
+            "SELECT * FROM properties WHERE status = 'active' AND court_case = ? AND id != ?",
+            (court_case, exclude_id),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM properties WHERE status = 'active' AND court_case = ?",
+        (court_case,),
     ).fetchall()
 
 

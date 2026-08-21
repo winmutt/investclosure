@@ -60,6 +60,12 @@ try:
 except ImportError as e:
     logger.warning("newspaper_notices not available: %s", e)
 
+try:
+    from scraper.buncombe_tax import BuncombeTaxScraper
+    SCRAPER_MODULES["buncombe_tax"] = BuncombeTaxScraper
+except ImportError as e:
+    logger.warning("buncombe_tax not available: %s", e)
+
 
 # ---------------------------------------------------------------------------
 # Core run logic
@@ -120,11 +126,20 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
                 foreclosure_key=prop.get("foreclosure_key"),
                 parcel_number=prop.get("parcel_number"),
                 deed_book=prop.get("deed_book"),
+                court_case=prop.get("court_case"),
+                initial_auction_date=prop.get("initial_auction_date"),
+                upset_bid_end=prop.get("upset_bid_end"),
                 google_maps_url=prop.get("google_maps_url"),
                 google_maps_topo_url=prop.get("google_maps_topo_url"),
                 gis_url=prop.get("gis_url"),
                 elevation_ft=prop.get("elevation_ft"),
                 parcel_screenshot=prop.get("parcel_screenshot"),
+                raw_source_text=prop.get("raw_source_text"),
+                raw_parcel_text=prop.get("raw_parcel_text"),
+                raw_deed_text=prop.get("raw_deed_text"),
+                raw_paragraph=prop.get("raw_paragraph"),
+                extracted_deed_plat=prop.get("extracted_deed_plat"),
+                extracted_pin=prop.get("extracted_pin"),
             )
 
             if action == "duplicate":
@@ -142,6 +157,17 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
 
     # Log scrape run completion
     _end_logging(conn, run_id, len(properties), new_count, dup_count, "completed")
+
+    # Auto-enrich newly-found properties with NC OneMap GIS data
+    try:
+        from scraper.nc_gis_lookup import enrich_properties
+        enrich_result = enrich_properties(source=scraper_name)
+        if isinstance(enrich_result, dict):
+            print(f"  Enriched: {enrich_result.get('enriched', 0)}, "
+                  f"skipped(no parcel): {enrich_result.get('skipped_no_parcel', 0)}, "
+                  f"failed: {enrich_result.get('failed', 0)}")
+    except Exception as e:
+        logger.warning("Auto-enrich failed: %s", e)
 
     # Track success
     _reset_failure_counter(scraper_name)
@@ -259,7 +285,7 @@ def cmd_run_all() -> list[dict]:
             total_found += result.get("found", 0)
             total_new += result.get("new", 0)
 
-    # Auto-archive properties with 0 < acres < 2
+     # Auto-archive properties with 0 < acres < 2
     print(f"\n{'='*60}")
     print(f"  Auto-archiving properties with 0 < acres < 2 ...")
     conn = _ensure_db()
@@ -438,6 +464,11 @@ def main():
         "--enrich-source",
         help="Enrich only properties from a specific source (e.g., 'kania_law')",
     )
+    parser.add_argument(
+        "--repair-links",
+        action="store_true",
+        help="Rebuild map/GIS links for all properties (fast: reuses stored coords)",
+    )
 
     args = parser.parse_args()
 
@@ -454,11 +485,15 @@ def main():
 
     if args.list:
         cmd_list()
+    elif args.repair_links:
+        from scraper.backfill_links import backfill_links
+        result = backfill_links()
+        print(f"\n  Link repair complete: {result.get('updated', 0)} updated, "
+              f"{result.get('api_calls', 0)} API calls")
     elif args.enrich:
         result = cmd_enrich(args.enrich_source)
         if isinstance(result, dict):
             print(f"\n  Enrichment complete: {result.get('enriched', 0)} enriched, "
-                  f"{result.get('skipped_already_gis', 0)} skipped(gis), "
                   f"{result.get('skipped_no_parcel', 0)} skipped(no parcel), "
                   f"{result.get('failed', 0)} failed")
         else:

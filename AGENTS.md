@@ -54,6 +54,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 |---|---|
 | `scraper/base.py` | BaseScraper — captcha solving, acreage parsing, chromium detection |
 | `scraper/kania_law.py` | Kania Law scraper — NC tax foreclosure auctions, NC OneMap enrichment |
+| `scraper/buncombe_tax.py` | Buncombe County tax foreclosure scraper — Trumba iCal feed (`tax-foreclosures-all.ics`), NC OneMap enrichment |
 | `scraper/zillow.py` | Zillow scraper — NC foreclosure listings (anti-bot blocked) |
 | `scraper/zls_nc.py` | ZLS-NC scraper — Zacchaeus Legal foreclosure listings, filtered to NC mountain counties |
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties |
@@ -63,17 +64,17 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/server.py` | Flask dashboard — port 5001, auto-refresh listing |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 21 mountain counties |
 | `.env.example` | Template for environment variables |
-| `data/` | Runtime data — SQLite DB, backups, logs |
 
 ## Scrapers
 
 | Scraper | Source | Target | Captcha | GIS Enrichment |
 |---|---|---|---|---|
 | `kania_law` | kaniabailbond.com | NC (filtered) | None | NC OneMap statewide |
+| `buncombe_tax` | trumba.com/calendars/tax-foreclosures-all.ics | Buncombe | None | NC OneMap statewide |
 | `zillow` | zillow.com | All NC (blocked) | None | Google Maps fallback |
 | `zls_nc` | zls-nc.com/listings | NC mountain only | None | NC OneMap statewide |
 
-All scrapers use **MIN_ACREAGE = 5.0** (configurable via `INVESTCLOSURE_MIN_ACRES`). Kania Law scrapes ALL 183 records from the API but only processes the 21 qualifying NC mountain counties. ZLS NC scrapes all listings but filters to NC mountain counties only.
+All scrapers use **MIN_ACREAGE = 5.0** (configurable via `INVESTCLOSURE_MIN_ACRES`). Kania Law scrapes ALL 183 records from the API but only processes the 21 qualifying NC mountain counties. ZLS NC scrapes all listings but filters to NC mountain counties only. Buncombe Tax scrapes the county's Trumba iCal feed (bid, case #, PIN, redeem flag) — all Buncombe properties qualify.
 
 ## Qualified Counties
 
@@ -99,6 +100,7 @@ Qualifying counties: **21 NC mountain counties** (elevation >1700ft, within 250m
 python3 -m scraper --list            # List available scrapers
 python3 -m scraper                   # Run all scrapers
 python3 -m scraper --scraper kania_law  # Run Kania Law only
+python3 -m scraper --scraper buncombe_tax  # Run Buncombe Tax only
 python3 -m scraper --scraper zls_nc     # Run ZLS-NC only
 python3 -m scraper --status              # DB stats
 python3 -m scraper --new                 # New properties since last run
@@ -119,9 +121,51 @@ docker compose up --build      # Docker alternative
 podman ps          # Check container status
 podman logs investclosure  # View logs
 podman exec investclosure python3 -m scraper --status  # Run inside container
-
-# Volume mount: ./scraper:/app/scraper — code changes take effect immediately
 ```
+
+## Directory Structure
+
+**Volume mounts** — host paths sync to container paths via `docker-compose.yml`:
+
+| Host Path | Container Path | Purpose |
+|---|---|---|
+| `./data/` | `/app/data/` | SQLite DB, backups, logs |
+| `./reports/` | `/app/reports/` | Generated reports |
+| `./scraper/` | `/app/scraper/` | Scraper source code (volume-mounted, live edits) |
+| `./templates/` | `/app/templates/` | Flask HTML templates |
+| `./static/` | `/app/static/` | Flask static assets (CSS, JS) |
+
+**Container layout** (`/app/` inside `investclosure`):
+
+```
+/app/
+├── data/                  ← host ./data/
+│   ├── investclosure.db   ← main SQLite database
+│   ├── backups/           ← DB backups
+│   └── logs/              ← application logs
+├── reports/               ← host ./reports/
+├── scraper/               ← host ./scraper/ (live volume mount)
+│   ├── __pycache__/       ← remove after editing .py files
+│   ├── base.py
+│   ├── kania_law.py
+│   ├── zillow.py
+│   ├── zls_nc.py
+│   ├── nc_gis_lookup.py
+│   ├── config.py
+│   ├── db.py
+│   ├── run.py
+│   ├── server.py
+│   ├── gis_urls.py
+│   └── tmp/               ← temporary files (debug.log, etc.)
+├── templates/             ← host ./templates/
+└── static/                ← host ./static/
+```
+
+**Key notes**:
+- `scraper/` volume-mounted — edits take effect immediately, no rebuild needed
+- `data/` volume-mounted — persists across container restarts/rebuilds
+- Always `rm -rf /app/scraper/__pycache__` after editing `.py` files inside the container
+- Temporary files go in `scraper/tmp/` (not host `/tmp`)
 
 ## Configuration
 

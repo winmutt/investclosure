@@ -194,6 +194,7 @@ class KaniaLawScraper(BaseScraper):
         prop: PropertyData = {
             "source": self.SOURCE_NAME,
             "source_listing_id": rec.get("courtfile") or str(rec.get("___id___", "")),
+            "court_case": rec.get("courtfile") or None,
             "url": "https://kanialawfirm.com/tax-foreclosures/foreclosure-listings/",
             "address": address,
             "city": city,

@@ -15,10 +15,13 @@ Architecture: 2-phase per scraper
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 import re
 import time
+from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin
 
@@ -44,11 +47,229 @@ PROPERTY_RELEVANT_SLUGS = [
     "creditor", "filing", "publication", "bidding",
 ]
 
+# Citizen Times / Gannett NC Public Notices search API
+CITIZEN_TIMES_API_URL = "https://www.citizen-times.com/public-notices/api/search"
+CITIZEN_TIMES_STATE_FILE = "citizen_times_state.json"
+CITIZEN_TIMES_BACKFILL_DAYS = 180      # initial 6-month lookback
+CITIZEN_TIMES_REGULAR_DAYS = 7         # regular rolling window
+
+# Signals that a notice is a real-property foreclosure (as opposed to
+# probate/creditor, UCC, or miscellaneous legal filings)
+_FORECLOSURE_SIGNALS = [
+    "foreclos", "tax sale", "tax lien", "substitute trustee",
+    "trustee's sale", "sheriff", "sale of real", "deed of trust",
+]
+_PROBATE_SIGNALS = [
+    "notice to creditors", "probate", "having qualified as",
+    "estate file", "executor of the estate",
+]
+
 
 def _slug_to_title(slug: str) -> str:
     if not slug:
         return "Unknown"
     return " ".join(slug.replace("-", " ").title().split())
+
+
+def _citizen_times_state_path() -> Path:
+    """Path to the JSON state file tracking the last successful lookback end."""
+    return config.data_dir / CITIZEN_TIMES_STATE_FILE
+
+
+def _read_citizen_times_state() -> Optional[str]:
+    """Return the last successful end date (ISO) from state, or None."""
+    try:
+        p = _citizen_times_state_path()
+        if p.exists():
+            data = json.loads(p.read_text())
+            return data.get("last_end")
+    except Exception as exc:
+        logger.warning("citizen-times state read failed: %s", exc)
+    return None
+
+
+def _write_citizen_times_state(end_date: str) -> None:
+    """Persist the last successful end date so the next run is incremental."""
+    try:
+        p = _citizen_times_state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"last_end": end_date}, indent=2))
+    except Exception as exc:
+        logger.warning("citizen-times state write failed: %s", exc)
+
+
+def _extract_notice_county(text: str, slug: str = "") -> Optional[str]:
+    """Extract the NC county name from a public-notice text body."""
+    if text:
+        m = re.search(r"COUNTY\s+OF\s+([A-Z][A-Z]+)", text, re.IGNORECASE)
+        if m:
+            return m.group(1).title()
+        m = re.search(r"(\b[A-Z][A-Z]+)\s+COUNTY\b", text)
+        if m and m.group(1) != "NORTH":
+            return m.group(1).title()
+        m = re.search(r"late\s+of\s+([A-Za-z]+)\s+County", text, re.IGNORECASE)
+        if m:
+            return m.group(1).title()
+        m = re.search(
+            r"THE\s+GENERAL\s+COURT\s+OF\s+JUSTICE[^\n]*?\n\s*[A-Z]+.*?\n\s*([A-Z][A-Z]+)\s+COUNTY",
+            text,
+            re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).title()
+    if slug:
+        m = re.search(r"-([a-z]+)-county-", slug)
+        if m:
+            return m.group(1).title()
+    return None
+
+
+def _extract_notice_address(text: str) -> Optional[str]:
+    """Extract 'Address of Property: 328 Wooten Cove Rd.' style addresses."""
+    m = re.search(r"Address\s+of\s+(?:the\s+)?Property\s*:?\s*([^\n]+)", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip().strip(".,")
+    return None
+
+
+def _extract_auction_date(text: str) -> Optional[str]:
+    """Extract a 'Date of Sale: August 18, 2026' auction date as ISO."""
+    m = re.search(
+        r"(?:Date\s+of\s+Sale|sale\s+date)\s*:?\s*"
+        r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        m = re.search(
+            r"\bon\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})"
+            r"\s+(?:at\s+\d{1,2}:\d{2}\s*[AP]M)?",
+            text,
+            re.IGNORECASE,
+        )
+    if not m:
+        return None
+    month = {
+        "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+        "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+    }[m.group(1)[:3].title()]
+    try:
+        day, year = int(m.group(2)), int(m.group(3))
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    except ValueError:
+        return None
+
+
+def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData]:
+    """Scrape foreclosure notices from the Citizen Times / Gannett API.
+
+    Uses keyword='foreclosure' so probate/creditor notices (like the old
+    NOTICE TO CREDITORS records) are excluded. The first run backfills
+    ``CITIZEN_TIMES_BACKFILL_DAYS`` (180); later runs use a rolling
+    ``CITIZEN_TIMES_REGULAR_DAYS`` (7) window starting from the last
+    successful run, persisted to ``citizen_times_state.json``.
+    """
+    import requests as http_req
+
+    last_end = _read_citizen_times_state()
+    if lookback_days is None:
+        lookback_days = CITIZEN_TIMES_REGULAR_DAYS if last_end else CITIZEN_TIMES_BACKFILL_DAYS
+
+    today = date.today()
+    end_date = today.isoformat()
+    start_date = (today - timedelta(days=lookback_days)).isoformat()
+
+    logger.info("Citizen Times: fetching 'foreclosure' notices %s .. %s", start_date, end_date)
+
+    properties: list[PropertyData] = []
+    scraper = NewspaperNoticesScraper()
+    page, total = 1, None
+    seen: set[str] = set()
+    try:
+        while total is None or len(seen) < total:
+            body = {
+                "publication": None,
+                "markets": None,
+                "keyword": "foreclosure",
+                "noticeType": "",
+                "state": "North Carolina",
+                "startDate": start_date,
+                "endDate": end_date,
+                "page": page,
+            }
+            resp = http_req.post(
+                CITIZEN_TIMES_API_URL,
+                headers={
+                    "Content-Type": "text/plain;charset=UTF-8",
+                    "Referer": "https://www.citizen-times.com/public-notices",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                },
+                data=json.dumps(body),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            hits = (data.get("hits") or {}).get("hits") or []
+            total = ((data.get("hits") or {}).get("total") or {}).get("value", 0)
+            if not hits:
+                break
+            for hit in hits:
+                src = hit.get("_source") or {}
+                nid = src.get("id")
+                text = src.get("text") or ""
+                if not nid or nid in seen:
+                    continue
+                seen.add(nid)
+                slug = src.get("slug") or ""
+                county = _extract_notice_county(text, slug)
+                if not county or county.lower() not in NC_FORECLOSURE_COUNTIES:
+                    continue
+                case = scraper._extract_court_case(text)
+                pin = scraper._extract_pin(text)
+                deed_plat = scraper._extract_deed_plat(text)
+                addr = _extract_notice_address(text)
+                auction = _extract_auction_date(text)
+                if auction is None:
+                    auction = src.get("date_start")
+                title = _slug_to_title(slug)
+                parts = [part for part in [
+                    title,
+                    f"Case: {case}" if case else None,
+                    f"Auction: {auction}" if auction else None,
+                    f"PIN: {pin}" if pin else None,
+                    f"Deed/Plat: {deed_plat}" if deed_plat else None,
+                ] if part]
+                properties.append({
+                    "source": "newspaper_notices",
+                    "source_listing_id": nid,
+                    "court_case": case,
+                    "extracted_deed_plat": deed_plat,
+                    "extracted_pin": pin,
+                    "deed_book": deed_plat if (deed_plat or "").startswith("Deed:") else None,
+                    "raw_source_text": text,
+                    "raw_paragraph": text,
+                    "url": "https://www.citizen-times.com/public-notices/",
+                    "address": addr,
+                    "city": None,
+                    "county": county.title(),
+                    "state": "NC",
+                    "zip_code": None, "latitude": None, "longitude": None,
+                    "price": None, "acres": None,
+                    "description": f"[Citizen Times] {' -- '.join(parts)}",
+                    "property_type": "public_notice", "image_url": None,
+                    "parcel_number": pin,
+                    "auction_date": auction, "close_date": None,
+                })
+            page += 1
+            time.sleep(0.5)
+    except Exception as exc:
+        logger.error("Citizen Times search failed: %s", exc)
+        return properties
+
+    _write_citizen_times_state(end_date)
+    logger.info("Citizen Times: %d mountain-county foreclosure notices", len(properties))
+    return properties
 
 
 class NewspaperNoticesScraper(BaseScraper):
@@ -66,6 +287,7 @@ class NewspaperNoticesScraper(BaseScraper):
             self._scrape_watauga_democrat,
             self._scrape_sylvaherald,
             self._scrape_mitchellnews,
+            self._scrape_citizen_times,
         ]:
             try:
                 props = scrape_fn()
@@ -73,13 +295,14 @@ class NewspaperNoticesScraper(BaseScraper):
             except Exception as e:
                 logger.warning("%s failed: %s", scrape_fn.__name__, e)
 
-        # Deduplicate by source + URL
-        seen: set[str] = set()
+        # Deduplicate by (source_listing_id, url) so notices sharing a base
+        # URL (citizen-times, Mitchell News) are not collapsed together.
+        seen: set[tuple] = set()
         unique: list[PropertyData] = []
         for p in all_properties:
-            url = p.get("url") or ""
-            if url and url not in seen:
-                seen.add(url)
+            key = (p.get("source_listing_id") or "", p.get("url") or "")
+            if key not in seen:
+                seen.add(key)
                 unique.append(p)
         logger.info("Newspaper notices: %d raw -> %d unique", len(all_properties), len(unique))
         return unique
@@ -99,56 +322,129 @@ class NewspaperNoticesScraper(BaseScraper):
         logger.info("Newspaper county filter: %d kept, %d skipped", len(filtered), skipped)
         return filtered
 
-    # ── Parcel extraction helpers ──────────────────────────────────────────
+    # ── Parcel / PIN / deed / plat extraction helpers ─────────────────────
 
-    def _extract_parcel(self, text: str) -> Optional[str]:
-        """Return first parcel/REID/PIN/PID/Plat/Deed reference found in text."""
-        # Tax parcel: "Watauga County tax parcel #1984-32-8523-000"
-        m = re.search(r'[Tt]ax\s+parcel\s*#\s*(\d{4,5}-[\d\u2013\-]+)', text)
-        if m:
-            return m.group(1)
+    @staticmethod
+    def _normalize_pin(raw: str) -> str:
+        """Normalize PIN separators: en-dash/'?'/spaces -> hyphens."""
+        return re.sub(r"[\s\u2013?]+", "-", raw.strip().strip(",")).strip("-")
 
-        # Generic parcel: "Parcel #1984-32-8523-000"  |  "Parcel 1984 32 8523 000"
-        m = re.search(r'[Pp]arcel\s*[#\s]\s*(\d{3,}-[\d\u2013\-]+)', text)
-        if m:
-            return m.group(1)
-        m = re.search(r'[Pp]arcel\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\u2013\-]{5,})', text)
-        if m:
-            return m.group(1)
+    def _extract_pin(self, text: str) -> Optional[str]:
+        """Return the tax parcel / PIN referenced in *text*, or None.
 
-        # REID (Real Estate ID -- NC tax deed)
-        m = re.search(r'REID\s*[:#]?\s*(\d{4,})', text, re.IGNORECASE)
-        if m:
-            return m.group(1)
+        Handles the formats seen in our county notices:
+          "Parcel ID #9508-82-4582-000"          (Transylvania Times)
+          "parcel ID 7567-93-8054"                (Jackson/Sylva Herald)
+          "parcel identification number 9775-39-2342-00000"  (Buncombe)
+          "PIN 9738-38-5063" / "PIN: 061878609600000"
+          "Parcel #1984-32-8523-000"              (Watauga)
+        """
+        patterns = [
+            # "tax parcel #1984-32-8523-000"
+            r"[Tt]ax\s+parcel\s*#?\s*(\d{3,}-[\d\u2013\-?]+)",
+            # "Parcel ID #9508-82-4582-000" | "parcel ID 7567-93-8054"
+            r"[Pp]arcel\s+ID\s*[:#]?\s*(\d{3,}-[\d\u2013\-?]+)",
+            # "parcel identification number 9775-39-2342-00000 and 9775-39-0376-00000"
+            r"[Pp]arcel\s+[Ii]dentification\s+[Nn]umber\s*[:#]?\s*"
+            r"((?:\d[\d\u2013\-? ]*?))(?=\s+and\s|\s*[;,.]|\s+$)",
+            # "Parcel #1984-32-8523-000" | "Parcel:1984-32-8523-000"
+            r"[Pp]arcel\s*[:#]\s*(\d{3,}-[\d\u2013\-?]+)",
+            # "Parcel 1984-32-8523-000"
+            r"[Pp]arcel\s+(\d{3,}-[\d\u2013\-?]+)",
+            # "PIN 9738-38-5063" | "PIN: 061878609600000" | "PIN 9775-39-2342?00000"
+            r"\bPIN\s*[:#]?\s*(\d{4,}(?:-[\d\u2013\-?]+)+|\d{12,})",
+            # "PID: 1984-42-0606-000"
+            r"\bPID\s*[:#]?\s*(\d{3,}-[\d\u2013\-?]+)",
+            # "REID 12345" (NC tax deed)
+            r"\bREID\s*[:#]?\s*(\d{4,})",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                return self._normalize_pin(m.group(1))
+        return None
 
-        # PIN / PID -- Parcel Identification No / Parcel ID
-        # Hyphen-separated: PIN: 1984-42-0606-000
-        m = re.search(r'(?:Parcel\s+ID\s+PIN?)\s*[:#]?\s*(\d{3,}-[\d\u2013\-]+)', text, re.IGNORECASE)
-        if not m:
-            m = re.search(r'(?:(?:Parcel\s+ID\s+)?PIN|PID)\s*[:#]?\s*(\d{3,}-[\d\u2013\-]+)', text, re.IGNORECASE)
-        if not m:
-            # Space-separated: PIN: 1984 42 0606 000 (10+ digits)
-            m = re.search(r'(?:(?:Parcel\s+ID\s+)?PIN|PID)\s*[:#]?\s*(\d{4}\s+\d+\s+\d+\s+\d+)', text, re.IGNORECASE)
+    def _extract_deed_plat(self, text: str) -> Optional[str]:
+        """Return a deed / plat book reference, e.g. 'Deed:Bk1341Pg599' / 'Plat:File15Pg282'."""
+        # Deed: "Deed Book 1341, Page 599" | "Deed Book 794 at Page 609" | "Deed Vol 1234 Page 567"
+        m = re.search(
+            r"[Dd]eed\s+(?:[Bb]ook|[Bb]k|[Vv]ol\.?|[Vv]olume)\s+(\d+)\s*,?\s*"
+            r"(?:at\s+)?(?:[Pp]age|[Pp]g)\.?\s+(\d+)",
+            text,
+        )
         if m:
-            return re.sub(r'\s+', '-', m.group(1))
+            return f"Deed:Bk{m.group(1)}Pg{m.group(2)}"
 
-        # Plato / Plat Book + Page: "Plato Book 238 Page 10"
-        m = re.search(r'(?:Plat(o)?)\s+(?:Book|Bk)\s+(\d+),?\s+(?:Page|Pg)\s+(\d+)', text, re.IGNORECASE)
+        # Plat book: "Plat Book 211, Page 72" | "Plat Book 11 Page 93"
+        m = re.search(
+            r"[Pp]lat\s+(?:[Bb]ook|[Bb]k)\s+(\d+)\s*,?\s*"
+            r"(?:at\s+)?(?:[Pp]age|[Pp]g)\.?\s+(\d+)",
+            text,
+        )
         if m:
-            return f"Plato:Bk{m.group(2)}Pg{m.group(3)}"
+            return f"Plat:Bk{m.group(1)}Pg{m.group(2)}"
 
-        # Deed Book + Page: "Deed Book 1234, Page 567" / "Deed Vol 1234 Page 567"
-        m = re.search(r'(?:Deed)\s+(?:Book|Bk|Vol\.?|Volume)\s+(\d+),?\s+(?:Page|Pg)\s+(\d+)', text, re.IGNORECASE)
+        # Plat file: "Plat File 15, Page 282" (Transylvania registry)
+        m = re.search(
+            r"[Pp]lat\s+[Ff]ile\s+(\d+)\s*,?\s*"
+            r"(?:at\s+)?(?:[Pp]age|[Pp]g)\.?\s+(\d+)",
+            text,
+        )
+        if m:
+            return f"Plat:File{m.group(1)}Pg{m.group(2)}"
+
+        # Plat cabinet: "Plat Cabinet 25 at Slide 378" (Jackson registry)
+        m = re.search(
+            r"[Pp]lat\s+[Cc]abinet\s+(\d+)\s*,?\s*(?:at\s+)?(?:[Ss]lide)\s+(\d+)",
+            text,
+        )
+        if m:
+            return f"Plat:Cabinet{m.group(1)}Slide{m.group(2)}"
+
+        # Bare book/page used for recordings without a Deed/Plat prefix:
+        # "recorded in Book 332 at Page 316" / "recorded in Book 1848, Page 510"
+        # Also citizen-times style: "Book : 6481 Page: 631" / "Book: 655 Page: 432"
+        m = re.search(
+            r"[Bb]ook\s*:?\s+(\d+)\s*,?\s*(?:at\s+)?(?:[Pp]age|[Pp]g)\.?\s*:?\s+(\d+)",
+            text,
+        )
         if m:
             return f"Deed:Bk{m.group(1)}Pg{m.group(2)}"
 
         return None
 
+    def _extract_court_case(self, text: str) -> Optional[str]:
+        """Return the NC court case number referenced in *text*, or None.
+
+        Format: YY + court division/type letters + sequence, e.g.
+          "26CV000298-870"   (Buncombe District Court, civil)
+          "26SP000450-100"   (Special Proceeding — foreclosure sales)
+          "22CVD003028-100"  (District civil)
+          "26JT000094-100"   (Juvenile/Trust, occasionally tax foreclosure)
+        """
+        # NC court case: 2-digit year + 2-3 letters + sequence, optional -suffix
+        # Also handles citizen-times dashed-year form "25-CV015317-250"
+        patterns = [
+            r"\b(\d{2}(?:CVS|CVD|CVR|CV|SP|SPE|JT|JA|E)\d{3,6}(?:-\d{1,4})?)\b",
+            r"\b(\d{2}-(?:CVS|CVD|CVR|CV|SP|SPE|JT|JA|E)\d{3,6}(?:-\d{1,4})?)\b",
+            r"\b(?:Case (?:No|Number|#)\.?\s*:?\s*)(\d{2}-?[A-Z]{1,3}\d{3,6}(?:-\d{1,4})?)\b",
+            r"\b(?:In the (?:General|District) Court[^,]*,\s*)(\d{2}-?[A-Z]{1,3}\d{3,6}(?:-\d{1,4})?)\b",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                return m.group(1).strip().upper()
+        return None
+
+    def _extract_parcel(self, text: str) -> Optional[str]:
+        """Backward-compatible alias for _extract_pin."""
+        return self._extract_pin(text)
+
     # ── Phase-2 helper: visit a single detail URL in an isolated tab ───────
 
     def _visit_detail(self, url: str) -> dict:
-        """Open *url* in a fresh tab and return {parcel, title}."""
-        parcel, title = None, None
+        """Open *url* in a fresh tab and return {parcel, pin, deed_plat, court_case, title, raw_text}."""
+        parcel, title, deed_plat, court_case, raw_text = None, None, None, None, None
         bw = sync_playwright().start()
         try:
             browser = bw.chromium.launch(
@@ -171,10 +467,13 @@ class NewspaperNoticesScraper(BaseScraper):
                     timeout=10000,
                 )
 
-                # parcel text
                 body_text = page.inner_text("body") or ""
-                # Skip error/malformed pages, then extract parcel
-                parcel = self._extract_parcel(body_text) if (body_text and not any(phrase in body_text.lower() for phrase in ["sorry", "error", "blocked", "404"])) else None
+                raw_text = body_text
+                skip = (not body_text
+                        or any(phrase in body_text.lower() for phrase in ["sorry", "error", "blocked", "404"]))
+                parcel = None if skip else self._extract_pin(body_text)
+                deed_plat = None if skip else self._extract_deed_plat(body_text)
+                court_case = None if skip else self._extract_court_case(body_text)
 
                 # better title from heading
                 for selector, tag in [("h1", "h1"), ("h2", "h2"), ('[class*="article-title"]', "text")]:
@@ -198,7 +497,7 @@ class NewspaperNoticesScraper(BaseScraper):
                 pass
             bw.stop()
 
-        return {"parcel": parcel, "title": title}
+        return {"parcel": parcel, "pin": parcel, "deed_plat": deed_plat, "court_case": court_case, "title": title, "raw_text": raw_text}
 
     # ── Phase-1 scrapers: return list of (url, card_data) from listing page ─
 
@@ -256,6 +555,12 @@ class NewspaperNoticesScraper(BaseScraper):
                 desc += f" -- {c['posted']}"
             properties.append({
                 "source": "newspaper_notices",
+                "court_case": detail.get("court_case"),
+                "extracted_deed_plat": detail.get("deed_plat"),
+                "extracted_pin": detail.get("pin"),
+                "deed_book": detail.get("deed_plat") if (detail.get("deed_plat") or "").startswith("Deed:") else None,
+                "raw_source_text": detail.get("raw_text"),
+                "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"tt_{ad_id}",
                 "url": d_url,
                 "address": None, "city": "Brevard", "county": "Transylvania", "state": "NC",
@@ -313,6 +618,12 @@ class NewspaperNoticesScraper(BaseScraper):
                 desc += f" -- {c['date']}"
             properties.append({
                 "source": "newspaper_notices",
+                "court_case": detail.get("court_case"),
+                "extracted_deed_plat": detail.get("deed_plat"),
+                "extracted_pin": detail.get("pin"),
+                "deed_book": detail.get("deed_plat") if (detail.get("deed_plat") or "").startswith("Deed:") else None,
+                "raw_source_text": detail.get("raw_text"),
+                "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"wd_{c['uuid']}",
                 "url": d_url,
                 "address": None, "city": "Boone", "county": "Watauga", "state": "NC",
@@ -369,6 +680,12 @@ class NewspaperNoticesScraper(BaseScraper):
                 desc += f" -- {c['date']}"
             properties.append({
                 "source": "newspaper_notices",
+                "court_case": detail.get("court_case"),
+                "extracted_deed_plat": detail.get("deed_plat"),
+                "extracted_pin": detail.get("pin"),
+                "deed_book": detail.get("deed_plat") if (detail.get("deed_plat") or "").startswith("Deed:") else None,
+                "raw_source_text": detail.get("raw_text"),
+                "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"sh_{c['uid']}",
                 "url": d_url,
                 "address": None, "city": "Sylva", "county": "Jackson", "state": "NC",
@@ -425,6 +742,12 @@ class NewspaperNoticesScraper(BaseScraper):
                 desc += f" -- {c['date']}"
             properties.append({
                 "source": "newspaper_notices",
+                "court_case": detail.get("court_case"),
+                "extracted_deed_plat": detail.get("deed_plat"),
+                "extracted_pin": detail.get("pin"),
+                "deed_book": detail.get("deed_plat") if (detail.get("deed_plat") or "").startswith("Deed:") else None,
+                "raw_source_text": detail.get("raw_text"),
+                "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"mn_{c['uid']}",
                 "url": url,
                 "address": None, "city": "Spruce Pine", "county": "Mitchell", "state": "NC",
@@ -437,3 +760,7 @@ class NewspaperNoticesScraper(BaseScraper):
             })
         logger.info("Mitchell News: %d legal notices", len(properties))
         return properties
+
+    def _scrape_citizen_times(self, lookback_days: Optional[int] = None) -> list[PropertyData]:
+        """Scrape Citizen Times / Gannett NC Public Notices search API."""
+        return _try_citizen_times(lookback_days=lookback_days)

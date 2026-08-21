@@ -4,12 +4,12 @@
 {% block topbar_title %}Dashboard{% endblock %}
 {% block topbar_subtitle %}NC & TN foreclosure properties{% endblock %}
 
-{% block content %}
+{% macro tile_grid(prop_list, category='') %}
 <div class="tiles">
-    {% for prop in properties %}
+    {% for prop in prop_list %}
     <div class="tile">
         {% if prop.source_listing_id %}
-        <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-header-link">
+        <a href="{{ url_for('property_detail', property_id=prop.id, category=category or None) }}" class="tile-header-link">
         {% endif %}
         <div class="tile-badge-badge">
             {% if prop.seen_count <= 3 %}
@@ -41,7 +41,7 @@
                 <span>${{ "%.0f"|format(prop.price / 100) }}</span>
                 {% endif %}
             </div>
-            <div class="tile-seen">Updated: {{ prop.last_seen }}</div>
+            <div class="tile-seen">Updated: {{ prop.last_updated or prop.first_seen }}</div>
         </div>
         {% if prop.source_listing_id %}
         </a>
@@ -58,7 +58,7 @@
                 GIS
             </a>
             {% endif %}
-            <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-action-btn">Details</a>
+            <a href="{{ url_for('property_detail', property_id=prop.id, category=category or None) }}" class="tile-action-btn">Details</a>
             <form action="{{ url_for('archive_property', property_id=prop.id) }}" method="POST" style="display:inline; flex:1">
                 <button type="submit" class="tile-action-btn tile-action-btn-archive" onclick="return confirm('Archive this property?')">
                     Archive
@@ -68,16 +68,34 @@
     </div>
     {% else %}
     <div class="tile tile-empty">
-        <p>No properties found. Run the scrapers to populate listings.</p>
-        <a href="{{ url_for('run_scraper') }}" class="btn" style="margin-top:1rem">Run Scrapers</a>
+        <p>No properties in this category.</p>
         <a href="{{ url_for('new') }}" class="btn btn-secondary" style="margin-top:1rem">View New Listings</a>
     </div>
     {% endfor %}
 </div>
 
-{% if properties|length > 0 %}
+{% if prop_list|length > 0 %}
 <div class="pagination-info">
-    <span>{{ properties|length }} of {{ global_stats.total_active if global_stats else 0 }} active properties</span>
+    <span>{{ prop_list|length }} of {{ global_stats.total_active if global_stats else 0 }} active properties</span>
 </div>
 {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="tabs" data-tab-group>
+    <button type="button" class="tab-btn active" data-tab="listing" aria-selected="true">
+        Foreclosure Listings <span class="tab-count">{{ listings|length }}</span>
+    </button>
+    <button type="button" class="tab-btn" data-tab="notice" aria-selected="false">
+        Notices <span class="tab-count">{{ notices|length }}</span>
+    </button>
+</div>
+
+<div class="tab-pane" data-tab-pane="listing">
+    {{ tile_grid(listings, 'listing') }}
+</div>
+
+<div class="tab-pane" data-tab-pane="notice" hidden>
+    {{ tile_grid(notices, 'notice') }}
+</div>
 {% endblock %}

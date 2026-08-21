@@ -195,6 +195,7 @@ class HutchensLawScraper(BaseScraper):
             prop: PropertyData = {
                 "source": self.SOURCE_NAME,
                 "source_listing_id": case_no or sp_no or None,
+                "court_case": sp_no or None,
                 "url": f"{HUTCHENS_URL}",
                 "address": address if address else None,
                 "city": city if city else None,

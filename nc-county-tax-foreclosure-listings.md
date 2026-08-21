@@ -60,13 +60,15 @@ To find foreclosure info for these counties, contact the county Tax Office direc
 
 ### 7. Caldwell County
 **County Seat:** Lenoir  
-**Gov Website:** https://www.caldwellcountync.org/  
-**Status:** ❌ No foreclosure-related links found on site
+**Tax Assessment:** https://www.caldwellcountynctax.com/taxes.html#/  
+**QPublic:** https://qpublic.net/nc/caldwell/  
+**Status:** ✓ Tax card access confirmed
 
 ### 8. Cherokee County
 **County Seat:** Murphy  
-**Gov Website:** Unknown (site not reachable)  
-**Status:** ❌ Foreclosure info available via local newspaper
+**Tax Assessment:** http://www.cherokeecounty-nc.gov/  
+**QPublic:** https://qpublic.net/nc/cherokee/  
+**Status:** ✓ County website access confirmed
 
 ### 9. Clay County
 **County Seat:** Hayesville  
@@ -137,6 +139,42 @@ To find foreclosure info for these counties, contact the county Tax Office direc
 
 ---
 
+
+---
+
+## NC County Tax Card / Property Record Card Search Systems
+
+**Data source:** [QPublic NC Assessors](https://qpublic.net/nc/ncassessors/) — verified 2026-08-10.  
+**Note:** QPublic provides contact info for each county tax assessor; the `loadpage.php?refurl=` links redirect to the county's own assessment/GIS portal. Many NC counties now use their own online property search rather than the QPublic aggregator.
+
+### Verified QPublic Links for the 21 Mountain Counties
+
+| # | County | County Seat | Tax Assessor Contact | QPublic Verified Link |
+|---|---|---|---|---|
+| 1 | **Alleghany** | Sparta | Rita Miller, 336-372-8291 | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.alleghanycounty-nc.gov/ |
+| 2 | **Ashe** | Jefferson | Keith Little, 336-846-5554 | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.ashecountygov.com/ |
+| 3 | **Avery** | Newland | Phillip Barrier, 828-733-8214 | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.averycountync.gov/ |
+| 4 | **Buncombe** | Asheville | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.buncombecounty.org/ |
+| 5 | **Burke** | Morganton | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.co.burke.nc.us/ |
+| 6 | **Caldwell** | Lenoir | https://www.caldwellcountynctax.com/taxes.html#/ ||||||||||||||||||
+| 7 | **Cherokee** | Murphy | http://www.cherokeecounty-nc.gov/ ||||||||||||||||||
+| 8 | **Clay** | Hayesville | https://tax.claync.us/ ||||||||||||||||||| https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://clayconc.com/  https://tax.claync.us/ | https://tax.claync.us/ |
+| 9 | **Graham** | Robbinsville | Blair Hyder, 828-479-7963 | https://qpublic.net/nc/ncassessors/body-g.html (verified listing) |
+| 10 | **Haywood** | Waynesville | https://www.haywoodcountync.gov/337/Tax-Foreclosures ||||||||||||||||||| https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.haywoodnc.net/  https://www.haywoodcountync.gov/337/Tax-Foreclosures | https://www.haywoodcountync.gov/337/Tax-Foreclosures |
+| 11 | **Henderson** | Hendersonville | Stan C. Duncan, 828-693-3304 | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://hendersoncountync.org/ca/ |
+| 12 | **Jackson** | Sylva | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.jacksonnc.org |
+| 13 | **Madison** | Marshall | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.madisoncountync.org |
+| 14 | **Macon** | Franklin | https://maconnc.org/maconcountyforeclosures.html ||||||||||||||||||| https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.maconnc.org  https://maconnc.org/maconcountyforeclosures.html | https://maconnc.org/maconcountyforeclosures.html |
+| 15 | **McDowell** | Marion | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://mcdowellgov.com/ |
+| 16 | **Mitchell** | Bakersville | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.main.nc.us/mitchell/ |
+| 17 | **Polk** | Lake Junaluska | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.co.polk.nc.us/ |
+| 18 | **Swain** | Bryson City | — | https://qpublic.net/nc/ncassessors/body-s.html (verified listing) |
+| 19 | **Transylvania** | Brevard | — | https://qpublic.net/nc/ncassessors/body-t.html (verified listing) |
+| 20 | **Watauga** | Boone | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.wataugacounty.org |
+| 21 | **Yancey** | Burnsville | https://yanceycountync.gov/172/Tax-Department ||||||||||||||||||| https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.yanceycountync.gov/  https://yanceycountync.gov/172/Tax-Department | https://yanceycountync.gov/172/Tax-Department |
+
+---
+
 ## Statewide Resources for All 21 Counties
 
 | Resource | URL | Description |
@@ -170,3 +208,4 @@ All NC counties follow the same state statute (N.C.G.S. § 105-374):
 | ✅ | Dedicated online foreclosure listing page confirmed |
 | ❌ | No dedicated online listing — notices published in local newspapers |
 | Unknown | County government website URL could not be confirmed |
+| 12 | **Gaston** | Gastonia | https://www.gastongov.com/583/Tax-Office |||||||||||||||||
