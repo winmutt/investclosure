@@ -297,6 +297,56 @@ body {
     min-width: 120px;
 }
 
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    margin-bottom: -1px;
+}
+
+.tab-btn:hover {
+    color: var(--text);
+}
+
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tab-count {
+    margin-left: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+}
+
+.tab-btn.active .tab-count {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.tab-pane[hidden] {
+    display: none;
+}
+
 /* Tiles Layout */
 .tiles {
     display: grid;
@@ -557,6 +607,15 @@ body {
     overflow-y: auto;
 }
 
+
+.prop-detail-section code {
+    background: var(--bg-soft);
+    color: #818cf8;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
 .prop-actions {
     margin-top: 2rem;
     display: flex;

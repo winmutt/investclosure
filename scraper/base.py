@@ -47,6 +47,7 @@ class PropertyData(TypedDict, total=False):
     tnmap_cmap: Optional[str]
     # GIS enrichment fields
     acres_source: Optional[str]
+    raw_source_text: Optional[str]
     coord_source: Optional[str]        
     source_enriched: Optional[str]
     owner_name: Optional[str]
@@ -66,6 +67,9 @@ class PropertyData(TypedDict, total=False):
     zoning: Optional[str]
     tnmap_gp: Optional[str]
     tnmap_parcel: Optional[str]
+    # Auction date fields
+    initial_auction_date: Optional[str]
+    upset_bid_end: Optional[str]
     # GIS/parcel enrichment
     gis_url: Optional[str]
     acres_source: Optional[str]

@@ -1,0 +1,4 @@
+NC Mountain County - QPublic Tax Card URLs
+==========================================
+
+Extracting from qpublic.net/nc/ncassessors/

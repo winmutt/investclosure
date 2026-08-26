@@ -36,6 +36,20 @@
                 {% endif %}
             </div>
             
+            {# NEW: Extracted parcel/deed/pin section #}
+            <div class="prop-detail-section">
+                <h3>Extracted IDs</h3>
+                {% if prop.extracted_pin %}
+                <p><strong>PIN / Parcel ID:</strong> <code>{{ prop.extracted_pin }}</code></p>
+                {% endif %}
+                {% if prop.extracted_deed_plat %}
+                <p><strong>Deed / Plat:</strong> <code>{{ prop.extracted_deed_plat }}</code></p>
+                {% endif %}
+                {% if prop.parcel_number %}
+                <p><strong>DB Parcel:</strong> <code>{{ prop.parcel_number }}</code></p>
+                {% endif %}
+            </div>
+            
             <div class="prop-detail-section">
                 <h3>Property Info</h3>
                 {% if prop.price %}
@@ -97,8 +111,22 @@
                 <h3>Timeline</h3>
                 <p><strong>First Seen:</strong> {{ prop.first_seen }}</p>
                 <p><strong>Last Seen:</strong> {{ prop.last_seen }}</p>
+                <p><strong>Sale Details Updated:</strong> {{ prop.last_updated or 'Never' }}</p>
                 <p><strong>Seen Count:</strong> {{ prop.seen_count }}</p>
             </div>
+            
+            {% if same_case %}
+            <div class="prop-detail-section">
+                <h3>This case also appears on</h3>
+                {% for other in same_case %}
+                <p>
+                    <a href="{{ url_for('property_detail', property_id=other.id, category=request.args.get('category', '')) }}">
+                        {{ other.source }}{% if other.address %} — {{ other.address }}{% endif %}
+                    </a>
+                </p>
+                {% endfor %}
+            </div>
+            {% endif %}
             
             {% if prop.description %}
             <div class="prop-detail-section">
@@ -143,6 +171,12 @@
                     </a>
                 </p>
             </div>
+            {% if prop.raw_source_text %}
+            <div class="prop-detail-section">
+                <h3>Raw Source Text</h3>
+                <pre class="prop-raw-source">{{ prop.raw_source_text[:4000] }}</pre>
+            </div>
+            {% endif %}
             {% endif %}
         </div>
     </div>
@@ -170,6 +204,12 @@
 </div>
 
 <script>
+const NAV_CATEGORY = '{{ request.args.get('category', '') }}';
+
+function propUrl(id) {
+    return '/property/' + id + (NAV_CATEGORY ? '?category=' + encodeURIComponent(NAV_CATEGORY) : '');
+}
+
 function toggleNotes() {
     const display = document.getElementById('notes-display');
     const editor = document.getElementById('notes-editor');
@@ -209,25 +249,28 @@ function lockAcres(id) {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({acres: acres})
-    }).then(r => r.json()).then(d => {
+    }).then(r => {
+        if (!r.ok) return r.json().then(d => alert(d.error || `HTTP ${r.status}`));
+        return r.json();
+    }).then(d => {
         if (d.error) return alert(d.error);
         location.reload();
     }).catch(e => alert('Failed: ' + e));
 }
 
-fetch('/api/property/{{ prop.id }}/navigation')
+fetch('/api/property/{{ prop.id }}/navigation' + (NAV_CATEGORY ? '?category=' + encodeURIComponent(NAV_CATEGORY) : ''))
     .then(r => r.json())
     .then(nav => {
         const container = document.getElementById('nav-buttons');
         if (!nav.previous && !nav.next) return;
+        let html = '';
         if (nav.previous) {
-            container.innerHTML = `<a href="/property/${nav.previous.id}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">&larr; Prev</a>`;
-            if (nav.next) {
-                container.innerHTML += `<a href="/property/${nav.next.id}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Next &rarr;</a>`;
-            }
-        } else {
-            container.innerHTML = `<a href="/property/${nav.next.id}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Next &rarr;</a>`;
+            html += `<a href="${propUrl(nav.previous.id)}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">&larr; Prev</a>`;
         }
+        if (nav.next) {
+            html += `<a href="${propUrl(nav.next.id)}" class="btn btn-secondary" style="padding:6px 12px;font-size:13px">Next &rarr;</a>`;
+        }
+        container.innerHTML = html;
     });
 </script>
 {% endblock %}

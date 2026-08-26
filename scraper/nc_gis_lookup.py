@@ -33,17 +33,16 @@ logger = logging.getLogger(__name__)
 # NC OneMap Parcels MapServer Layer 1 (polygons)
 NC_ONEMAP_URL = "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1/query"
 
-# NC1Map-specific FIPS codes (verified via NC1Map API, NOT Census Bureau)
-# Source: https://www.nconemap.gov/arcgis/rest/services/NC1Map_Parcels/MapServer/1
+# County FIPS codes (verified via NC1Map API queries, standard Census codes)
 NC_COUNTY_FIPS: dict[str, str] = {
-    "alleghany": "005", "ashe": "009", "avery": "011",
-    "burke": "023", "caldwell": "027", "cherokee": "039",
+    "alleghany": "005", "ashe": "009", "avery": "011", "buncombe": "021",
+    "burke": "023", "caldwell": "027", "catawba": "035", "cherokee": "039",
     "clay": "043", "cleveland": "045", "columbus": "047",
-    "cumberland": "049", "graham": "075", "haywood": "087",
-    "henderson": "089", "jackson": "099", "madison": "115",
-    "mcdowell": "117", "mitchell": "121", "montgomery": "123",
-    "polk": "149", "swain": "173", "transylvania": "177",
-    "watauga": "189", "yancey": "199",
+    "cumberland": "049", "franklin": "069", "graham": "075", "haywood": "087",
+    "henderson": "089", "jackson": "099", "macon": "113", "madison": "115",
+    "mcdowell": "111", "mitchell": "121", "montgomery": "123",
+    "polk": "149", "rutherford": "161", "swain": "173", "transylvania": "175",
+    "watauga": "189", "wilkes": "193", "yancey": "199",
 }
 
 # Cache for repeated lookups
@@ -55,11 +54,19 @@ _cache: dict[str, Optional[dict]] = {}
 # ---------------------------------------------------------------
 
 def _nc1map_query(post_data: dict, timeout: int = 15) -> Optional[list[dict]]:
-    """POST query to NC1Map Parcels and return list of feature dicts."""
+    """POST query to NC1Map Parcels and return list of feature dicts.
+
+    Geometry is always requested (EPSG:4326) so callers can compute a
+    parcel centroid for map centering even if a caller only set
+    ``returnGeometry`` to "false".
+    """
+    data = dict(post_data)
+    data["returnGeometry"] = "true"
+    data["outSR"] = "4326"
     try:
         resp = curl_requests.Session(impersonate="chrome131").post(
             NC_ONEMAP_URL,
-            data=post_data,
+            data=data,
             timeout=timeout,
         )
         if resp.status_code != 200:
@@ -80,6 +87,27 @@ def _nc1map_query(post_data: dict, timeout: int = 15) -> Optional[list[dict]]:
 # Feature cleaning
 # ---------------------------------------------------------------
 
+def _geometry_centroid(geometry: Optional[dict]) -> Optional[tuple[float, float]]:
+    """Return (lng, lat) centroid of a polygon geometry (rings of [x, y]).
+
+    ArcGIS polygons use ``rings`` where each ring is a list of [x, y]
+    vertex pairs. The geographic centroid of an irregular parcel is
+    approximated by averaging all exterior-ring vertices.
+    """
+    if not geometry:
+        return None
+    rings = geometry.get("rings")
+    if not rings:
+        return None
+    pts = [p for ring in rings for p in ring]
+    if not pts:
+        return None
+    n = len(pts)
+    lng = sum(p[0] for p in pts) / n
+    lat = sum(p[1] for p in pts) / n
+    return round(lng, 6), round(lat, 6)
+
+
 def _clean_features(feats: list[dict]) -> Optional[dict]:
     """Convert first feature's attributes to a clean dict."""
     if not feats:
@@ -87,8 +115,22 @@ def _clean_features(feats: list[dict]) -> Optional[dict]:
     a = feats[0].get("attributes", {})
     result: dict[str, Any] = {}
 
-    # Acreage
+    # Centroid from parcel polygon (EPSG:4326 from outSR=4326 request)
+    centroid = _geometry_centroid(feats[0].get("geometry"))
+    if centroid:
+        result["longitude"] = centroid[0]
+        result["latitude"] = centroid[1]
+
+    # Acreage — Buncombe reports 0.0 in gisacres; fall back to recareano
     gis_acres = a.get("gisacres")
+    try:
+        gis_acres_float = float(gis_acres) if gis_acres not in (None, "") else 0.0
+    except (ValueError, TypeError):
+        gis_acres_float = 0.0
+    if gis_acres_float <= 0:
+        gis_acres = a.get("recareano")
+    else:
+        gis_acres = gis_acres_float
     if gis_acres is not None:
         try:
             result["acres"] = round(float(gis_acres), 2)
@@ -157,7 +199,7 @@ class NC1MapService:
             nparno = f"37{fips}_{clean}"
             feats = _nc1map_query({
                 "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -172,7 +214,7 @@ class NC1MapService:
         if fips:
             feats = _nc1map_query({
                 "where": f"cntyfips='{fips}' AND altparno='{clean}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -187,7 +229,7 @@ class NC1MapService:
         if fips:
             feats = _nc1map_query({
                 "where": f"cntyfips='{fips}' AND parno='{clean}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -204,7 +246,7 @@ class NC1MapService:
         # Strategy 4: Query by parcel alone (no county filter)
         feats = _nc1map_query({
             "where": f"parno='{clean}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
             "returnGeometry": "false",
             "f": "json",
             "resultRecordCount": "1",
@@ -221,7 +263,7 @@ class NC1MapService:
         # Strategy 5: Query by altparno alone (no county filter)
         feats = _nc1map_query({
             "where": f"altparno='{clean}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
             "returnGeometry": "false",
             "f": "json",
             "resultRecordCount": "1",
@@ -301,10 +343,30 @@ def enrich_kania_record(kania_rec: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
+def _parcel_variants(parcel: str) -> list[str]:
+    """Return normalization variants of a parcel number to try in lookups.
+
+    NC OneMap stores some counties' parcel numbers without dashes (e.g.
+    Buncombe '977539234200000') while scrapers may store the dashed form
+    ('9775-39-2342-00000'). Exact-string queries fail on such mismatches,
+    so we also try the original, dash-stripped, and punctuation-stripped
+    variants.
+    """
+    cleaned = parcel.strip()
+    variants: list[str] = []
+    for v in (cleaned, cleaned.replace("-", "")):
+        if v and v not in variants:
+            variants.append(v)
+    stripped = re.sub(r"[^A-Za-z0-9]", "", cleaned)
+    if stripped and stripped not in variants:
+        variants.append(stripped)
+    return variants
+
+
 def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
     """Look up a parcel using NC OneMap with cntyfips-based strategies.
-    
-    Strategy:
+
+    Strategy (tried for the raw parcel and its normalized variants):
       1. Try nparno = '37{fips}_{parcel}' with cntyfips filter
       2. Try altparno = parcel with cntyfips filter
       3. Try parno = parcel with cntyfips filter
@@ -314,72 +376,149 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
         return None
     fips = NC_COUNTY_FIPS.get((county or "").lower().strip())
 
-    # Strategy 1: Try nparno = "37" + fips + "_" + parcel
-    if fips:
-        nparno = f"37{fips}_{parcel.strip()}"
+    for variant in _parcel_variants(parcel):
+        # Strategy 1: Try nparno = "37" + fips + "_" + parcel
+        if fips:
+            nparno = f"37{fips}_{variant}"
+            feats = _nc1map_query({
+                "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "returnGeometry": "false",
+                "f": "json",
+                "resultRecordCount": "1",
+            }, timeout=5)
+            if feats:
+                result = _clean_features(feats)
+                if result and _county_matches(result.get("cntyname", ""), county):
+                    return result
+
+        # Strategy 2: Try altparno = parcel with cntyfips filter
+        if fips:
+            feats = _nc1map_query({
+                "where": f"cntyfips='{fips}' AND altparno='{variant}'",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "returnGeometry": "false",
+                "f": "json",
+                "resultRecordCount": "1",
+            }, timeout=5)
+            if feats:
+                result = _clean_features(feats)
+                if result and _county_matches(result.get("cntyname", ""), county):
+                    return result
+
+        # Strategy 3: Try parno = parcel with cntyfips filter
+        if fips:
+            feats = _nc1map_query({
+                "where": f"cntyfips='{fips}' AND parno='{variant}'",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "returnGeometry": "false",
+                "f": "json",
+                "resultRecordCount": "1",
+            }, timeout=5)
+            if feats:
+                result = _clean_features(feats)
+                if result:
+                    return result
+
+        # Strategy 4: Query by parcel alone (no county filter)
         feats = _nc1map_query({
-            "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+            "where": f"parno='{variant}'",
+            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
             "returnGeometry": "false",
             "f": "json",
             "resultRecordCount": "1",
-        }, timeout=15)
+        }, timeout=5)
         if feats:
-            result = _clean_features(feats)
-            if result and _county_matches(result.get("cntyname", ""), county):
-                return result
+            return _clean_features(feats)
 
-    # Strategy 2: Try altparno = parcel with cntyfips filter
-    if fips:
+        # Strategy 5: Query by altparno alone (no county filter)
         feats = _nc1map_query({
-            "where": f"cntyfips='{fips}' AND altparno='{parcel.strip()}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
+            "where": f"altparno='{variant}'",
+            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
             "returnGeometry": "false",
             "f": "json",
             "resultRecordCount": "1",
-        }, timeout=15)
+        }, timeout=5)
         if feats:
-            result = _clean_features(feats)
-            if result and _county_matches(result.get("cntyname", ""), county):
-                return result
-
-    # Strategy 3: Try parno = parcel with cntyfips filter
-    if fips:
-        feats = _nc1map_query({
-            "where": f"cntyfips='{fips}' AND parno='{parcel.strip()}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
-            "returnGeometry": "false",
-            "f": "json",
-            "resultRecordCount": "1",
-        }, timeout=15)
-        if feats:
-            result = _clean_features(feats)
-            if result:
-                return result
-
-    # Strategy 4: Query by parcel alone (no county filter)
-    feats = _nc1map_query({
-        "where": f"parno='{parcel.strip()}'",
-        "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
-        "returnGeometry": "false",
-        "f": "json",
-        "resultRecordCount": "1",
-    }, timeout=15)
-    if feats:
-        return _clean_features(feats)
-
-    # Strategy 5: Query by altparno alone (no county filter)
-    feats = _nc1map_query({
-        "where": f"altparno='{parcel.strip()}'",
-        "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,siteadd,ownname",
-        "returnGeometry": "false",
-        "f": "json",
-        "resultRecordCount": "1",
-    }, timeout=15)
-    if feats:
-        return _clean_features(feats)
+            return _clean_features(feats)
 
     return None
+
+
+# ArcGIS Online Map Viewer layer URL for NC1Map Parcels (polygons layer)
+NC_ONEMAP_VIEWER_URL = (
+    "https://www.arcgis.com/apps/mapviewer/index.html"
+    "?url=https%3A%2F%2Fservices.nconemap.gov%2Fsecure%2Frest%2Fservices%2FNC1Map_Parcels%2FMapServer%2F1"
+)
+
+
+def _is_busted_gis_url(url: Optional[str]) -> bool:
+    """True when a stored GIS URL is a dead REST query or JSON endpoint.
+
+    Old enrichment code stored ``.../query?where=...&f=json`` URLs that
+    return raw JSON (or 404 from dead services6.arcgis.com) instead of a
+    human-viewable map.
+    """
+    if not url:
+        return False
+    if "services6.arcgis.com" in url:
+        return True
+    if "/query" in url and ("f=json" in url or "outFields" in url):
+        return True
+    return False
+
+
+def _is_busted_maps_url(url: Optional[str]) -> bool:
+    """True when a stored Google Maps URL is not a search/place link."""
+    if not url:
+        return False
+    if url.startswith("https://www.google.com/maps/search/"):
+        return False
+    if "google.com/maps" in url:
+        return False
+    return True
+
+
+def build_gis_url(lng: Optional[float], lat: Optional[float], parcel: Optional[str]) -> Optional[str]:
+    """Build a human-viewable GIS viewer URL that shows the parcel.
+
+    Uses the ArcGIS Online Map Viewer with the NC1Map Parcels layer. When
+    coordinates are available the map is centered and zoomed on the parcel;
+    otherwise it falls back to a Google Maps parcel search.
+    """
+    if lng and lat:
+        return f"{NC_ONEMAP_VIEWER_URL}&center={lng:.6f},{lat:.6f}&level=16"
+    if parcel:
+        return f"https://www.google.com/maps/search/parcel+{parcel}+in+NC"
+    return None
+
+
+def build_google_maps_url(lng: Optional[float], lat: Optional[float],
+                          address: Optional[str], city: Optional[str],
+                          county: Optional[str]) -> Optional[str]:
+    """Build a Google Maps URL that visually locates the property.
+
+    Coordinates produce a precise pin; otherwise the address + city +
+    county + state text search is used.
+    """
+    if lng and lat:
+        return f"https://www.google.com/maps/search/?api=1&query={lat:.6f},{lng:.6f}"
+    parts = [p.strip() for p in [address, city, county, "NC"] if p and p.strip()]
+    if parts:
+        q = "+".join(p.replace(" ", "+") for p in parts)
+        return f"https://www.google.com/maps/search/?api=1&query={q}"
+    return None
+
+
+def build_google_maps_topo_url(lng: Optional[float], lat: Optional[float],
+                               address: Optional[str], city: Optional[str],
+                               county: Optional[str]) -> Optional[str]:
+    """Build a Google Maps URL with the terrain/topographic basemap."""
+    base = build_google_maps_url(lng, lat, address, city, county)
+    if not base:
+        return None
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}map_action=map&base=maps.terrain"
 
 
 def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gis_county: str) -> None:
@@ -397,43 +536,27 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
     else:
         rec["acres_source"] = "placeholder"
 
-    # URL links
     actual_county = parcel_data.get("cntyname") or gis_county
     parcel_ref = parcel_data.get("parno") if parcel_data else (rec.get("parcel_number") or "")
 
-    from .config import GIS_PARCEL_URLS
-    gc_lower = (actual_county or "").strip().title()
-    county_gis = GIS_PARCEL_URLS.get(gc_lower, {})
-    gis_url = None
-    if county_gis:
-        arc = county_gis.get("arcgis_url", "")
-        fld = county_gis.get("field_name", "PARCELID")
-        if arc and parcel_ref:
-            gis_url = (f"{arc}/query?where={fld}%3D%27{parcel_ref}%27"
-                       f"&outFields=*&returnGeometry=true&f=json")
-    if not gis_url and parcel_ref:
-        gis_url = (f"https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/"
-                   f"MapServer/1/query?where=parno%3D%27{parcel_ref}%27"
-                   f"&outFields=*&returnGeometry=true&f=json")
+    # Parcel centroid coordinates (used to center map viewers on the parcel)
+    if parcel_data.get("latitude") and parcel_data.get("longitude"):
+        rec["latitude"] = parcel_data["latitude"]
+        rec["longitude"] = parcel_data["longitude"]
 
-    rec["gis_url"] = gis_url
+    rec["gis_url"] = build_gis_url(
+        parcel_data.get("longitude"), parcel_data.get("latitude"), parcel_ref
+    )
 
     street = rec.get("address") or address
-    if street:
-        parts = [s.strip() for s in [street, city, actual_county] if s and s.strip()]
-        gmaps_q = "+".join(p for p in parts)
-    elif parcel_ref:
-        gmaps_q = f"{parcel_ref}+{actual_county}+NC"
-    else:
-        gmaps_q = None
-
-    if gmaps_q:
-        rec["google_maps_url"] = f"https://www.google.com/maps/search/{gmaps_q}"
-        rec["google_maps_topo_url"] = (f"https://www.google.com/maps/search/{gmaps_q}"
-                                       "/@?api=1&map_action=map&base=maps.terrain")
-    else:
-        rec["google_maps_url"] = None
-        rec["google_maps_topo_url"] = None
+    rec["google_maps_url"] = build_google_maps_url(
+        parcel_data.get("latitude"), parcel_data.get("longitude"),
+        street, city, actual_county,
+    )
+    rec["google_maps_topo_url"] = build_google_maps_topo_url(
+        parcel_data.get("latitude"), parcel_data.get("longitude"),
+        street, city, actual_county,
+    )
 
     rec["gis_county"] = actual_county
 
@@ -458,9 +581,23 @@ def enrich_properties(source: Optional[str] = None) -> dict:
 
     db_path = str(config.db_path)
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA busy_timeout = 30000")
 
-    # Build query for properties that need GIS enrichment
-    where = "acres IS NULL OR acres_source IS NULL OR acres_source = 'placeholder'"
+    # Build query for properties that need GIS enrichment.
+    # NOTE: parentheses are required — SQLite binds AND tighter than OR, so
+    # the whole OR chain must be wrapped before the source filter is appended.
+    # Also re-process rows whose stored map/GIS links are stale/busted
+    # (old code stored JSON-returning REST query URLs).
+    where = (
+        "(acres IS NULL OR acres_source IS NULL OR acres_source = 'placeholder')"
+        " OR (parcel_number IS NOT NULL AND parcel_number != '' AND (gis_url IS NULL OR gis_url = ''))"
+        " OR (parcel_number IS NOT NULL AND parcel_number != '' AND ("
+        "     gis_url LIKE '%services6.arcgis.com%'"
+        "     OR gis_url LIKE '%/query%f=json%'"
+        "     OR google_maps_url LIKE '%/maps/search/%' AND google_maps_url NOT LIKE '%?api=1%'"
+        "))"
+    )
+    where = f"({where})"
     params = []
 
     if source:
@@ -469,7 +606,7 @@ def enrich_properties(source: Optional[str] = None) -> dict:
 
     # Get properties with parcel numbers that need enrichment
     rows = conn.execute(
-        f"SELECT id, source, county, parcel_number, address, city, acres_source "
+        f"SELECT id, source, county, parcel_number, address, city, acres_source, gis_url "
         f"FROM properties WHERE {where}",
         params,
     ).fetchall()
@@ -477,17 +614,18 @@ def enrich_properties(source: Optional[str] = None) -> dict:
     if not rows:
         logger.info("No properties need GIS enrichment")
         conn.close()
-        return {"enriched": 0, "skipped_already_gis": len(rows), "skipped_no_parcel": 0, "failed": 0}
+        return {"enriched": 0, "skipped_already_gis": 0, "skipped_no_parcel": 0, "failed": 0}
 
     enriched = 0
     skipped_no_parcel = 0
-    skipped_already_gis = 0
     failed = 0
+    MAX_ENRICH = 500
 
-    for row_id, src, county, parcel, address, city, acres_src in rows:
-        # Skip if already has GIS acres
-        if acres_src == "gis":
-            skipped_already_gis += 1
+    for row_id, src, county, parcel, address, city, acres_src, gis_url in rows:
+        # Stop after MAX_ENRICH to avoid long-running enrichment
+        if enriched + skipped_no_parcel + failed >= MAX_ENRICH:
+            logger.info("Enrichment limit reached (%d), stopping", MAX_ENRICH)
+            break
             continue
 
         parcel_raw = (parcel or "").strip()
@@ -518,43 +656,27 @@ def enrich_properties(source: Optional[str] = None) -> dict:
             else:
                 update_fields["land_use"] = None
 
-            # Update gis_url
+            # Update coordinates from parcel centroid
+            if parcel_data.get("latitude") and parcel_data.get("longitude"):
+                update_fields["latitude"] = parcel_data["latitude"]
+                update_fields["longitude"] = parcel_data["longitude"]
+
+            # Update gis_url (human-viewable Map Viewer)
             actual_county = (parcel_data.get("cntyname") or county) or ""
             parcel_ref = parcel_data.get("parno") or parcel_raw
-            from .config import GIS_PARCEL_URLS
-            gc_lower = (actual_county or "").strip().title()
-            county_gis = GIS_PARCEL_URLS.get(gc_lower, {})
-            gis_url = None
-            if county_gis:
-                arc = county_gis.get("arcgis_url", "")
-                fld = county_gis.get("field_name", "PARCELID")
-                if arc and parcel_ref:
-                    gis_url = (f"{arc}/query?where={fld}%3D%27{parcel_ref}%27"
-                               f"&outFields=*&returnGeometry=true&f=json")
-            if not gis_url and parcel_ref:
-                gis_url = (f"https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/"
-                           f"MapServer/1/query?where=parno%3D%27{parcel_ref}%27"
-                           f"&outFields=*&returnGeometry=true&f=json")
-            update_fields["gis_url"] = gis_url
+            update_fields["gis_url"] = build_gis_url(
+                parcel_data.get("longitude"), parcel_data.get("latitude"), parcel_ref
+            )
 
             # Update google maps URLs
-            actual_address = address
-            city_val = city
-            if street := actual_address:
-                parts = [s.strip() for s in [street, city_val, actual_county] if s and s.strip()]
-                gmaps_q = "+".join(p for p in parts)
-            elif parcel_ref:
-                gmaps_q = f"{parcel_ref}+{actual_county}+NC"
-            else:
-                gmaps_q = None
-
-            if gmaps_q:
-                update_fields["google_maps_url"] = f"https://www.google.com/maps/search/{gmaps_q}"
-                update_fields["google_maps_topo_url"] = (f"https://www.google.com/maps/search/{gmaps_q}"
-                                                         "/@?api=1&map_action=map&base=maps.terrain")
-            else:
-                update_fields["google_maps_url"] = None
-                update_fields["google_maps_topo_url"] = None
+            update_fields["google_maps_url"] = build_google_maps_url(
+                parcel_data.get("latitude"), parcel_data.get("longitude"),
+                address, city, actual_county,
+            )
+            update_fields["google_maps_topo_url"] = build_google_maps_topo_url(
+                parcel_data.get("latitude"), parcel_data.get("longitude"),
+                address, city, actual_county,
+            )
 
             # Build update SQL
             set_parts = ", ".join(f"{k} = ?" for k in update_fields if k != "id")
@@ -562,6 +684,7 @@ def enrich_properties(source: Optional[str] = None) -> dict:
                 f"UPDATE properties SET {set_parts} WHERE id = ?",
                 [update_fields[k] for k in update_fields if k != "id"] + [row_id],
             )
+            conn.commit()
             enriched += 1
             logger.info("Enriched #%s %s %s parcel=%s -> %sac", row_id, src, county, parcel_raw[:20], update_fields["acres"])
         else:
@@ -569,18 +692,17 @@ def enrich_properties(source: Optional[str] = None) -> dict:
             logger.debug("No GIS match for #%s %s county=%s parcel=%s", row_id, src, county, parcel_raw[:40])
 
         # Rate limit
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.3, 0.6))
 
     conn.commit()
     conn.close()
 
     result = {
         "enriched": enriched,
-        "skipped_already_gis": skipped_already_gis,
         "skipped_no_parcel": skipped_no_parcel,
         "failed": failed,
     }
-    logger.info(f"Enrichment complete: {enriched} enriched, {skipped_already_gis} skipped(gis), "
+    logger.info(f"Enrichment complete: {enriched} enriched, "
                 f"{skipped_no_parcel} skipped(no parcel), {failed} failed")
     return result
 
@@ -593,13 +715,15 @@ _STREET_ABBREV = {
     "CT": "CT", "PL": "PL", "BOULEVARD": "BLVD",
 }
 
-# County FIPS codes
+# County FIPS codes (verified via NC1Map API queries, standard Census codes)
 _COUNTY_FIPS = {
-    "alleghany": "005", "ashe": "009", "avery": "011", "buncombe": "015",
-    "burke": "023", "caldwell": "027", "cherokee": "039", "clay": "043",
-    "graham": "075", "haywood": "087", "henderson": "089", "jackson": "099",
-    "madison": "115", "mcdowell": "117", "mitchell": "121", "polk": "149",
-    "swain": "173", "transylvania": "177", "watauga": "189", "yancey": "199",
+    "alleghany": "005", "ashe": "009", "avery": "011", "buncombe": "021",
+    "burke": "023", "caldwell": "027", "catawba": "035", "cherokee": "039",
+    "clay": "043", "cleveland": "045", "franklin": "069", "graham": "075",
+    "haywood": "087", "henderson": "089", "jackson": "099", "macon": "113",
+    "madison": "115", "mcdowell": "111", "mitchell": "121", "polk": "149",
+    "rutherford": "161", "swain": "173", "transylvania": "175", "watauga": "189",
+    "wilkes": "193", "yancey": "199",
 }
 
 
@@ -655,7 +779,7 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
                 "f": "json",
                 "resultRecordCount": "3",
             },
-            timeout=15,
+            timeout=5,
         )
         if resp:
             result = _clean_features(resp)
@@ -679,6 +803,7 @@ def enrich_hutchens_properties() -> dict:
 
     db_path = str(config.db_path)
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA busy_timeout = 30000")
 
     # Get Hutchens records without GIS but with address
     rows = conn.execute(
@@ -711,47 +836,43 @@ def enrich_hutchens_properties() -> dict:
                 "owner_name": result.get("owner_name"),
                 "land_use": None,
                 "gis_county": result.get("cntyname") or county,
-                "gis_url": None,
-                "google_maps_url": None,
-                "google_maps_topo_url": None,
             }
 
-            # Build gis_url
+            # Update coordinates from parcel centroid
+            if result.get("latitude") and result.get("longitude"):
+                update_fields["latitude"] = result["latitude"]
+                update_fields["longitude"] = result["longitude"]
+
+            # Build gis_url (human-viewable Map Viewer)
             parcel_ref = result.get("parno", "")
             actual_county = result.get("cntyname") or county
-            if parcel_ref:
-                update_fields["gis_url"] = (
-                    f"https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/"
-                    f"MapServer/1/query?where=parno%3D%27{parcel_ref}%27"
-                    f"&outFields=*&returnGeometry=true&f=json"
-                )
+            update_fields["gis_url"] = build_gis_url(
+                result.get("longitude"), result.get("latitude"), parcel_ref
+            )
 
             # Build gmaps URLs
-            street = address
-            if city:
-                parts = [p.strip() for p in [street, city, actual_county] if p and p.strip()]
-                gmaps_q = "+".join(parts)
-            elif parcel_ref:
-                gmaps_q = f"{parcel_ref}+{actual_county}+NC"
-            else:
-                gmaps_q = None
-
-            if gmaps_q:
-                update_fields["google_maps_url"] = f"https://www.google.com/maps/search/{gmaps_q}"
-                update_fields["google_maps_topo_url"] = f"https://www.google.com/maps/search/{gmaps_q}/@?api=1&map_action=map&base=maps.terrain"
+            update_fields["google_maps_url"] = build_google_maps_url(
+                result.get("latitude"), result.get("longitude"),
+                address, city, actual_county,
+            )
+            update_fields["google_maps_topo_url"] = build_google_maps_topo_url(
+                result.get("latitude"), result.get("longitude"),
+                address, city, actual_county,
+            )
 
             set_parts = ", ".join(f"{k} = ?" for k in update_fields if k != "id")
             conn.execute(
                 f"UPDATE properties SET {set_parts} WHERE id = ?",
                 [update_fields[k] for k in update_fields if k != "id"] + [row_id],
             )
+            conn.commit()
             enriched += 1
             logger.info("Hutchens enriched #%s %s parcel=%s -> %sac", row_id, county, result.get("parno")[:20], result["acres"])
         else:
             failed += 1
             logger.debug("Hutchens address match failed for #%s %s addr=%s", row_id, county, address[:40])
 
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.3, 0.6))
 
     conn.commit()
     conn.close()

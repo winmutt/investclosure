@@ -36,9 +36,37 @@ app.secret_key = os.environ.get('SECRET_KEY', 'investclosure-secret-key-change-i
 app.jinja_env.auto_reload = True
 
 
+NOTICE_SOURCES = {"newspaper_notices"}
+NOTICE_TYPE_KEYWORDS = ("notice", "estate", "proceeding")
+
+
+def property_category(prop: dict) -> str:
+    """Bucket a property into 'notice' or 'listing' for dashboard tabs.
+
+    Notices are legal/public notices published in newspapers (no auction
+    listing). Foreclosure listings are actual auction/sale listings from
+    law-firm and auction scrapers.
+    """
+    source = (prop.get("source") or "").strip().lower()
+    ptype = (prop.get("property_type") or "").strip().lower()
+    if source in NOTICE_SOURCES or any(k in ptype for k in NOTICE_TYPE_KEYWORDS):
+        return "notice"
+    return "listing"
+
+
 def _row_to_dict(row):
-    """Convert a sqlite3.Row to a plain dict for template rendering."""
-    return dict(row)
+    """Convert a sqlite3.Row to a plain dict for template rendering.
+    
+    Ensures numeric fields are properly typed (float/int).
+    """
+    d = dict(row)
+    for field, type_fn in [('acres', float), ('price_cents', int), ('elevation_ft', float), ('manual_acres_override', float)]:
+        if field in d and d[field] is not None:
+            try:
+                d[field] = type_fn(d[field])
+            except (ValueError, TypeError):
+                d[field] = None
+    return d
 
 
 def _rows_to_dicts(rows):
@@ -73,7 +101,13 @@ def landing():
     conn = get_conn()
     props = scraper_db.get_all_active(conn, limit=1000, source=None)
     conn.close()
-    return render_template('landing.html', properties=_rows_to_dicts(props))
+    props = _rows_to_dicts(props)
+    notices = [p for p in props if property_category(p) == "notice"]
+    listings = [p for p in props if property_category(p) == "listing"]
+    return render_template('landing.html',
+                           properties=props,
+                           notices=notices,
+                           listings=listings)
 
 
 @app.route('/properties')
@@ -109,7 +143,7 @@ def properties():
         sql += " AND acres >= ?"
         params.append(min_acres)
 
-    sql += " ORDER BY last_seen DESC LIMIT ? OFFSET ?"
+    sql += " ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ? OFFSET ?"
     params.extend([per_page, offset])
 
     rows = conn.execute(sql, params).fetchall()
@@ -232,7 +266,7 @@ def api_properties():
         sql += " AND county LIKE ?"
         params.append(f"%{county}%")
 
-    sql += " ORDER BY last_seen DESC LIMIT ?"
+    sql += " ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ?"
     params.append(limit)
 
     rows = conn.execute(sql, params).fetchall()
@@ -282,7 +316,7 @@ def update_property_acres(property_id):
     if not row:
         conn.close()
         return jsonify({"error": "Property not found"}), 404
-    existing_set = row.get("manual_acres_set") or ""
+    existing_set = row["manual_acres_set"] or ""
     if existing_set:
         conn.close()
         return jsonify({"error": "Manual acreage already set and is immutable"}), 409
@@ -306,15 +340,32 @@ def update_property_acres(property_id):
 @app.route('/api/property/<int:property_id>/navigation')
 def property_navigation(property_id):
     conn = get_conn()
-    prev = conn.execute(
-        "SELECT id, address FROM properties WHERE id < ? ORDER BY id DESC LIMIT 1",
-        (property_id,),
-    ).fetchone()
-    nxt = conn.execute(
-        "SELECT id, address FROM properties WHERE id > ? ORDER BY id ASC LIMIT 1",
-        (property_id,),
-    ).fetchone()
+    category = request.args.get('category', '').strip().lower()
+
+    # Match the dashboard/search ordering, not raw ID order
+    rows = conn.execute(
+        """SELECT id, address, source, property_type FROM properties
+           WHERE status = 'active'
+           ORDER BY COALESCE(initial_auction_date, last_seen) DESC,
+                    first_seen DESC, id DESC"""
+    ).fetchall()
     conn.close()
+
+    ordered = [dict(r) for r in rows]
+    if category in ('notice', 'listing'):
+        ordered = [p for p in ordered if property_category(p) == category]
+
+    ids = [p["id"] for p in ordered]
+    try:
+        idx = ids.index(property_id)
+    except ValueError:
+        idx = None
+
+    if idx is None:
+        return jsonify({"previous": None, "next": None})
+
+    prev = ordered[idx - 1] if idx > 0 else None
+    nxt = ordered[idx + 1] if idx < len(ordered) - 1 else None
     return jsonify({
         "previous": {"id": prev["id"], "address": prev["address"]} if prev else None,
         "next": {"id": nxt["id"], "address": nxt["address"]} if nxt else None,
@@ -325,10 +376,16 @@ def property_navigation(property_id):
 def property_detail(property_id):
     conn = get_conn()
     row = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
-    conn.close()
     if not row:
+        conn.close()
         abort(404)
-    return render_template('property.html', prop=_row_to_dict(row))
+    court_case = (row["court_case"] or "").strip()
+    same_case = []
+    if court_case:
+        same_case = scraper_db.get_by_court_case(conn, court_case, exclude_id=property_id)
+    conn.close()
+    return render_template('property.html', prop=_row_to_dict(row),
+                           same_case=[_row_to_dict(r) for r in same_case])
 
 
 @app.route('/archive/<int:property_id>', methods=['POST'])
