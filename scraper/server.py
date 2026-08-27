@@ -46,7 +46,7 @@ app.jinja_env.auto_reload = True
 def clean_date(value):
     """Clean a stored date field for safe display on cards / detail pages.
 
-    Strips HTML (ncforeclosures stores ``<span class='red'>Sale date not yet
+    Strips HTML (nc_publicnotice stores ``<span class='red'>Sale date not yet
     set</span>``) and hides placeholder text such as "not yet set".
     """
     if not value:
@@ -57,7 +57,7 @@ def clean_date(value):
     return text
 
 
-NOTICE_SOURCES = {"newspaper_notices", "ncforeclosures"}
+NOTICE_SOURCES = {"newspaper_notices", "nc_publicnotice"}
 NOTICE_TYPE_KEYWORDS = ("notice", "estate", "proceeding")
 
 
@@ -250,17 +250,20 @@ def run_scraper():
     """Manually trigger a scraper run."""
     scraper_name = request.args.get('scraper', 'all')
 
-    if scraper_name == 'ncforeclosures':
-        from scraper.ncforeclosures import NCForeclosureScraper
-        scraper = NCForeclosureScraper()
+    if scraper_name == 'nc_publicnotice':
+        from scraper.nc_publicnotice import NCPublicNoticeScraper
+        scraper = NCPublicNoticeScraper()
         properties = scraper.run()
-    elif scraper_name == 'tnforeclosures':
-        from scraper.tnforeclosures import scrape_with_enrichment
+    elif scraper_name == 'tn_publicnotice':
+        from scraper.tn_publicnotice import scrape_with_enrichment
         properties = scrape_with_enrichment(solve_captcha=True, enrich=True)
+    elif scraper_name == 'ga_publicnotice':
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        properties = GAPublicNoticeScraper().run()
     else:
-        from scraper.ncforeclosures import NCForeclosureScraper
-        from scraper.tnforeclosures import scrape_with_enrichment
-        nc_props = NCForeclosureScraper().run()
+        from scraper.nc_publicnotice import NCPublicNoticeScraper
+        from scraper.tn_publicnotice import scrape_with_enrichment
+        nc_props = NCPublicNoticeScraper().run()
         tn_props = scrape_with_enrichment(solve_captcha=True, enrich=True)
         properties = nc_props + tn_props
 
@@ -274,7 +277,7 @@ def enrich():
     from scraper.tnmap import enrich_with_tnmap
 
     conn = get_conn()
-    tn_props = scraper_db.get_all_active(conn, limit=500, source="tnforeclosures")
+    tn_props = scraper_db.get_all_active(conn, limit=500, source="tn_publicnotice")
     conn.close()
 
     if not tn_props:

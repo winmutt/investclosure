@@ -1,4 +1,4 @@
-"""Decorate every GA (ganotices) property with GIS + map links.
+"""Decorate every GA (ga_publicnotice) property with GIS + map links.
 
 For Georgia there is no statewide parcel hub; the canonical parcel viewer is
 each county's qPublic (Schneider Corp) app. We set:
@@ -45,7 +45,7 @@ def decorate_ga():
     conn = D._ensure_db(config.db_path)
     rows = conn.execute(
         "SELECT id, county, parcel_number, address FROM properties "
-        "WHERE source='ganotices'"
+        "WHERE source='ga_publicnotice'"
     ).fetchall()
     updated = 0
     for r in rows:

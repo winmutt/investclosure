@@ -163,29 +163,40 @@ class BaseForeclosureScraper(ABC):
         try:
             properties = self.scrape()
             print(f"\n  Total found: {len(properties)}")
-
-            # Filter by county and acreage
-            filtered = []
-            skipped = 0
-            for prop in properties:
-                county = (prop.get("county") or "").lower().strip()
-                acres = prop.get("acres")
-
-                if county and county in state_counties:
-                    if acres is None or acres >= config.MIN_ACRES:
-                        prop["county"] = county.title()
-                        filtered.append(prop)
-                    else:
-                        skipped += 1
-                else:
-                    skipped += 1
-
-            print(f"  After filtering: {len(filtered)} qualifying, {skipped} skipped")
+            filtered = self._apply_county_acreage_filter(properties)
             return filtered
-
         except Exception as e:
             logger.error("Scraper %s failed: %s", self.SOURCE_NAME, e, exc_info=True)
             return []
+
+    def _apply_county_acreage_filter(
+        self, properties: List[PropertyData], keep_unknown_acres: bool = True
+    ) -> List[PropertyData]:
+        """Filter properties by target county and the acreage threshold.
+
+        ``keep_unknown_acres`` controls whether notices with no detected acreage
+        are kept (True for TN/GA, where GIS enrichment later supplies acreage)
+        or dropped (False, e.g. when acreage is required up front).
+        """
+        state_counties = self._get_target_counties()
+        filtered = []
+        skipped = 0
+        for prop in properties:
+            county = (prop.get("county") or "").lower().strip()
+            acres = prop.get("acres")
+            if county and county in state_counties:
+                if acres is None and keep_unknown_acres:
+                    prop["county"] = county.title()
+                    filtered.append(prop)
+                elif acres is not None and acres >= config.MIN_ACRES:
+                    prop["county"] = county.title()
+                    filtered.append(prop)
+                else:
+                    skipped += 1
+            else:
+                skipped += 1
+        print(f"  After filtering: {len(filtered)} qualifying, {skipped} skipped")
+        return filtered
 
     # ---- helpers ----------------------------------------------------------
 

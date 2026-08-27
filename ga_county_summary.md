@@ -1,6 +1,6 @@
 # GA County Property Record Card / Tax Lookup Systems
 
-> Scope: the 7 N GA mountain counties tracked by the `ganotices` scraper
+> Scope: the 7 N GA mountain counties tracked by the `ga_publicnotice` scraper
 > (`fannin, gilmer, lumpkin, rabun, towns, union, white`). GA has **no
 > statewide parcel/GIS hub** (data-hub.gio.georgia.gov returns 0 sources), so
 > there is no automated GIS *enrichment* for GA — the `gis_url` field for GA

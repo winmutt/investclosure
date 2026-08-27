@@ -22,8 +22,9 @@ investclosure/
 ├── scraper/base.py              # BaseForeclosureScraper (captcha, acreage, chromium detection)
 ├── scraper/config.py            # Standalone config — all paths/thresholds env-overridable
 ├── scraper/db.py                # SQLite CRUD (schema inline, no external file)
-├── scraper/ncforeclosures.py    # NC scraper (21 counties)
-├── scraper/tnforeclosures.py    # TN scraper (95 counties)
+├── scraper/nc_publicnotice.py   # NC scraper (21 counties)
+├── scraper/ga_publicnotice.py   # GA scraper (7 N mountain counties)
+├── scraper/tn_publicnotice.py   # TN scraper (37 counties)
 ├── scraper/run.py               # CLI runner
 ├── .env.example
 ├── .gitignore
@@ -111,11 +112,11 @@ Must contain:
 - `archive_below_acres(conn, min_acres, source=None)`: update status to 'archived'
 - `get_stats(conn)`: aggregate stats dict
 
-### 6. `scraper/ncforeclosures.py`
+### 6. `scraper/nc_publicnotice.py`
 
 Must contain:
-- `NCForeclosureScraper(BaseForeclosureScraper)`:
-  - `SOURCE_NAME = "ncforeclosures"`
+- `NCPublicNoticeScraper(PublicNoticeScraper)`:
+  - `SOURCE_NAME = "nc_publicnotice"`
   - `BASE_URL = NCFORECLOSURES_BASE_URL`
   - `_get_target_counties()`: returns set(NC_FORECLOSURE_COUNTIES)
   - `scrape()`: Playwright flow:
@@ -130,10 +131,10 @@ Must contain:
     9. Return list of properties
 - `scrape_all()`: convenience function
 
-### 7. `scraper/tnforeclosures.py`
+### 7. `scraper/tn_publicnotice.py`
 
-Identical structure to ncforeclosures.py with:
-- `SOURCE_NAME = "tnforeclosures"`
+Identical structure to nc_publicnotice.py (both subclass `PublicNoticeScraper`) with:
+- `SOURCE_NAME = "tn_publicnotice"`
 - `BASE_URL = TNFORECLOSURES_BASE_URL`
 - `_get_target_counties()`: returns set(TN_FORECLOSURE_COUNTIES)
 - Same _search_foreclosures but use TNFORECLOSURES_POPULAR_SEARCH_VALUE
@@ -144,7 +145,7 @@ Identical structure to ncforeclosures.py with:
 ### 8. `scraper/run.py`
 
 Must contain:
-- `SCRAPERS = {"ncforeclosures": NCForeclosureScraper, "tnforeclosures": TNForeclosureScraper}`
+- `SCRAPERS = {"nc_publicnotice": NCPublicNoticeScraper, "ga_publicnotice": GAPublicNoticeScraper, "tn_publicnotice": TNPublicNoticeScraper}`
 - `run_scraper(conn, name, cls)`: start_logging, scraper.run(), iterate props checking for source+listing_id duplicate, end_logging
 - `cmd_list()`, `cmd_run(scraper_name)`, `cmd_run_all()`, `cmd_status()`, `cmd_new()`, `cmd_archive(threshold)`, `cmd_cron(minutes=360)`
 - `main()`: argparse with --scraper, --all, --list, --status, --new, --archive, --threshold, --cron, --interval

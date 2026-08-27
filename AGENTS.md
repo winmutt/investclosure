@@ -58,9 +58,10 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/buncombe_tax.py` | Buncombe County tax foreclosure scraper — Trumba iCal feed (`tax-foreclosures-all.ics`), NC OneMap enrichment |
 
 | `scraper/zls_nc.py` | ZLS-NC scraper — Zacchaeus Legal foreclosure listings, filtered to NC mountain counties |
-| `scraper/ncforeclosures.py` | NC foreclosure notices scraper — ncforeclosures.com, PDF text as raw source, NC OneMap enrichment |
-| `scraper/tnforeclosures.py` | TN foreclosure notices scraper — tnforeclosures.com, PDF text as raw source, GIS enrichment |
-| `scraper/ganotices.py` | GA foreclosure notices scraper — georgiapublicnotice.com (Georgia Press Assoc), 7 N GA mountain counties |
+| `scraper/nc_publicnotice.py` | NC "Public Notice" foreclosure scraper — ncnotices.com (ASP.NET WebForms), PDF text as raw source, NC OneMap enrichment |
+| `scraper/tn_publicnotice.py` | TN "Public Notice" foreclosure scraper — tnpublicnotice.com (same WebForms backend), PDF text as raw source, TNMap enrichment |
+| `scraper/ga_publicnotice.py` | GA "Public Notice" foreclosure scraper — georgiapublicnotice.com (same WebForms backend), 7 N GA mountain counties |
+| `scraper/publicnotice_base.py` | Shared base for the three `*_publicnotice` scrapers (GridView parse, Turnstile gate, PDF extract, tax/mortgage classifier) |
 | `scraper/newspaper_notices.py` | Newspaper legal-notice scraper — full notice text as raw source |
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties |
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
@@ -80,11 +81,11 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `kania_law` | kaniabailbond.com | NC (filtered) | None | NC OneMap statewide |
 | `buncombe_tax` | trumba.com/calendars/tax-foreclosures-all.ics | Buncombe | None | NC OneMap statewide |
 | `zls_nc` | zls-nc.com/listings | NC mountain only | None | NC OneMap statewide |
-| `ncforeclosures` | ncforeclosures.com | NC (PDF notices) | None | NC OneMap statewide |
-| `tnforeclosures` | tnforeclosures.com | TN (PDF notices) | None | GIS enrichment |
-| `ganotices` | georgiapublicnotice.com | GA (7 N mountain counties) | Turnstile | None |
+| `nc_publicnotice` | ncnotices.com | NC (PDF notices) | Turnstile | NC OneMap statewide |
+| `tn_publicnotice` | tnpublicnotice.com | TN (PDF notices) | Turnstile | TNMap enrichment |
+| `ga_publicnotice` | georgiapublicnotice.com | GA (7 N mountain counties) | Turnstile | None |
 
-All scrapers use **MIN_ACREAGE = 5.0** (configurable via `INVESTCLOSURE_MIN_ACRES`). Kania Law scrapes ALL 183 records from the API but only processes the 21 qualifying NC mountain counties. ZLS NC scrapes all listings but filters to NC mountain counties only. Buncombe Tax scrapes the county's Trumba iCal feed (bid, case #, PIN, redeem flag) — all Buncombe properties qualify. `ncforeclosures` and `tnforeclosures` download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (ncforeclosures) or when PDF exists (tnforeclosures), it is used as the canonical source; otherwise the on-page notice text falls back. `ganotices` scrapes Georgia Press Association tax-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF).
+All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Notice" backend (see `scraper/publicnotice_base.py`). They download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (nc_publicnotice) or when PDF exists (tn_publicnotice), it is used as the canonical source; otherwise the on-page notice text falls back. `ga_publicnotice` scrapes Georgia Press Association tax-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF).
 
 ## Qualified Counties
 
@@ -95,7 +96,7 @@ Scope spans **6 states** (elevation >1700ft, within 250mi of Atlanta): **GA, AL,
 
 **Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).
 
-### GA — 7 mountain counties (ganotices target set)
+### GA — 7 mountain counties (ga_publicnotice target set)
 `fannin, gilmer, lumpkin, rabun, towns, union, white`
 
 A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson, fannin, gilmer, habersham, lumpkin, murray, pickens, rabun, towns, union, white`.
@@ -106,7 +107,7 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 - **SC** (4): `anderson, greenville, oconee, pickens`
 - **TN** (37): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
 
-**GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources), so `ganotices` records are not GIS-enriched — only NC uses NC OneMap.
+**GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources), so `ga_publicnotice` records are not GIS-enriched — only NC uses NC OneMap.
 
 ## GIS Integration
 
@@ -235,7 +236,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 - **2026-07-26**: GIS county portal registry for 21 NC mountain counties
 - **2026-07-26**: ZLS-NC scraper — all-page size (241 rows), no pagination
 - **2026-07-26**: Kania Law — ArcGIS LAND_UNITS acreage, 5-acre filter, GIS enrichment
-- **GA in scope**: 7 N GA mountain counties (fannin, gilmer, lumpkin, rabun, towns, union, white) via `ganotices`; AGENTS.md scope updated to 6 states. `ganotices` drops non-sale proceedings (quiet-title / tax-redemption, excess-fund interpleaders, foreclosure of equity of redemption) and keeps only upcoming tax-sale foreclosures. **GA tax sales are held on the first Tuesday of every month** (computed from the notice's "first Tuesday in <Month> <Year>"), and **GA has no upset-bid period**. Bundled notices (e.g. White County lists many parcels per notice "by deed/page"; Towns County lists each tax-map parcel in its own block) are split into **separate per-parcel listings** keyed on `<county>:<parcel_number>`; duplicate postings of the same parcel collapse while distinct parcels stay separate.
+- **GA in scope**: 7 N GA mountain counties (fannin, gilmer, lumpkin, rabun, towns, union, white) via `ga_publicnotice`; AGENTS.md scope updated to 6 states. `ga_publicnotice` drops non-sale proceedings (quiet-title / tax-redemption, excess-fund interpleaders, foreclosure of equity of redemption) and keeps only upcoming tax-sale foreclosures. **GA tax sales are held on the first Tuesday of every month** (computed from the notice's "first Tuesday in <Month> <Year>"), and **GA has no upset-bid period**. Bundled notices (e.g. White County lists many parcels per notice "by deed/page"; Towns County lists each tax-map parcel in its own block) are split into **separate per-parcel listings** keyed on `<county>:<parcel_number>`; duplicate postings of the same parcel collapse while distinct parcels stay separate.
 - **2026-08-25**: `ga_county_summary.md` created — GA qPublic (Schneider Corp) app IDs / pages / KeyValue spacing per county; Lumpkin (`AppID=991`) and White (`AppID=982`) verified and added to `GA_QPUBLIC_APPS` in `scraper/gis_urls.py`. County knowledge bases now tracked in `nc_county_summary.md`, `ga_county_summary.md`, and `tn_county_summary.md` (see "County knowledge base" under GIS Integration).
 
 ## Tests

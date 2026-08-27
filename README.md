@@ -11,7 +11,7 @@ enriches with county GIS parcel data, saves to SQLite with dashboard.
 | `hutchens_law` | ✅ | 26 NC counties | Address-based GIS enrichment |
 | `newspaper_notices` | ✅ | NC mountain | State-wide newspaper notices |
 | `zls_nc` | ❌ | 21 NC mountain | 0 qualifying mountain records |
-| `ncforeclosures` | ❌ | NC mountain | Banned/unreliable |
+| `nc_publicnotice` | ❌ | NC mountain | Banned/unreliable |
 
 ### Active Properties (as of 2026-08-03)
 

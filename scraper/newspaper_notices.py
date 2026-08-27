@@ -64,7 +64,7 @@ CITIZEN_TIMES_REGULAR_DAYS = 7         # regular rolling window
 #
 # Positive tax-sale language (anchored on NCGS Chapter 105 and the "satisfy
 # unpaid property taxes" phrasing used in NC tax foreclosures). Mirrors the
-# tax regex in ``ncforeclosures.py``.
+# tax regex in ``nc_publicnotice.py``.
 _TAX_SALE_RE = re.compile(
     r"foreclosure\s+sale\s+to\s+satisfy\s+unpaid|"
     r"satisfy\s+unpaid\s+(?:property\s+)?taxes|"

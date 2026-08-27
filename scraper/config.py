@@ -122,7 +122,7 @@ NCNOTICES_TURNSTILE_SITE_KEY = _site_env(
 )
 NCNOTICES_SAVED_SEARCH_ID = _site_env("NCNOTICES", "SAVED_SEARCH_ID", "770")
 NCNOTICES_SAVED_SEARCH_NAME = _site_env(
-    "NCNOTICES", "SAVED_SEARCH_NAME", "nc foreclosures")
+    "NCNOTICES", "SAVED_SEARCH_NAME", "nc public notice foreclosures")
 NCNOTICES_SEARCH_KEYWORDS = _site_env("NCNOTICES", "SEARCH_KEYWORDS", "foreclosure tax unpaid")
 NCNOTICES_SEARCH_TYPE = _site_env("NCNOTICES", "SEARCH_TYPE", "AND")  # AND=All Words, OR=Any Words
 TNFORECLOSURES_POPULAR_SEARCH_VALUE = _site_env(
@@ -215,7 +215,7 @@ TN_FORECLOSURE_COUNTIES = [
 
 # GA mountain counties (7) — N GA high-country core, averaging well above
 # ~1700ft (excludes lower foothill counties like dawson, habersham, murray,
-# pickens). Used by the ganotices scraper, scoped to the "Tax Sales" category.
+# pickens). Used by the ga_publicnotice scraper, scoped to the "Tax Sales" category.
 GA_MOUNTAIN_COUNTIES = [
     "fannin", "gilmer", "lumpkin", "rabun", "towns", "union", "white",
 ]
@@ -380,8 +380,8 @@ class Config:
         self.DELAY_RANGE = (1.5, 3.0)
         self.DELAY_RANGES = {
             "kania_law": (2.0, 4.0),
-            "ncforeclosures": (1.5, 3.0),
-            "tnforeclosures": (1.5, 3.0),
+            "nc_publicnotice": (1.5, 3.0),
+            "tn_publicnotice": (1.5, 3.0),
             "zls_nc": (2.0, 4.0),
             "newspaper_notices": (2.0, 4.0),
             "default": (1.5, 3.0),

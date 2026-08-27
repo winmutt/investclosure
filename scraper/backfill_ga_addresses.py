@@ -106,7 +106,7 @@ def _safe_inner_text(page) -> str:
 def run(limit: int = None, county: str = None) -> dict:
     conn = D._ensure_db(config.db_path)
     q = ("SELECT id, county, parcel_number, address, owner_name, acres FROM properties "
-         "WHERE source='ganotices'")
+         "WHERE source='ga_publicnotice'")
     params: list = []
     if county:
         q += " AND county=?"

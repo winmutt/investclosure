@@ -185,6 +185,28 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         except Exception as e:
             logger.warning("Migration _migrate_upset_end failed: %s", e)
 
+    # Data migration: rename legacy "Public Notice" scraper source strings to the
+    # consistent *_publicnotice names after the module refactor
+    # (ncforeclosures -> nc_publicnotice, tnforeclosures -> tn_publicnotice,
+    #  ganotices -> ga_publicnotice). Idempotent.
+    _migrate_source_names(conn)
+
+
+def _migrate_source_names(conn: sqlite3.Connection) -> None:
+    """Rewrite legacy scraper `source` values to the consistent *_publicnotice names."""
+    renames = {
+        "ncforeclosures": "nc_publicnotice",
+        "tnforeclosures": "tn_publicnotice",
+        "ganotices": "ga_publicnotice",
+    }
+    try:
+        for old, new in renames.items():
+            conn.execute("UPDATE properties SET source=? WHERE source=?", (new, old))
+            conn.execute("UPDATE scrape_runs SET source=? WHERE source=?", (new, old))
+        conn.commit()
+    except Exception as e:
+        logger.warning("Migration _migrate_source_names failed: %s", e)
+
 
 # ---------------------------------------------------------------------------
 # Dedup hash
@@ -644,7 +666,7 @@ def _norm_key(value: Optional[str]) -> str:
 def link_cross_source(
     conn: sqlite3.Connection,
     source_a: str = "kania_law",
-    source_b: str = "ncforeclosures",
+    source_b: str = "nc_publicnotice",
 ) -> Dict[str, Any]:
     """Link properties that appear in BOTH ``source_a`` and ``source_b``.
 

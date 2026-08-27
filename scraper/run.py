@@ -61,22 +61,22 @@ except ImportError as e:
     logger.warning("buncombe_tax not available: %s", e)
 
 try:
-    from scraper.ncforeclosures import NCForeclosureScraper
-    SCRAPER_MODULES["ncforeclosures"] = NCForeclosureScraper
+    from scraper.nc_publicnotice import NCPublicNoticeScraper
+    SCRAPER_MODULES["nc_publicnotice"] = NCPublicNoticeScraper
 except ImportError as e:
-    logger.warning("ncforeclosures not available: %s", e)
+    logger.warning("nc_publicnotice not available: %s", e)
 
 try:
-    from scraper.tnforeclosures import scrape_with_enrichment
-    SCRAPER_MODULES["tnforeclosures"] = "tnforeclosures"
+    from scraper.tn_publicnotice import scrape_with_enrichment
+    SCRAPER_MODULES["tn_publicnotice"] = "tn_publicnotice"
 except ImportError as e:
-    logger.warning("tnforeclosures not available: %s", e)
+    logger.warning("tn_publicnotice not available: %s", e)
 
 try:
-    from scraper.ganotices import GanoticesScraper
-    SCRAPER_MODULES["ganotices"] = GanoticesScraper
+    from scraper.ga_publicnotice import GAPublicNoticeScraper
+    SCRAPER_MODULES["ga_publicnotice"] = GAPublicNoticeScraper
 except ImportError as e:
-    logger.warning("ganotices not available: %s", e)
+    logger.warning("ga_publicnotice not available: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -94,9 +94,12 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
             logger.warning("%s DISABLED: Failed %d consecutive runs", scraper_name.upper(), _get_failure_count(scraper_name))
             return {"scraper": scraper_name, "found": 0, "new": 0, "error": "SCRAPER_DISABLED"}
 
-        if scraper_name == "tnforeclosures":
+        if scraper_name == "tn_publicnotice":
             properties = scrape_with_enrichment(solve_captcha=True, enrich=True)
-        elif scraper_name == "ncforeclosures":
+        elif scraper_name == "ga_publicnotice":
+            scraper = scraper_class()
+            properties = scraper.run()
+        elif scraper_name == "nc_publicnotice":
             scraper = scraper_class()
             properties = scraper.run()
         else:
@@ -346,7 +349,7 @@ def cmd_run_all() -> list[dict]:
         conn.close()
         logger.warning("Auto-archive failed: %s", e)
 
-    # Auto-link properties appearing in both kania_law and ncforeclosures
+    # Auto-link properties appearing in both kania_law and nc_publicnotice
     try:
         conn = _ensure_db()
         try:
@@ -571,7 +574,7 @@ def main():
     parser.add_argument(
         "--link-cross",
         action="store_true",
-        help="Link properties that appear in both kania_law and ncforeclosures "
+        help="Link properties that appear in both kania_law and nc_publicnotice "
              "(adds cross-source notes + links for the dashboard)",
     )
 

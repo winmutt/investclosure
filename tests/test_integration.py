@@ -16,7 +16,7 @@ for real against their live sources and asserts non-empty results.
 
 Covered scrapers (the ones wired into ``SCRAPER_MODULES``):
     kania_law, zls_nc, newspaper_notices, buncombe_tax,
-    ncforeclosures, ganotices, tnforeclosures
+    nc_publicnotice, ga_publicnotice, tn_publicnotice
 """
 from __future__ import annotations
 
@@ -39,9 +39,9 @@ from scraper.kania_law import KaniaLawScraper
 from scraper.zls_nc import ZLSNCScraper
 from scraper.newspaper_notices import NewspaperNoticesScraper
 from scraper.buncombe_tax import BuncombeTaxScraper
-from scraper.ncforeclosures import NCForeclosureScraper
-from scraper.ganotices import GanoticesScraper
-from scraper.tnforeclosures import TNForeclosureScraper
+from scraper.nc_publicnotice import NCPublicNoticeScraper
+from scraper.ga_publicnotice import GAPublicNoticeScraper
+from scraper.tn_publicnotice import TNPublicNoticeScraper
 
 # ---------------------------------------------------------------------------
 # Registry: every scraper wired into `python3 -m scraper`
@@ -51,23 +51,23 @@ SCRAPERS = {
     "zls_nc":           {"cls": ZLSNCScraper,           "state": "NC", "in": "Ashe",         "out": "Wake"},
     "newspaper_notices": {"cls": NewspaperNoticesScraper, "state": "NC", "in": "Transylvania", "out": "Wake"},
     "buncombe_tax":     {"cls": BuncombeTaxScraper,     "state": "NC", "in": "Buncombe",     "out": "Wake"},
-    "ncforeclosures":   {"cls": NCForeclosureScraper,   "state": "NC", "in": "Ashe",         "out": "Wake"},
-    "ganotices":        {"cls": GanoticesScraper,       "state": "GA", "in": "Fannin",       "out": "Fulton"},
-    "tnforeclosures":   {"cls": "tnforeclosures",       "state": "TN", "in": "Sevier",       "out": "Davidson"},
+    "nc_publicnotice":  {"cls": NCPublicNoticeScraper,  "state": "NC", "in": "Ashe",         "out": "Wake"},
+    "ga_publicnotice":  {"cls": GAPublicNoticeScraper,  "state": "GA", "in": "Fannin",       "out": "Fulton"},
+    "tn_publicnotice":  {"cls": "tn_publicnotice",      "state": "TN", "in": "Sevier",       "out": "Davidson"},
 }
 
 # How many records survive each scraper's real filter (run()):
 #   - BaseScraper subclasses (kania/zls/buncombe) have NO run-level filter.
-#   - newspaper_notices / ncforeclosures / ganotices / tnforeclosures filter by
+#   - newspaper_notices / nc_publicnotice / ga_publicnotice / tn_publicnotice filter by
 #     county (dropping the out-of-county record).
 FILTER_EXPECT = {
     "kania_law": 3, "zls_nc": 3, "buncombe_tax": 3,
-    "newspaper_notices": 2, "ncforeclosures": 2, "ganotices": 2, "tnforeclosures": 2,
+    "newspaper_notices": 2, "nc_publicnotice": 2, "ga_publicnotice": 2, "tn_publicnotice": 2,
 }
-# How many records get inserted by run_scraper (tnforeclosures bypasses its
+# How many records get inserted by run_scraper (tn_publicnotice bypasses its
 # filter inside run_scraper, using scrape_with_enrichment directly).
 INGEST_EXPECT = dict(FILTER_EXPECT)
-INGEST_EXPECT["tnforeclosures"] = 3
+INGEST_EXPECT["tn_publicnotice"] = 3
 
 LIVE = os.environ.get("INVESTCLOSURE_LIVE_TESTS") == "1"
 
@@ -75,6 +75,12 @@ LIVE = os.environ.get("INVESTCLOSURE_LIVE_TESTS") == "1"
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _fake_captcha_key(monkeypatch):
+    """Offline tests never solve captchas; satisfy run()'s guard."""
+    monkeypatch.setattr(config, "TWO_CAPTCHA_API_KEY", "test-key")
+
+
 @pytest.fixture()
 def conn(tmp_path):
     """Point the config at a temp DB and return a fresh connection."""
@@ -133,14 +139,14 @@ def _raw_props(name: str) -> list[dict]:
 
 
 def _scraper_class(name):
-    if name == "tnforeclosures":
-        return TNForeclosureScraper
+    if name == "tn_publicnotice":
+        return TNPublicNoticeScraper
     return SCRAPERS[name]["cls"]
 
 
 def _run_module_class(name):
     """What run_scraper receives as scraper_class (mirrors run.py)."""
-    return "tnforeclosures" if name == "tnforeclosures" else SCRAPERS[name]["cls"]
+    return "tn_publicnotice" if name == "tn_publicnotice" else SCRAPERS[name]["cls"]
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +166,7 @@ class _OfflineRunner:
             patch.object(run_mod, "_reset_failure_counter", return_value=None),
             patch.object(run_mod, "_inc_failure_counter", return_value=None),
         ]
-        if self.name == "tnforeclosures":
+        if self.name == "tn_publicnotice":
             p.append(patch.object(run_mod, "scrape_with_enrichment",
                                   return_value=self.raw))
         else:
@@ -232,10 +238,10 @@ def test_filter(conn, name):
     scraper = cls()
 
     extra = []
-    if name == "ncforeclosures":
+    if name == "nc_publicnotice":
         # _enrich_acres hits NC OneMap; mock it for an offline, deterministic run.
         extra.append(patch.object(cls, "_enrich_acres", return_value=raw))
-    # ganotices/tnforeclosures run() may reference the disabled-check indirectly;
+    # ga_publicnotice/tn_publicnotice run() may reference the disabled-check indirectly;
     # harmless either way, but keep the real path otherwise.
     for e in extra:
         e.start()
