@@ -204,7 +204,12 @@ podman exec investclosure python3 -m scraper --status  # Run inside container
 - `data/` volume-mounted — persists across container restarts/rebuilds
 - Always `rm -rf /app/scraper/__pycache__` after editing `.py` files inside the container
 - Temporary files go in `scraper/tmp/` (not host `/tmp`)
-- **All code updates must be followed by a commit and push.**
+- **All code updates must be followed by a commit and push.** This includes
+  dependency changes — any `pip install` performed inside the container (e.g.
+  `pdfplumber`, `pdfminer`, `pillow`) must also be added to `requirements.txt`
+  and committed, otherwise a `podman compose up --build` rebuilds from the
+  committed `requirements.txt` and silently loses the package. A live
+  `pip install` only patches the running container and does not survive rebuilds.
 
 ## Configuration
 
