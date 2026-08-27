@@ -31,7 +31,8 @@
 - **Tax Department:** https://www.wataugacounty.org/App_Pages/Dept/Tax/home.aspx
 - **Regional System:** Avineon
 
-## 5. Burke County (NOT VERIFIED)
-- The provided website (www.burkecountync.org) has no DNS records.
-- The Burke County government website domain could not be determined.
-- Try Google search: "Burke County NC government"
+## 5. Burke County (Verified)
+- **Website:** https://www.burkecounty.org
+- **Property / Tax Search:** https://www.burkecounty.org/ (GIS/property subpage not separately verified)
+- **Note:** The previously listed `www.burkecountync.org` domain is dead (redirects to an unrelated site); the correct official domain is `burkecounty.org`.
+- **Regional System:** (unverified)

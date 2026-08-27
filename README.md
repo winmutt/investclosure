@@ -29,7 +29,6 @@ enriches with county GIS parcel data, saves to SQLite with dashboard.
 | Burke | 8 | Correctly mapped via `altparno + cntyfips` |
 | Buncombe | 6 | Mixed (some addresses not in NC1Map) |
 | Cherokee | 3 | Long parcel numbers match `nparno` strategy |
-| Caldwell | 3 | Address-based enrichment |
 | Alleghany | 2 | NC1Map dominant county |
 | Ashe | 2 | GIS enriched |
 | Polk | 1 | GIS enriched |
@@ -137,10 +136,10 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 
 Properties filtered to **21 NC mountain counties** (elevation >1700ft, within 250mi of Atlanta):
 
-`alleghany, ashe, avery, buncombe, burke, caldwell, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
+`alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
 
 - **Kania Law**: NC tax foreclosure auctions — scrapes ALL records from API, filters to qualifying counties
-- **Hutchens Law**: NC foreclosure listing with 26 NC counties (+caldwell, franklin, macon, polk, rutherford)
+- **Hutchens Law**: NC foreclosure listing with 26 NC counties (+franklin, macon, polk, rutherford)
 - **ZLS-NC / Zacchaeus Legal Services**: NC tax foreclosure listings — filters to mountain counties only
 
 **Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).

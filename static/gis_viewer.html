@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>InvestClosure — Parcel Map</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+  <style>
+    html, body, #view { height: 100%; width: 100%; margin: 0; padding: 0; }
+    #bar {
+      position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+      background: rgba(17,24,39,0.92); color: #fff; padding: 8px 12px;
+      font: 14px/1.4 system-ui, sans-serif; display: flex; gap: 12px; align-items: center;
+    }
+    #bar a { color: #93c5fd; }
+    #bar .sp { opacity: .7; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <strong>InvestClosure Parcel Map</strong>
+    <span class="sp" id="info">Loading NC OneMap parcel layer…</span>
+  </div>
+  <div id="view"></div>
+
+  <script src="https://js.arcgis.com/4.29/"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const service = params.get("service") ||
+      "/gis/proxy/secure/rest/services/NC1Map_Parcels/MapServer/1";
+    const center = params.get("center");   // "lng,lat"
+    const level = parseFloat(params.get("level") || "16");
+    const parcel = params.get("parcel");
+
+    require([
+      "esri/Map", "esri/views/MapView", "esri/layers/FeatureLayer",
+      "esri/Graphic", "esri/geometry/Point", "esri/symbols/SimpleMarkerSymbol"
+    ], function (Map, MapView, FeatureLayer, Graphic, Point, SimpleMarkerSymbol) {
+
+      const map = new Map({ basemap: "satellite" });
+
+      const layer = new FeatureLayer({
+        url: service,
+        outFields: ["parno", "altparno", "ownname", "gisacres", "cntyname"],
+        popupTemplate: {
+          title: "{cntyname} Parcel",
+          content: "PIN: <b>{parno}</b><br>Owner: {ownname}<br>GIS Acres: {gisacres}"
+        }
+      });
+      map.add(layer);
+
+      const view = new MapView({
+        container: "view",
+        map: map,
+        center: center ? center.split(",").map(Number) : [-79.0, 35.5],
+        zoom: center ? level : 7
+      });
+
+      const info = document.getElementById("info");
+      layer.when(
+        () => { info.textContent = "NC OneMap parcels loaded."; },
+        (err) => { info.textContent = "Layer failed to load: " + err.message; }
+      );
+
+      if (center && parcel) {
+        const [lng, lat] = center.split(",").map(Number);
+        const g = new Graphic({
+          geometry: new Point({ longitude: lng, latitude: lat }),
+          symbol: new SimpleMarkerSymbol({
+            color: [226, 119, 40], size: "12px",
+            outline: { color: [255, 255, 255], width: 2 }
+          }),
+          popupTemplate: { title: "Parcel", content: "PIN: <b>" + parcel + "</b>" }
+        });
+        view.graphics.add(g);
+      }
+    });
+  </script>
+</body>
+</html>

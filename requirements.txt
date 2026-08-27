@@ -3,3 +3,5 @@ curl-cffi==0.10.0
 flask>=3.0
 playwright>=1.40
 requests>=2.31
+camoufox>=0.4.11
+pdfplumber>=0.11

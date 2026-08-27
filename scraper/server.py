@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import sys
 import threading
 from datetime import date, datetime, timedelta, timezone
@@ -18,10 +19,15 @@ from pathlib import Path
 # Ensure scraper package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, flash, abort
+from flask import (Flask, render_template, request, redirect, url_for,
+                     jsonify, send_file, flash, abort, Response)
 
 from scraper import db as scraper_db
 from scraper.config import config
+from scraper.nc_gis_lookup import (
+    build_satellite_url,
+    build_street_view_url,
+)
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', str(config.data_dir)))
 REPORTS_DIR = Path(os.environ.get('REPORTS_DIR', str(config.data_dir / "reports")))
@@ -36,7 +42,22 @@ app.secret_key = os.environ.get('SECRET_KEY', 'investclosure-secret-key-change-i
 app.jinja_env.auto_reload = True
 
 
-NOTICE_SOURCES = {"newspaper_notices"}
+@app.template_filter('clean_date')
+def clean_date(value):
+    """Clean a stored date field for safe display on cards / detail pages.
+
+    Strips HTML (ncforeclosures stores ``<span class='red'>Sale date not yet
+    set</span>``) and hides placeholder text such as "not yet set".
+    """
+    if not value:
+        return None
+    text = re.sub(r"<[^>]+>", "", str(value)).strip()
+    if not text or "not yet" in text.lower():
+        return None
+    return text
+
+
+NOTICE_SOURCES = {"newspaper_notices", "ncforeclosures"}
 NOTICE_TYPE_KEYWORDS = ("notice", "estate", "proceeding")
 
 
@@ -66,6 +87,18 @@ def _row_to_dict(row):
                 d[field] = type_fn(d[field])
             except (ValueError, TypeError):
                 d[field] = None
+    # Derive aerial/satellite + street-view photo links from coordinates/address
+    # so the dashboard can always offer a "photo" of the property.
+    if not d.get("google_maps_satellite_url"):
+        d["google_maps_satellite_url"] = build_satellite_url(
+            d.get("longitude"), d.get("latitude"),
+            d.get("address"), d.get("city"), d.get("county"),
+        )
+    if not d.get("google_maps_street_url"):
+        d["google_maps_street_url"] = build_street_view_url(
+            d.get("longitude"), d.get("latitude"),
+            d.get("address"), d.get("city"), d.get("county"),
+        )
     return d
 
 
@@ -96,18 +129,35 @@ def inject_global_stats():
 
 # ---- Routes ---------------------------------------------------------------
 
+# States surfaced first in the dashboard tab bar (primary markets)
+STATE_PRIORITY = ["NC", "TN"]
+
+
 @app.route('/')
 def landing():
     conn = get_conn()
     props = scraper_db.get_all_active(conn, limit=1000, source=None)
     conn.close()
     props = _rows_to_dicts(props)
-    notices = [p for p in props if property_category(p) == "notice"]
-    listings = [p for p in props if property_category(p) == "listing"]
+
+    # Group active properties by state, then by category (listing / notice)
+    states: dict[str, dict[str, list]] = {}
+    for p in props:
+        st = (p.get("state") or "UNKNOWN").strip().upper()
+        cat = property_category(p)  # 'listing' or 'notice'
+        if st not in states:
+            states[st] = {"listing": [], "notice": []}
+        states[st][cat].append(p)
+
+    # Order states: priority markets first, then alphabetically
+    states_order = sorted(
+        states.keys(),
+        key=lambda s: (STATE_PRIORITY.index(s) if s in STATE_PRIORITY else 99, s),
+    )
+
     return render_template('landing.html',
-                           properties=props,
-                           notices=notices,
-                           listings=listings)
+                            states=states,
+                            states_order=states_order)
 
 
 @app.route('/properties')
@@ -140,7 +190,7 @@ def properties():
         params.append(f"%{county}%")
 
     if min_acres:
-        sql += " AND acres >= ?"
+        sql += " AND (acres IS NULL OR acres >= ?)"
         params.append(min_acres)
 
     sql += " ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ? OFFSET ?"
@@ -164,7 +214,7 @@ def properties():
         count_sql += " AND county LIKE ?"
         count_params.append(f"%{county}%")
     if min_acres:
-        count_sql += " AND acres >= ?"
+        count_sql += " AND (acres IS NULL OR acres >= ?)"
         count_params.append(min_acres)
 
     total = conn.execute(count_sql, count_params).fetchone()[0]
@@ -383,9 +433,11 @@ def property_detail(property_id):
     same_case = []
     if court_case:
         same_case = scraper_db.get_by_court_case(conn, court_case, exclude_id=property_id)
+    cross_links = scraper_db.get_property_links(conn, property_id)
     conn.close()
     return render_template('property.html', prop=_row_to_dict(row),
-                           same_case=[_row_to_dict(r) for r in same_case])
+                           same_case=[_row_to_dict(r) for r in same_case],
+                           cross_links=cross_links)
 
 
 @app.route('/archive/<int:property_id>', methods=['POST'])
@@ -436,6 +488,44 @@ def export():
 
     flash(f'Exported {len(export_data)} properties to {filename}')
     return redirect(url_for('landing'))
+
+
+@app.route('/gis/proxy/<path:dp>')
+def gis_proxy(dp: str):
+    """Server-side proxy to the NC OneMap parcel REST services.
+
+    The new ArcGIS Online Map Viewer ignores the legacy ``?url=`` deep-link
+    parameter, and nconemap.gov only whitelists ``arcgis.com`` for CORS, so a
+    browser cannot load the layer directly. This route forwards requests to
+    ``https://services.nconemap.gov/<dp>`` server-side (CORS-free) and returns
+    the response same-origin, so our hosted ``static/gis_viewer.html`` can load
+    the parcel layer without cross-origin errors.
+
+    Restricted to nconemap.gov parcel-service paths to avoid an open proxy.
+    """
+    if not (dp.startswith("secure/rest/services/") or dp.startswith("arcgis/rest/services/")):
+        abort(403)
+    downstream = "https://services.nconemap.gov/" + dp
+    qs = request.query_string.decode("latin-1")
+    url = downstream + ("?" + qs if qs else "")
+
+    from curl_cffi import requests as proxy_requests
+    try:
+        if request.method == "POST":
+            resp = proxy_requests.post(
+                url, data=request.get_data(),
+                headers={"Content-Type": request.headers.get("Content-Type", "application/x-www-form-urlencoded")},
+                timeout=30, impersonate="chrome131",
+            )
+        else:
+            resp = proxy_requests.get(url, timeout=30, impersonate="chrome131")
+    except Exception as e:  # pragma: no cover - network
+        return jsonify({"error": f"nconemap proxy failed: {e}"}), 502
+
+    ct = resp.headers.get("content-type", "application/json")
+    if "image" in ct:
+        return Response(resp.content, status=resp.status_code, content_type=ct)
+    return Response(resp.content, status=resp.status_code, content_type=ct)
 
 
 @app.route('/health')

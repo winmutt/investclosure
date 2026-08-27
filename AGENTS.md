@@ -79,7 +79,6 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 |---|---|---|---|---|
 | `kania_law` | kaniabailbond.com | NC (filtered) | None | NC OneMap statewide |
 | `buncombe_tax` | trumba.com/calendars/tax-foreclosures-all.ics | Buncombe | None | NC OneMap statewide |
-
 | `zls_nc` | zls-nc.com/listings | NC mountain only | None | NC OneMap statewide |
 | `ncforeclosures` | ncforeclosures.com | NC (PDF notices) | None | NC OneMap statewide |
 | `tnforeclosures` | tnforeclosures.com | TN (PDF notices) | None | GIS enrichment |

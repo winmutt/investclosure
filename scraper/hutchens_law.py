@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Optional, Any
 
-from .base import BaseScraper, PropertyData
+from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
 from .config import QUALIFYING_COUNTIES
 
 logger = logging.getLogger(__name__)
@@ -35,23 +35,23 @@ class HutchensLawScraper(BaseScraper):
         """Fetch all NC foreclosure sales records from the Hutchens Law Firm listing page."""
         NC_QUALIFYING = {c.lower() for c in QUALIFYING_COUNTIES.get("NC", [])}
 
-        session = self.session
-        session.headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/131.0.0.0 Safari/537.36",
-        })
-
         logger.info("Fetching Hutchens Law NC foreclosure sales list ...")
 
         try:
-            resp = session.get(HUTCHENS_URL, timeout=30)
-            if resp.status_code != 200:
-                logger.error("Hutchens Law returned HTTP %d", resp.status_code)
+            with camoufox_context() as page:
+                fetcher = CamoufoxFetcher(page)
+                fetcher.set_headers({
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/131.0.0.0 Safari/537.36",
+                })
+                html = fetcher.get(HUTCHENS_URL, timeout=60000)
+
+            if not html:
+                logger.error("Hutchens Law returned empty response")
                 return []
 
-            html = resp.text
             logger.info("Page size: %d bytes", len(html))
 
             properties = self._parse_table(html, NC_QUALIFYING)

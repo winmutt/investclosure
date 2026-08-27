@@ -22,165 +22,266 @@
                 {% endif %}
             </div>
         </div>
-        
+
+        <style>
+        .prop-tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:2px solid #e5e7eb; margin:0 0 1rem; }
+        .prop-tab-btn { background:#f3f4f6; border:1px solid #e5e7eb; border-bottom:none;
+                        padding:8px 14px; border-radius:8px 8px 0 0; cursor:pointer;
+                        font-size:14px; color:#374151; }
+        .prop-tab-btn:hover { background:#e5e7eb; }
+        .prop-tab-btn.active { background:#fff; border-color:#d1d5db; font-weight:600;
+                               color:#111827; box-shadow:0 -2px 0 #2563eb inset; }
+        .prop-tab-pane { display:none; }
+        .prop-tab-pane.active { display:block; }
+        </style>
+
+        <div class="prop-tabs" role="tablist">
+            <button type="button" class="prop-tab-btn active" onclick="showPropTab('overview', this)">Overview</button>
+            {% set _show_maps = prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.get('tnmap_owner') or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink or prop.tnmap_gislink or prop.get('tnmap_address') %}
+            {% if _show_maps %}<button type="button" class="prop-tab-btn" onclick="showPropTab('maps', this)">Maps &amp; GIS</button>{% endif %}
+            {% set _show_source = (prop.source in ('newspaper_notices', 'ncforeclosures', 'tnforeclosures', 'ganotices') and prop.url) or prop.raw_source_text or prop.description %}
+            {% if _show_source %}<button type="button" class="prop-tab-btn" onclick="showPropTab('source', this)">Source</button>{% endif %}
+            {% if same_case or cross_links %}<button type="button" class="prop-tab-btn" onclick="showPropTab('related', this)">Related</button>{% endif %}
+            <button type="button" class="prop-tab-btn" onclick="showPropTab('notes', this)">Notes</button>
+        </div>
+
         <div class="prop-details">
-            <div class="prop-detail-section">
-                <h3>Location</h3>
-                <p><strong>County:</strong> {{ prop.county or 'N/A' }} {{ prop.state }}</p>
-                <p><strong>Zip Code:</strong> {{ prop.zip_code or 'N/A' }}</p>
-                {% if prop.parcel_number %}
-                <p><strong>Parcel Number:</strong> {{ prop.parcel_number }}</p>
-                {% endif %}
-                {% if prop.latitude and prop.longitude %}
-                <p><strong>Coordinates:</strong> {{ "%.4f"|format(prop.latitude) }}°, {{ "%.4f"|format(prop.longitude) }}°</p>
-                {% endif %}
-            </div>
-            
-            {# NEW: Extracted parcel/deed/pin section #}
-            <div class="prop-detail-section">
-                <h3>Extracted IDs</h3>
-                {% if prop.extracted_pin %}
-                <p><strong>PIN / Parcel ID:</strong> <code>{{ prop.extracted_pin }}</code></p>
-                {% endif %}
-                {% if prop.extracted_deed_plat %}
-                <p><strong>Deed / Plat:</strong> <code>{{ prop.extracted_deed_plat }}</code></p>
-                {% endif %}
-                {% if prop.parcel_number %}
-                <p><strong>DB Parcel:</strong> <code>{{ prop.parcel_number }}</code></p>
-                {% endif %}
-            </div>
-            
-            <div class="prop-detail-section">
-                <h3>Property Info</h3>
-                {% if prop.price %}
-                <p><strong>Price:</strong> ${{ "%.2f"|format(prop.price / 100) }}</p>
-                {% endif %}
-                <p><strong>Acreage:</strong>
-    {% if prop.manual_acres_set %}
-    <span title="Manually set on {{ prop.manual_acres_set }}">
-        {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres <span style="color:#f59e0b">&#128274;</span> manual
-    </span>
-    {% else %}
-    {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres
-    {% endif %}
-</p>
-                {% if prop.get('tnmap_deeded_acres') %}
-                <p><strong>Deeded Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_deeded_acres) }} acres</p>
-                {% endif %}
-                {% if prop.get('tnmap_calculated_acres') %}
-                <p><strong>Calculated Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_calculated_acres) }} acres</p>
-                {% endif %}
-            </div>
-            
-            <div class="prop-detail-section">
-                <h3>Maps & GIS Links</h3>
-                {% if prop.address and prop.county %}
-                <p><strong>Google Maps:</strong> <a href="{{ prop.google_maps_url }}" target="_blank" rel="noopener">{{ prop.google_maps_url }}</a></p>
-                <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
-                {% elif prop.google_maps_topo_url %}
-                <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
-                {% endif %}
-                {% if prop.gis_url %}
-                <p><strong>GIS Viewer:</strong> <a href="{{ prop.gis_url }}" target="_blank" rel="noopener">{{ prop.gis_url }}</a></p>
-                {% endif %}
-                {% if prop.taxnet_url %}
-                <p><strong>TaxNet:</strong> <a href="{{ prop.taxnet_url }}" target="_blank" rel="noopener">{{ prop.taxnet_url }}</a></p>
-                {% endif %}
-                {% if prop.gislink %}
-                <p><strong>GIS Link:</strong> {{ prop.gislink }}</p>
-                {% endif %}
-            </div>
-            
-            {% if prop.get('tnmap_owner') %}
-            <div class="prop-detail-section">
-                <h3>TNMap Assessment Data</h3>
-                <p><strong>Owner:</strong> {{ prop.tnmap_owner }}</p>
-                {% if prop.get('tnmap_owner2') %}
-                <p><strong>Owner 2:</strong> {{ prop.tnmap_owner2 }}</p>
-                {% endif %}
-                {% if prop.get('tnmap_address') %}
-                <p><strong>Address (TNMap):</strong> {{ prop.tnmap_address }}</p>
-                {% endif %}
-                {% if prop.get('tnmap_gislink') %}
-                <p><strong>Parcel/GIS Link:</strong> {{ prop.tnmap_gislink }}</p>
-                {% endif %}
-            </div>
-            {% endif %}
-            
-            <div class="prop-detail-section">
-                <h3>Timeline</h3>
-                <p><strong>First Seen:</strong> {{ prop.first_seen }}</p>
-                <p><strong>Last Seen:</strong> {{ prop.last_seen }}</p>
-                <p><strong>Sale Details Updated:</strong> {{ prop.last_updated or 'Never' }}</p>
-                <p><strong>Seen Count:</strong> {{ prop.seen_count }}</p>
-            </div>
-            
-            {% if same_case %}
-            <div class="prop-detail-section">
-                <h3>This case also appears on</h3>
-                {% for other in same_case %}
-                <p>
-                    <a href="{{ url_for('property_detail', property_id=other.id, category=request.args.get('category', '')) }}">
-                        {{ other.source }}{% if other.address %} — {{ other.address }}{% endif %}
-                    </a>
-                </p>
-                {% endfor %}
-            </div>
-            {% endif %}
-            
-            {% if prop.description %}
-            <div class="prop-detail-section">
-                <h3>Description</h3>
-                <div class="prop-description">{{ prop.description[:2000] }}</div>
-            </div>
-            {% endif %}
-            
-            {% if prop.tags %}
-            <div class="prop-detail-section">
-                <h3>Tags</h3>
-                <p>{{ prop.tags }}</p>
-            </div>
-            {% endif %}
-            
-            <div class="prop-detail-section">
-                <h3>Notes</h3>
-                <div id="notes-container" onclick="if(!document.getElementById('notes-editor').style.display){toggleNotes()}" style="cursor:pointer">
-                    <p id="notes-display">{% if prop.notes %}{{ prop.notes[:500] }}{% if prop.notes|length > 500 %}...{% endif %}{% else %}Click to add notes{% endif %}</p>
+            <!-- OVERVIEW -->
+            <div class="prop-tab-pane active" id="tab-overview">
+                <div class="prop-detail-section">
+                    <h3>Location</h3>
+                    <p><strong>County:</strong> {{ prop.county or 'N/A' }} {{ prop.state }}</p>
+                    <p><strong>Zip Code:</strong> {{ prop.zip_code or 'N/A' }}</p>
+                    {% if prop.parcel_number %}
+                    <p><strong>Parcel Number:</strong> {{ prop.parcel_number }}</p>
+                    {% endif %}
+                    {% if prop.latitude and prop.longitude %}
+                    <p><strong>Coordinates:</strong> {{ "%.4f"|format(prop.latitude) }}°, {{ "%.4f"|format(prop.longitude) }}°</p>
+                    {% endif %}
                 </div>
-                <textarea id="notes-editor" rows="6" style="display:none;width:100%;margin-top:8px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-family:monospace;font-size:13px">{{ prop.notes or '' }}</textarea>
-                <button id="notes-save-btn" class="btn btn-secondary" style="display:none;margin-top:8px" onclick="event.stopPropagation();saveNotes({{ prop.id }})">Save Notes</button>
+
+                <div class="prop-detail-section">
+                    <h3>Maps &amp; Links</h3>
+                    {% if prop.address and prop.county %}
+                    <p><a href="{{ prop.google_maps_url }}" target="_blank" rel="noopener">Google Maps</a></p>
+                    <p><a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">Topographic Map</a></p>
+                    {% elif prop.google_maps_topo_url %}
+                    <p><a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">Topographic Map</a></p>
+                    {% endif %}
+                    {% if prop.gis_url %}
+                    <p><a href="{{ prop.gis_url }}" target="_blank" rel="noopener">GIS Viewer (satellite)</a></p>
+                    {% endif %}
+                    {% if prop.google_maps_satellite_url %}
+                    <p><a href="{{ prop.google_maps_satellite_url }}" target="_blank" rel="noopener">Aerial / Satellite Photo</a></p>
+                    {% endif %}
+                    {% if prop.google_maps_street_url %}
+                    <p><a href="{{ prop.google_maps_street_url }}" target="_blank" rel="noopener">Street View Photo</a></p>
+                    {% endif %}
+                    {% if prop.taxnet_url %}
+                    <p><a href="{{ prop.taxnet_url }}" target="_blank" rel="noopener">TaxNet</a></p>
+                    {% endif %}
+                    {% if prop.get('tnmap_gislink') %}
+                    <p><a href="https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={{ prop.tnmap_gislink }}" target="_blank" rel="noopener">TN Comptroller (TPAD)</a></p>
+                    {% endif %}
+                </div>
+
+                <div class="prop-detail-section">
+                    <h3>Extracted IDs</h3>
+                    {% if prop.extracted_pin %}
+                    <p><strong>PIN / Parcel ID:</strong> <code>{{ prop.extracted_pin }}</code></p>
+                    {% endif %}
+                    {% if prop.extracted_deed_plat %}
+                    <p><strong>Deed / Plat:</strong> <code>{{ prop.extracted_deed_plat }}</code></p>
+                    {% endif %}
+                    {% if prop.parcel_number %}
+                    <p><strong>DB Parcel:</strong> <code>{{ prop.parcel_number }}</code></p>
+                    {% endif %}
+                </div>
+
+                <div class="prop-detail-section">
+                    <h3>Property Info</h3>
+                    {% if prop.price %}
+                    <p><strong>Price:</strong> ${{ "%.2f"|format(prop.price / 100) }}</p>
+                    {% endif %}
+                    <p><strong>Acreage:</strong>
+        {% if prop.manual_acres_set %}
+        <span title="Manually set on {{ prop.manual_acres_set }}">
+            {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres <span style="color:#f59e0b">&#128274;</span> manual
+        </span>
+        {% else %}
+        {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres
+        {% endif %}
+    </p>
+                    {% if prop.get('tnmap_deeded_acres') %}
+                    <p><strong>Deeded Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_deeded_acres) }} acres</p>
+                    {% endif %}
+                    {% if prop.get('tnmap_calculated_acres') %}
+                    <p><strong>Calculated Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_calculated_acres) }} acres</p>
+                    {% endif %}
+                </div>
+
+                <div class="prop-detail-section">
+                    <h3>Sale &amp; Auction</h3>
+                    {% set sale_date = prop.auction_date|clean_date %}
+                    {% if sale_date %}<p><strong>Sale / Auction Date:</strong> {{ sale_date }}</p>{% endif %}
+                    {% set upset_end = prop.upset_bid_end|clean_date %}
+                    {% if upset_end %}<p><strong>Upset Bid Deadline:</strong> {{ upset_end }}</p>{% endif %}
+                    {% if prop.close_date %}<p><strong>Close Date:</strong> {{ prop.close_date }}</p>{% endif %}
+                    {% if prop.upset_bid %}<p><strong>Upset Bid:</strong> {{ prop.upset_bid }}</p>{% endif %}
+                </div>
+
+                <div class="prop-detail-section">
+                    <h3>Timeline</h3>
+                    <p><strong>First Seen:</strong> {{ prop.first_seen }}</p>
+                    <p><strong>Last Seen:</strong> {{ prop.last_seen }}</p>
+                    <p><strong>Sale Details Updated:</strong> {{ prop.last_updated or 'Never' }}</p>
+                    <p><strong>Seen Count:</strong> {{ prop.seen_count }}</p>
+                </div>
             </div>
-            
-            {% if prop.get('tnmap_gislink') %}
-            <div class="prop-detail-section">
-                <h3>External Links</h3>
-                <p>
-                    <a href="https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={{ prop.tnmap_gislink }}" 
-                       target="_blank" class="btn">
-                        View on TN Comptroller (TPAD)
-                    </a>
-                </p>
+
+            <!-- MAPS & GIS -->
+            <div class="prop-tab-pane" id="tab-maps">
+                <div class="prop-detail-section">
+                    <h3>Maps &amp; GIS Links</h3>
+                    {% if prop.address and prop.county %}
+                    <p><strong>Google Maps:</strong> <a href="{{ prop.google_maps_url }}" target="_blank" rel="noopener">{{ prop.google_maps_url }}</a></p>
+                    <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
+                    {% elif prop.google_maps_topo_url %}
+                    <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
+                    {% endif %}
+                    {% if prop.gis_url %}
+                    <p><strong>GIS Viewer (satellite):</strong> <a href="{{ prop.gis_url }}" target="_blank" rel="noopener">{{ prop.gis_url }}</a></p>
+                    {% endif %}
+                    {% if prop.google_maps_satellite_url %}
+                    <p><strong>Aerial / Satellite Photo:</strong> <a href="{{ prop.google_maps_satellite_url }}" target="_blank" rel="noopener">View Aerial Photo</a></p>
+                    {% endif %}
+                    {% if prop.google_maps_street_url %}
+                    <p><strong>Street View Photo:</strong> <a href="{{ prop.google_maps_street_url }}" target="_blank" rel="noopener">View Street View</a></p>
+                    {% endif %}
+                    {% if prop.taxnet_url %}
+                    <p><strong>TaxNet:</strong> <a href="{{ prop.taxnet_url }}" target="_blank" rel="noopener">{{ prop.taxnet_url }}</a></p>
+                    {% endif %}
+                    {% if prop.gislink %}
+                    <p><strong>GIS Link:</strong> {{ prop.gislink }}</p>
+                    {% endif %}
+                </div>
+
+                {% if prop.get('tnmap_owner') %}
+                <div class="prop-detail-section">
+                    <h3>TNMap Assessment Data</h3>
+                    <p><strong>Owner:</strong> {{ prop.tnmap_owner }}</p>
+                    {% if prop.get('tnmap_owner2') %}
+                    <p><strong>Owner 2:</strong> {{ prop.tnmap_owner2 }}</p>
+                    {% endif %}
+                    {% if prop.get('tnmap_address') %}
+                    <p><strong>Address (TNMap):</strong> {{ prop.tnmap_address }}</p>
+                    {% endif %}
+                    {% if prop.get('tnmap_gislink') %}
+                    <p><strong>Parcel/GIS Link:</strong> {{ prop.tnmap_gislink }}</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if prop.get('tnmap_gislink') %}
+                <div class="prop-detail-section">
+                    <h3>External Links</h3>
+                    <p>
+                        <a href="https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={{ prop.tnmap_gislink }}"
+                           target="_blank" class="btn">
+                            View on TN Comptroller (TPAD)
+                        </a>
+                    </p>
+                </div>
+                {% endif %}
             </div>
-            {% endif %}
-            {% if prop.source == 'newspaper_notices' and prop.url %}
-            <div class="prop-detail-section">
-                <h3>Source Notice</h3>
-                <p>
-                    <a href="{{ prop.url }}" target="_blank" rel="noopener" class="btn">
-                        View Original Notice
-                    </a>
-                </p>
+
+            <!-- SOURCE -->
+            <div class="prop-tab-pane" id="tab-source">
+                {% if prop.source in ('newspaper_notices', 'ncforeclosures', 'tnforeclosures', 'ganotices') and prop.url %}
+                <div class="prop-detail-section">
+                    <h3>Source Notice</h3>
+                    <p>
+                        <a href="{{ prop.url }}" target="_blank" rel="noopener" class="btn">
+                            View Original Notice
+                        </a>
+                    </p>
+                </div>
+                {% endif %}
+                {% if prop.raw_source_text %}
+                <div class="prop-detail-section">
+                    <h3>Raw Source Text</h3>
+                    <pre class="prop-raw-source" style="max-width:1024px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word">{{ prop.raw_source_text }}</pre>
+                </div>
+                {% endif %}
+                {% if prop.description %}
+                <div class="prop-detail-section">
+                    <h3>Description</h3>
+                    <div class="prop-description">{{ prop.description[:2000] }}</div>
+                </div>
+                {% endif %}
             </div>
-            {% if prop.raw_source_text %}
-            <div class="prop-detail-section">
-                <h3>Raw Source Text</h3>
-                <pre class="prop-raw-source">{{ prop.raw_source_text[:4000] }}</pre>
+
+            <!-- RELATED -->
+            <div class="prop-tab-pane" id="tab-related">
+                {% if same_case %}
+                <div class="prop-detail-section">
+                    <h3>This case also appears on</h3>
+                    {% for other in same_case %}
+                    <p>
+                        <a href="{{ url_for('property_detail', property_id=other.id, category=request.args.get('category', '')) }}">
+                            {{ other.source }}{% if other.address %} — {{ other.address }}{% endif %}
+                        </a>
+                    </p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if cross_links %}
+                <div class="prop-detail-section">
+                    <h3>Cross-listed on other sources</h3>
+                    {% for link in cross_links %}
+                    <p>
+                        <a href="{{ url_for('property_detail', property_id=link.id, category=request.args.get('category', '')) }}">
+                            {{ link.source }}{% if link.address %} — {{ link.address }}{% elif link.county %} — {{ link.county }}{% endif %}
+                        </a>
+                        <span style="color:#6b7280;font-size:0.85em"> ({{ link.reason }}{% if link.parcel_number %}: {{ link.parcel_number }}{% endif %})</span>
+                        {% if link.status == 'archived' %}<span style="color:#b45309;font-size:0.85em"> [archived]</span>{% endif %}
+                    </p>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
-            {% endif %}
-            {% endif %}
+
+            <!-- NOTES -->
+            <div class="prop-tab-pane" id="tab-notes">
+                <div class="prop-detail-section">
+                    <h3>Notes</h3>
+                    <div id="notes-display" class="tile-notes-display">
+                        {% if prop.notes %}{{ prop.notes }}{% else %}<span class="notes-empty">No notes yet.</span>{% endif %}
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="notes-toggle-btn" onclick="toggleNotes()" style="margin-top:0.5rem">
+                        {% if prop.notes %}Edit Note{% else %}Add Note{% endif %}
+                    </button>
+                    <div id="notes-editor-wrap" style="display:none;margin-top:0.5rem">
+                        <textarea id="notes-editor" rows="6" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-family:monospace;font-size:13px">{{ prop.notes or '' }}</textarea>
+                        <div style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:center">
+                            <button type="button" class="btn btn-secondary" onclick="saveNotes({{ prop.id }})">Save Note</button>
+                            <button type="button" class="btn" onclick="cancelNotes()">Cancel</button>
+                            <span id="notes-status" class="tile-notes-status"></span>
+                        </div>
+                    </div>
+                </div>
+
+                {% if prop.tags %}
+                <div class="prop-detail-section">
+                    <h3>Tags</h3>
+                    <p>{{ prop.tags }}</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
     </div>
-    
+
      <div class="prop-actions">
         <div id="nav-buttons" style="display:flex;gap:8px;margin-right:16px"></div>
         {% if not prop.manual_acres_set %}
@@ -206,39 +307,58 @@
 <script>
 const NAV_CATEGORY = '{{ request.args.get('category', '') }}';
 
+function showPropTab(name, btn) {
+    document.querySelectorAll('.prop-tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.prop-tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+}
+
 function propUrl(id) {
     return '/property/' + id + (NAV_CATEGORY ? '?category=' + encodeURIComponent(NAV_CATEGORY) : '');
 }
 
 function toggleNotes() {
-    const display = document.getElementById('notes-display');
+    const wrap = document.getElementById('notes-editor-wrap');
     const editor = document.getElementById('notes-editor');
-    const saveBtn = document.getElementById('notes-save-btn');
-    display.style.display = 'none';
-    editor.style.display = 'block';
-    editor.value = '';
-    fetch('/api/property/{{ prop.id }}')
-        .then(r => r.json()).then(data => {
-            editor.value = data.notes || '';
-        });
-    saveBtn.style.display = 'inline-block';
-    editor.focus();
+    const display = document.getElementById('notes-display');
+    if (wrap.style.display === 'none' || !wrap.style.display) {
+        display.style.display = 'none';
+        wrap.style.display = 'block';
+        editor.focus();
+    } else {
+        display.style.display = 'block';
+        wrap.style.display = 'none';
+    }
+}
+
+function cancelNotes() {
+    document.getElementById('notes-editor-wrap').style.display = 'none';
+    document.getElementById('notes-display').style.display = 'block';
 }
 
 function saveNotes(id) {
     const editor = document.getElementById('notes-editor');
-    const saveBtn = document.getElementById('notes-save-btn');
     const display = document.getElementById('notes-display');
+    const toggleBtn = document.getElementById('notes-toggle-btn');
+    const wrap = document.getElementById('notes-editor-wrap');
+    const status = document.getElementById('notes-status');
     fetch('/api/property/' + id + '/notes', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({notes: editor.value})
     }).then(r => r.json()).then(d => {
-        display.textContent = d.notes || 'Click to add notes';
+        display.textContent = d.notes || 'No notes yet.';
+        toggleBtn.textContent = d.notes ? 'Edit Note' : 'Add Note';
+        wrap.style.display = 'none';
         display.style.display = 'block';
-        editor.style.display = 'none';
-        saveBtn.style.display = 'none';
-    }).catch(() => alert('Failed to save notes'));
+        if (status) {
+            status.textContent = 'Saved ✓';
+            setTimeout(function () { status.textContent = ''; }, 2000);
+        }
+    }).catch(() => {
+        if (status) status.textContent = 'Error';
+    });
 }
 
 function lockAcres(id) {

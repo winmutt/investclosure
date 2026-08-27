@@ -22,11 +22,20 @@ import logging
 import random
 import re
 import time
+from datetime import date
 from typing import Optional, Any
+from urllib.parse import quote
 
 from curl_cffi import requests as curl_requests
 
 from .config import config
+from .gis_urls import (
+    get_gis_viewer_url,
+    get_ga_gis_url,
+    get_nconemap_viewer_url,
+    NC_ONEMAP_VIEWER_URL,
+)
+from .county_parcel import resolve_county_tax_id
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +45,7 @@ NC_ONEMAP_URL = "https://services.nconemap.gov/secure/rest/services/NC1Map_Parce
 # County FIPS codes (verified via NC1Map API queries, standard Census codes)
 NC_COUNTY_FIPS: dict[str, str] = {
     "alleghany": "005", "ashe": "009", "avery": "011", "buncombe": "021",
-    "burke": "023", "caldwell": "027", "catawba": "035", "cherokee": "039",
+    "burke": "023", "catawba": "035", "cherokee": "039",
     "clay": "043", "cleveland": "045", "columbus": "047",
     "cumberland": "049", "franklin": "069", "graham": "075", "haywood": "087",
     "henderson": "089", "jackson": "099", "macon": "113", "madison": "115",
@@ -321,22 +330,10 @@ def enrich_kania_record(kania_rec: dict[str, Any]) -> dict[str, Any]:
     parcel_data: Optional[dict] = None
 
     if parcel_raw:
-        for candidate in re.split(r'[\s\t]+', parcel_raw):
-            candidate = candidate.strip()
-            if not candidate:
-                continue
-            svc = _get_service()
-            parcel_data = _lookup_parcel(candidate, county)
-            if parcel_data and parcel_data.get("acres", 0) > 0:
-                break
-            flat = re.sub(r'[-\s\t]', '', candidate)
-            if flat != candidate and flat.strip():
-                parcel_data = _lookup_parcel(flat, county)
-                if parcel_data and parcel_data.get("acres", 0) > 0:
-                    break
+        parcel_data = _lookup_parcel_multi(parcel_raw, county)
 
     if parcel_data:
-        _apply_parcel_data(enriched, parcel_data, address, city, gis_county=county)
+        _apply_parcel_data(enriched, parcel_data, address, city, gis_county=county, state="NC")
     else:
         logger.info("No GIS match for %s NC parcel=%s", county, parcel_raw[:40])
 
@@ -420,7 +417,8 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
                 if result:
                     return result
 
-        # Strategy 4: Query by parcel alone (no county filter)
+        # Strategy 4: Query by parcel alone (still require county to match,
+        # otherwise a bare token can match an unrelated parcel in another county).
         feats = _nc1map_query({
             "where": f"parno='{variant}'",
             "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
@@ -429,9 +427,11 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
             "resultRecordCount": "1",
         }, timeout=5)
         if feats:
-            return _clean_features(feats)
+            result = _clean_features(feats)
+            if result and _county_matches(result.get("cntyname", ""), county):
+                return result
 
-        # Strategy 5: Query by altparno alone (no county filter)
+        # Strategy 5: Query by altparno alone (require county match, same reason).
         feats = _nc1map_query({
             "where": f"altparno='{variant}'",
             "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
@@ -440,16 +440,78 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
             "resultRecordCount": "1",
         }, timeout=5)
         if feats:
-            return _clean_features(feats)
+            result = _clean_features(feats)
+            if result and _county_matches(result.get("cntyname", ""), county):
+                return result
 
     return None
 
 
-# ArcGIS Online Map Viewer layer URL for NC1Map Parcels (polygons layer)
-NC_ONEMAP_VIEWER_URL = (
-    "https://www.arcgis.com/apps/mapviewer/index.html"
-    "?url=https%3A%2F%2Fservices.nconemap.gov%2Fsecure%2Frest%2Fservices%2FNC1Map_Parcels%2FMapServer%2F1"
-)
+def _split_parcels(parcel_raw: str) -> list[str]:
+    """Split a parcel field that may pack several PINs into one value.
+
+    Kania Law (and others) sometimes store multiple parcel numbers in a single
+    field, separated by spaces, commas, slashes or semicolons
+    (e.g. ``'13196004051 132954734805'`` or ``'32276 32342 9140 9139'``).
+    """
+    return [p.strip() for p in re.split(r"[\s,;/]+", parcel_raw or "") if p.strip()]
+
+
+def _lookup_parcel_multi(parcel_raw: str, county: Optional[str]) -> Optional[dict]:
+    """Look up one or many parcel numbers stored in a single field.
+
+    Each parcel is queried against NC OneMap; matching features are merged so
+    the returned acreage is the *sum* across all matched parcels (the total
+    property acreage) while the highest-acreage parcel is used as the primary
+    (map pin + canonical parcel number).
+
+    Duplicate PINs that resolve to the *same* physical parcel (e.g. a parcel
+    number listed alongside its altparno) are counted only once, so a property
+    is never double-counted.
+    """
+    candidates = _split_parcels(parcel_raw)
+    if not candidates:
+        return None
+
+    # Authoritative resolution: if the county publishes its own parcel service
+    # that maps the county tax ID -> NC statewide PIN, use that PIN directly.
+    # This avoids the fragile NC OneMap address search (which can bind the
+    # property to the wrong parcel on the same street).
+    if county:
+        for cand in candidates:
+            res = resolve_county_tax_id(county, cand)
+            if res and res.get("pin"):
+                data = _lookup_parcel_multi(res["pin"], county)
+                if data:
+                    logger.info("Resolved %s/%s tax id %s -> PIN %s via county service",
+                                county, "NC", cand, res["pin"])
+                    return data
+
+    seen_parnos: set = set()
+    matches: list[dict] = []
+    for cand in candidates:
+        for variant in _parcel_variants(cand):
+            data = _lookup_parcel(variant, county)
+            if data and data.get("acres", 0) > 0:
+                parno = data.get("parno")
+                # Same physical parcel already counted under another PIN/alt-PIN
+                if parno and parno in seen_parnos:
+                    break
+                if parno:
+                    seen_parnos.add(parno)
+                matches.append(data)
+                break
+    if not matches:
+        return None
+    primary = max(matches, key=lambda d: d.get("acres", 0) or 0)
+    total = round(sum(d.get("acres", 0) or 0 for d in matches), 2)
+    merged = dict(primary)
+    merged["acres"] = total
+    return merged
+
+
+# ArcGIS Online Map Viewer layer URL for NC1Map Parcels (polygons layer) is
+# imported from gis_urls as NC_ONEMAP_VIEWER_URL.
 
 
 def _is_busted_gis_url(url: Optional[str]) -> bool:
@@ -479,49 +541,112 @@ def _is_busted_maps_url(url: Optional[str]) -> bool:
     return True
 
 
-def build_gis_url(lng: Optional[float], lat: Optional[float], parcel: Optional[str]) -> Optional[str]:
-    """Build a human-viewable GIS viewer URL that shows the parcel.
+def build_gis_url(lng: Optional[float] = None, lat: Optional[float] = None,
+                  parcel: Optional[str] = None, address: Optional[str] = None,
+                  county: Optional[str] = None, state: Optional[str] = None) -> Optional[str]:
+    """Build a human-viewable GIS viewer URL for the parcel/address.
 
-    Uses the ArcGIS Online Map Viewer with the NC1Map Parcels layer. When
-    coordinates are available the map is centered and zoomed on the parcel;
-    otherwise it falls back to a Google Maps parcel search.
+    Georgia (``state='GA'``) properties use the county's qPublic (Schneider
+    Corp) parcel-search page, since NC OneMap does not cover Georgia. All other
+    states use the NC OneMap statewide ArcGIS Map Viewer. When parcel
+    coordinates are available the NC OneMap link is centered on the parcel
+    (level 16, parcel boundaries visible). Otherwise it falls back to the
+    viewer's address search or a county-zoomed map — both always load correctly.
     """
-    if lng and lat:
+    if state and str(state).strip().upper() == "GA":
+        return get_ga_gis_url(county, parcel)
+
+    # North Carolina (and any other non-GA state) use the NC OneMap statewide
+    # parcel layer through our same-origin viewer/proxy. We center on the
+    # parcel's coordinates when available; otherwise the statewide layer loads.
+    if state and str(state).strip().upper() == "NC":
+        return get_nconemap_viewer_url(lng, lat, parcel, county)
+
+    # Fallback for other states (e.g. TN): legacy ArcGIS Online deep link.
+    if lng is not None and lat is not None:
         return f"{NC_ONEMAP_VIEWER_URL}&center={lng:.6f},{lat:.6f}&level=16"
+    if address:
+        q = " ".join(p for p in [address, county, "NC"] if p and p.strip())
+        return f"{NC_ONEMAP_VIEWER_URL}&find={quote(q)}"
     if parcel:
-        return f"https://www.google.com/maps/search/parcel+{parcel}+in+NC"
+        return NC_ONEMAP_VIEWER_URL
+    if county:
+        return f"{NC_ONEMAP_VIEWER_URL}&find={quote(f'{county.strip()} NC')}"
     return None
 
 
-def build_google_maps_url(lng: Optional[float], lat: Optional[float],
-                          address: Optional[str], city: Optional[str],
-                          county: Optional[str]) -> Optional[str]:
+def build_google_maps_url(lng: Optional[float] = None, lat: Optional[float] = None,
+                           address: Optional[str] = None, city: Optional[str] = None,
+                           county: Optional[str] = None, state: Optional[str] = None) -> Optional[str]:
     """Build a Google Maps URL that visually locates the property.
 
-    Coordinates produce a precise pin; otherwise the address + city +
-    county + state text search is used.
+    A street address (with city/county) is preferred because coordinate pins
+    are occasionally wrong; coordinates are only used as a fallback when no
+    address is available. ``state`` defaults to ``NC`` (the primary scrape
+    region) but is set to ``GA`` for Georgia properties so the search is not
+    mis-scoped to North Carolina.
     """
-    if lng and lat:
-        return f"https://www.google.com/maps/search/?api=1&query={lat:.6f},{lng:.6f}"
-    parts = [p.strip() for p in [address, city, county, "NC"] if p and p.strip()]
+    st = (state or "NC").strip() or "NC"
+    parts = [p for p in [address, city, county, st] if p and p.strip()]
     if parts:
         q = "+".join(p.replace(" ", "+") for p in parts)
         return f"https://www.google.com/maps/search/?api=1&query={q}"
+    if lng and lat:
+        return f"https://www.google.com/maps/search/?api=1&query={lat:.6f},{lng:.6f}"
     return None
 
 
 def build_google_maps_topo_url(lng: Optional[float], lat: Optional[float],
-                               address: Optional[str], city: Optional[str],
-                               county: Optional[str]) -> Optional[str]:
+                                 address: Optional[str], city: Optional[str],
+                                 county: Optional[str], state: Optional[str] = None) -> Optional[str]:
     """Build a Google Maps URL with the terrain/topographic basemap."""
-    base = build_google_maps_url(lng, lat, address, city, county)
+    base = build_google_maps_url(lng, lat, address, city, county, state=state)
     if not base:
         return None
     sep = "&" if "?" in base else "?"
     return f"{base}{sep}map_action=map&base=maps.terrain"
 
 
-def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gis_county: str) -> None:
+def build_satellite_url(lng: Optional[float] = None, lat: Optional[float] = None,
+                        address: Optional[str] = None, city: Optional[str] = None,
+                        county: Optional[str] = None) -> Optional[str]:
+    """Build a Google Maps satellite/aerial photo URL centered on the parcel.
+
+    Uses the classic Google Maps ``t=k`` (satellite) parameter, which forces an
+    aerial/photo basemap regardless of the viewer's default layer. When
+    coordinates are available it drops a pin at the exact parcel; otherwise it
+    searches the street address.
+    """
+    if lat is not None and lng is not None:
+        return f"https://maps.google.com/maps?q={lat:.6f},{lng:.6f}&z=18&t=k"
+    parts = [p for p in [address, city, county, "NC"] if p and p.strip()]
+    if parts:
+        q = "+".join(p.replace(" ", "+") for p in parts)
+        return f"https://maps.google.com/maps?q={q}&z=15&t=k"
+    return None
+
+
+def build_street_view_url(lng: Optional[float] = None, lat: Optional[float] = None,
+                          address: Optional[str] = None, city: Optional[str] = None,
+                          county: Optional[str] = None) -> Optional[str]:
+    """Build a Google Street View photo URL for the parcel (when available).
+
+    Uses the Street View URL scheme (``map_action=pano``). With coordinates it
+    opens the panorama at the parcel's location; otherwise it searches the
+    address. Google shows a "no imagery" notice when no street-level photo
+    exists for that spot.
+    """
+    if lat is not None and lng is not None:
+        return (f"https://www.google.com/maps/@?api=1&map_action=pano"
+                f"&viewpoint={lat:.6f},{lng:.6f}&heading=0&pitch=0&fov=80")
+    parts = [p for p in [address, city, county, "NC"] if p and p.strip()]
+    if parts:
+        q = "+".join(p.replace(" ", "+") for p in parts)
+        return f"https://www.google.com/maps/?api=1&query={q}&map_action=pano"
+    return None
+
+
+def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gis_county: str, state: str = "NC") -> None:
     """Apply GIS parcel data to a record."""
     if parcel_data.get("acres", 0) > 0:
         rec["acres"] = parcel_data["acres"]
@@ -545,12 +670,13 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
         rec["longitude"] = parcel_data["longitude"]
 
     rec["gis_url"] = build_gis_url(
-        parcel_data.get("longitude"), parcel_data.get("latitude"), parcel_ref
+        parcel_data.get("longitude"), parcel_data.get("latitude"),
+        parcel_ref, address, gis_county, state=state,
     )
 
     street = rec.get("address") or address
     rec["google_maps_url"] = build_google_maps_url(
-        parcel_data.get("latitude"), parcel_data.get("longitude"),
+        parcel_data.get("longitude"), parcel_data.get("latitude"),
         street, city, actual_county,
     )
     rec["google_maps_topo_url"] = build_google_maps_topo_url(
@@ -587,14 +713,20 @@ def enrich_properties(source: Optional[str] = None) -> dict:
     # NOTE: parentheses are required — SQLite binds AND tighter than OR, so
     # the whole OR chain must be wrapped before the source filter is appended.
     # Also re-process rows whose stored map/GIS links are stale/busted
-    # (old code stored JSON-returning REST query URLs).
+    # (old code stored JSON-returning REST query URLs), and any row that has
+    # a street address but is missing a map/GIS link.
     where = (
         "(acres IS NULL OR acres_source IS NULL OR acres_source = 'placeholder')"
-        " OR (parcel_number IS NOT NULL AND parcel_number != '' AND (gis_url IS NULL OR gis_url = ''))"
+        " OR (parcel_number IS NOT NULL AND parcel_number != '' AND ("
+        "     gis_url IS NULL OR gis_url = ''"
+        "     OR google_maps_url IS NULL OR google_maps_url = ''))"
+        " OR (address IS NOT NULL AND address != '' AND ("
+        "     gis_url IS NULL OR gis_url = ''"
+        "     OR google_maps_url IS NULL OR google_maps_url = ''))"
         " OR (parcel_number IS NOT NULL AND parcel_number != '' AND ("
         "     gis_url LIKE '%services6.arcgis.com%'"
         "     OR gis_url LIKE '%/query%f=json%'"
-        "     OR google_maps_url LIKE '%/maps/search/%' AND google_maps_url NOT LIKE '%?api=1%'"
+        "     OR (google_maps_url LIKE '%/maps/search/%' AND google_maps_url NOT LIKE '%?api=1%')"
         "))"
     )
     where = f"({where})"
@@ -604,9 +736,9 @@ def enrich_properties(source: Optional[str] = None) -> dict:
         where += " AND source = ?"
         params.append(source)
 
-    # Get properties with parcel numbers that need enrichment
+    # Get properties (with a parcel OR an address) that need GIS enrichment
     rows = conn.execute(
-        f"SELECT id, source, county, parcel_number, address, city, acres_source, gis_url "
+        f"SELECT id, source, county, parcel_number, address, city, state, acres_source, gis_url, google_maps_url "
         f"FROM properties WHERE {where}",
         params,
     ).fetchall()
@@ -614,82 +746,96 @@ def enrich_properties(source: Optional[str] = None) -> dict:
     if not rows:
         logger.info("No properties need GIS enrichment")
         conn.close()
-        return {"enriched": 0, "skipped_already_gis": 0, "skipped_no_parcel": 0, "failed": 0}
+        return {"enriched": 0, "url_updated": 0, "skipped_no_parcel": 0, "failed": 0}
 
     enriched = 0
+    url_updated = 0
     skipped_no_parcel = 0
     failed = 0
     MAX_ENRICH = 500
 
-    for row_id, src, county, parcel, address, city, acres_src, gis_url in rows:
-        # Stop after MAX_ENRICH to avoid long-running enrichment
-        if enriched + skipped_no_parcel + failed >= MAX_ENRICH:
+    for row in rows:
+        if enriched + url_updated + failed >= MAX_ENRICH:
             logger.info("Enrichment limit reached (%d), stopping", MAX_ENRICH)
             break
-            continue
+
+        (row_id, src, county, parcel, address, city, state,
+         acres_src, gis_url, gmaps_url) = row
 
         parcel_raw = (parcel or "").strip()
-        if not parcel_raw:
+        address = (address or "").strip()
+        city = (city or "").strip()
+
+        if not parcel_raw and not address:
             skipped_no_parcel += 1
             continue
 
-        # Lookup parcel
-        parcel_data = _lookup_parcel(parcel_raw, county)
+        # 1) Prefer an authoritative county-specific GIS lookup (Cherokee, ...).
+        #    Falls back to NC OneMap parcel/address search.
+        parcel_data = None
+        county_tag = None
+        if parcel_raw or address:
+            parcel_data = county_specific_lookup(county, parcel_raw, address)
+            if parcel_data and parcel_data.get("confidence") == "high":
+                county_tag = parcel_data.get("source_tag") or "county_gis"
+            else:
+                parcel_data = None
+        if not parcel_data and parcel_raw:
+            parcel_data = _lookup_parcel_multi(parcel_raw, county)
+        # 2) Fall back to an address-based NC OneMap search
+        if not parcel_data and address:
+            parcel_data = search_address_in_nc1map(address, county)
 
-        if parcel_data and parcel_data.get("acres", 0) > 0:
-            # Build update dict
-            update_fields = {
-                "id": row_id,
-                "acres": parcel_data["acres"],
-                "acres_source": "gis",
-                "gis_county": parcel_data.get("cntyname") or county,
-                "owner_name": parcel_data.get("owner_name"),
-            }
+        update_fields: dict = {}
+        got_acres = bool(parcel_data and parcel_data.get("acres", 0) > 0)
+        actual_county = (parcel_data or {}).get("cntyname") or county or ""
+        coords_lat = (parcel_data or {}).get("latitude")
+        coords_lng = (parcel_data or {}).get("longitude")
+        parcel_ref = (parcel_data or {}).get("parno") or parcel_raw
 
-            # Update parcel number to NC1Map's canonical form
+        if got_acres:
+            update_fields["acres"] = parcel_data["acres"]
+            update_fields["acres_source"] = county_tag or "gis"
+            update_fields["gis_county"] = actual_county
+            update_fields["owner_name"] = parcel_data.get("owner_name")
+            update_fields["land_use"] = parcel_data.get("land_use") or None
             if parcel_data.get("parno"):
                 update_fields["parcel_number"] = parcel_data["parno"]
+            if coords_lat and coords_lng:
+                update_fields["latitude"] = coords_lat
+                update_fields["longitude"] = coords_lng
 
-            # Update land use
-            if parcel_data.get("land_use"):
-                update_fields["land_use"] = parcel_data["land_use"]
-            else:
-                update_fields["land_use"] = None
+        # Always build map/GIS links when an address or parcel is available, so
+        # every property — from any scraper — gets both a Google Maps link and a
+        # GIS viewer link.
+        if address or parcel_ref:
+            gmaps = build_google_maps_url(coords_lng, coords_lat, address, city, actual_county)
+            if gmaps:
+                update_fields["google_maps_url"] = gmaps
+            gis = build_gis_url(coords_lng, coords_lat, parcel_ref, address, actual_county, state=state)
+            if gis:
+                update_fields["gis_url"] = gis
 
-            # Update coordinates from parcel centroid
-            if parcel_data.get("latitude") and parcel_data.get("longitude"):
-                update_fields["latitude"] = parcel_data["latitude"]
-                update_fields["longitude"] = parcel_data["longitude"]
-
-            # Update gis_url (human-viewable Map Viewer)
-            actual_county = (parcel_data.get("cntyname") or county) or ""
-            parcel_ref = parcel_data.get("parno") or parcel_raw
-            update_fields["gis_url"] = build_gis_url(
-                parcel_data.get("longitude"), parcel_data.get("latitude"), parcel_ref
-            )
-
-            # Update google maps URLs
-            update_fields["google_maps_url"] = build_google_maps_url(
-                parcel_data.get("latitude"), parcel_data.get("longitude"),
-                address, city, actual_county,
-            )
-            update_fields["google_maps_topo_url"] = build_google_maps_topo_url(
-                parcel_data.get("latitude"), parcel_data.get("longitude"),
-                address, city, actual_county,
-            )
-
-            # Build update SQL
-            set_parts = ", ".join(f"{k} = ?" for k in update_fields if k != "id")
-            conn.execute(
-                f"UPDATE properties SET {set_parts} WHERE id = ?",
-                [update_fields[k] for k in update_fields if k != "id"] + [row_id],
-            )
-            conn.commit()
-            enriched += 1
-            logger.info("Enriched #%s %s %s parcel=%s -> %sac", row_id, src, county, parcel_raw[:20], update_fields["acres"])
-        else:
+        if not update_fields:
             failed += 1
-            logger.debug("No GIS match for #%s %s county=%s parcel=%s", row_id, src, county, parcel_raw[:40])
+            logger.debug("No GIS/address data for #%s %s county=%s parcel=%s addr=%s",
+                         row_id, src, county, parcel_raw[:40], address[:40])
+            time.sleep(random.uniform(0.3, 0.6))
+            continue
+
+        set_parts = ", ".join(f"{k} = ?" for k in update_fields if k != "id")
+        conn.execute(
+            f"UPDATE properties SET {set_parts} WHERE id = ?",
+            [update_fields[k] for k in update_fields if k != "id"] + [row_id],
+        )
+        conn.commit()
+        if got_acres:
+            enriched += 1
+            logger.info("Enriched #%s %s %s parcel=%s -> %sac",
+                        row_id, src, county, parcel_raw[:20], update_fields["acres"])
+        else:
+            url_updated += 1
+            logger.info("Linked #%s %s %s (addr) gmaps+gis set", row_id, src, county)
 
         # Rate limit
         time.sleep(random.uniform(0.3, 0.6))
@@ -699,11 +845,12 @@ def enrich_properties(source: Optional[str] = None) -> dict:
 
     result = {
         "enriched": enriched,
+        "url_updated": url_updated,
         "skipped_no_parcel": skipped_no_parcel,
         "failed": failed,
     }
-    logger.info(f"Enrichment complete: {enriched} enriched, "
-                f"{skipped_no_parcel} skipped(no parcel), {failed} failed")
+    logger.info(f"Enrichment complete: {enriched} gis-acres, {url_updated} url-only, "
+                f"{skipped_no_parcel} skipped(no data), {failed} failed")
     return result
 
 
@@ -718,7 +865,7 @@ _STREET_ABBREV = {
 # County FIPS codes (verified via NC1Map API queries, standard Census codes)
 _COUNTY_FIPS = {
     "alleghany": "005", "ashe": "009", "avery": "011", "buncombe": "021",
-    "burke": "023", "caldwell": "027", "catawba": "035", "cherokee": "039",
+    "burke": "023", "catawba": "035", "cherokee": "039",
     "clay": "043", "cleveland": "045", "franklin": "069", "graham": "075",
     "haywood": "087", "henderson": "089", "jackson": "099", "macon": "113",
     "madison": "115", "mcdowell": "111", "mitchell": "121", "polk": "149",
@@ -744,7 +891,7 @@ def _normalize_address(addr: str) -> Optional[str]:
     if len(words) >= 3:
         return " ".join(words[-3:])
     elif len(words) == 2:
-        return f"{words[0][:3]} {words[1]}"
+        return " ".join(words)
     return " ".join(words[:3]) if words else None
 
 
@@ -884,3 +1031,198 @@ def enrich_hutchens_properties() -> dict:
     }
     logger.info(f"Hutchens enrichment: {enriched} enriched, {skipped_no_address} skipped, {failed} failed")
     return result
+
+
+# --- Cherokee County authoritative GIS (ArcGIS Open Data FeatureServer) ---
+# Cherokee publishes parcels at services5.arcgis.com/.../Parcels/FeatureServer/0.
+# NC OneMap mirrors the *polygon* acreage (POLY_ACRES / TOTAL_CALC), but the
+# foreclosure-relevant figure is the deed/legal acreage in ``LegalLandU``,
+# which the county's own GIS viewer displays. We query that field directly.
+CHEROKEE_PARCELS_URL = (
+    "https://services5.arcgis.com/UmQCfTNQbyTzAV5N/arcgis/rest/services/"
+    "Parcels/FeatureServer/0/query"
+)
+
+
+def _cherokee_query(where: str, timeout: int = 15) -> Optional[list[dict]]:
+    try:
+        resp = curl_requests.get(
+            CHEROKEE_PARCELS_URL,
+            params={
+                "f": "json",
+                "where": where,
+                "outFields": "NEWPIN,LegalLandU,TOTAL_CALC,POLY_ACRES",
+                "returnGeometry": "true",
+                "outSR": "4326",
+                "resultRecordCount": "10",
+            },
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            logger.debug("Cherokee GIS HTTP %d", resp.status_code)
+            return None
+        data = resp.json()
+        if data.get("error"):
+            logger.debug("Cherokee GIS error: %s", data["error"])
+            return None
+        return data.get("features", [])
+    except Exception as e:  # pragma: no cover - network
+        logger.debug("Cherokee GIS query failed: %s", e)
+        return None
+
+
+def cherokee_lookup(parcel: Optional[str] = None, address: Optional[str] = None,
+                    timeout: int = 15) -> Optional[dict]:
+    """Look up a Cherokee parcel in the county's authoritative FeatureServer.
+
+    Returns the deed/legal acreage (``LegalLandU``, summed across polygon
+    features) plus centroid. Returns None when no parcel matches.
+    """
+    if not parcel and not address:
+        return None
+    feats = None
+    if parcel:
+        feats = _cherokee_query(f"NEWPIN='{parcel}'", timeout)
+    if not feats:
+        return None
+    legal = sum((f.get("attributes", {}).get("LegalLandU") or 0) for f in feats)
+    if legal <= 0:
+        return None
+    centroid = None
+    for f in feats:
+        g = f.get("geometry")
+        if g and g.get("rings"):
+            pts = [p for ring in g["rings"] for p in ring]
+            if pts:
+                centroid = (
+                    round(sum(p[0] for p in pts) / len(pts), 6),
+                    round(sum(p[1] for p in pts) / len(pts), 6),
+                )
+                break
+    return {
+        "parno": parcel,
+        "acres": round(legal, 2),
+        "address": None,
+        "owner": None,
+        "latitude": centroid[1] if centroid else None,
+        "longitude": centroid[0] if centroid else None,
+        "confidence": "high",
+        "source_tag": "cherokee_gis",
+    }
+
+
+def county_specific_lookup(county: Optional[str], parcel: Optional[str] = None,
+                           address: Optional[str] = None) -> Optional[dict]:
+    """Preferred county-specific GIS lookup. Returns None to signal "fall back
+    to NC OneMap". Currently supports Cherokee; extend here as
+    more county services are integrated.
+    """
+    c = (county or "").lower().strip()
+    if c == "cherokee":
+        return cherokee_lookup(parcel, address)
+    return None
+
+
+def re_enrich_all(conn) -> dict:
+    """Re-enrich the entire list, preferring authoritative county GIS.
+
+    For each property we try ``county_specific_lookup`` (Cherokee
+    today) first; only if that returns nothing do we fall back to NC OneMap.
+    Manually-locked rows (``manual_acres_set`` set) are skipped so a user fix
+    survives re-enrichment. Existing acres are only overwritten on a successful
+    lookup, so good data is never clobbered by a transient miss.
+    """
+    rows = conn.execute(
+        "SELECT id, source, county, parcel_number, address, city, acres_source, "
+        "manual_acres_set FROM properties"
+    ).fetchall()
+    cherokee = 0
+    nc_updated = 0
+    skipped = 0
+    failed = 0
+    for row_id, src, county, parcel, address, city, acres_src, manual_set in rows:
+        if (manual_set or "").strip():
+            skipped += 1
+            continue
+        used_county = None
+        parcel_data = county_specific_lookup(county, parcel, address)
+        if parcel_data and parcel_data.get("confidence") == "high":
+            used_county = parcel_data.get("source_tag") or "county_gis"
+        else:
+            parcel_data = None
+            if parcel:
+                parcel_data = _lookup_parcel_multi(parcel, county)
+            if not parcel_data and address:
+                parcel_data = search_address_in_nc1map(address, county)
+            used_county = "gis" if parcel_data else None
+        if not parcel_data:
+            failed += 1
+            time.sleep(random.uniform(0.3, 0.6))
+            continue
+
+        update_fields = {
+            "acres": parcel_data["acres"],
+            "acres_source": used_county or "gis",
+            "gis_county": parcel_data.get("cntyname") or county,
+        }
+        if parcel_data.get("parno"):
+            update_fields["parcel_number"] = parcel_data["parno"]
+        if parcel_data.get("owner_name"):
+            update_fields["owner_name"] = parcel_data["owner_name"]
+        if parcel_data.get("land_use"):
+            update_fields["land_use"] = parcel_data["land_use"]
+        if parcel_data.get("latitude") and parcel_data.get("longitude"):
+            update_fields["latitude"] = parcel_data["latitude"]
+            update_fields["longitude"] = parcel_data["longitude"]
+        gis = build_gis_url(parcel_data.get("longitude"), parcel_data.get("latitude"),
+                            parcel_data.get("parno"), address, county)
+        if gis:
+            update_fields["gis_url"] = gis
+        gmaps = build_google_maps_url(parcel_data.get("longitude"), parcel_data.get("latitude"),
+                                      address, city, parcel_data.get("cntyname") or county)
+        if gmaps:
+            update_fields["google_maps_url"] = gmaps
+
+        set_parts = ", ".join(f"{k} = ?" for k in update_fields)
+        conn.execute(
+            f"UPDATE properties SET {set_parts} WHERE id = ?",
+            list(update_fields.values()) + [row_id],
+        )
+        conn.commit()
+        if used_county == "cherokee_gis":
+            cherokee += 1
+        else:
+            nc_updated += 1
+        logger.info("Re-enriched #%s %s %s -> %sac (%s)",
+                    row_id, src, county, parcel_data["acres"], used_county)
+        time.sleep(random.uniform(0.3, 0.6))
+
+    return {"cherokee": cherokee,
+            "nc_onemap_updated": nc_updated, "skipped_locked": skipped,
+            "failed": failed}
+
+
+def reconcile_archive(conn, min_acres: Optional[float] = None) -> dict:
+    """Make archive status consistent with current acreage.
+
+    - Active properties with 0 < acres < min_acres are archived (fixes ones
+      kept active by a falsely-high match).
+    - Archived properties with acres >= min_acres are unarchived (fixes ones
+      archived by a falsely-low match, or stale status).
+    Properties with NULL acres are left untouched.
+    """
+    from .config import config
+    from .db import archive_below_acres
+    threshold = min_acres if min_acres is not None else config.MIN_ACRES
+    today = date.today().isoformat()
+
+    n_archived = archive_below_acres(conn, threshold)
+    n_unarchived = conn.execute(
+        "UPDATE properties SET status = 'active', last_seen = ? "
+        "WHERE status = 'archived' AND acres IS NOT NULL AND acres >= ?",
+        (today, threshold),
+    ).rowcount
+    conn.commit()
+    logger.info("Reconcile: archived=%s unarchived=%s (threshold=%s)",
+                n_archived, n_unarchived, threshold)
+    return {"archived": n_archived, "unarchived": n_unarchived}

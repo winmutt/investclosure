@@ -58,12 +58,6 @@ To find foreclosure info for these counties, contact the county Tax Office direc
 **Gov Website:** https://www.burkecountync.org/  
 **Status:** ❌ No foreclosure listing found on gov site
 
-### 7. Caldwell County
-**County Seat:** Lenoir  
-**Tax Assessment:** https://www.caldwellcountynctax.com/taxes.html#/  
-**QPublic:** https://qpublic.net/nc/caldwell/  
-**Status:** ✓ Tax card access confirmed
-
 ### 8. Cherokee County
 **County Seat:** Murphy  
 **Tax Assessment:** http://www.cherokeecounty-nc.gov/  
@@ -156,7 +150,6 @@ To find foreclosure info for these counties, contact the county Tax Office direc
 | 3 | **Avery** | Newland | Phillip Barrier, 828-733-8214 | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.averycountync.gov/ |
 | 4 | **Buncombe** | Asheville | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.buncombecounty.org/ |
 | 5 | **Burke** | Morganton | — | https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://www.co.burke.nc.us/ |
-| 6 | **Caldwell** | Lenoir | https://www.caldwellcountynctax.com/taxes.html#/ ||||||||||||||||||
 | 7 | **Cherokee** | Murphy | http://www.cherokeecounty-nc.gov/ ||||||||||||||||||
 | 8 | **Clay** | Hayesville | https://tax.claync.us/ ||||||||||||||||||| https://qpublic.net/nc/ncassessors/loadpage.php?refurl=http://clayconc.com/  https://tax.claync.us/ | https://tax.claync.us/ |
 | 9 | **Graham** | Robbinsville | Blair Hyder, 828-479-7963 | https://qpublic.net/nc/ncassessors/body-g.html (verified listing) |

@@ -15,12 +15,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Status indicator in sidebar
     fetchHealthIndicator();
 
-    // Dashboard tabs (Foreclosure Listings / Notices) — sticky across refresh/navigation
-    const TAB_STORAGE_KEY = 'investclosure_active_tab';
-    const tabGroups = document.querySelectorAll('[data-tab-group]');
-    tabGroups.forEach(function(group) {
-        const buttons = Array.from(group.querySelectorAll('[data-tab]'));
-        const panes = Array.from(document.querySelectorAll('[data-tab-pane]'));
+    // Dashboard nested tabs (state -> foreclosures/notices).
+    // Each [data-tab-group] is independent; panes are matched by
+    // [data-tab-pane-group="<group name>"] so nested groups don't clash.
+    // Selection is persisted per-group across refresh/navigation.
+    const TAB_STORAGE_PREFIX = 'investclosure_tab_';
+
+    function setupTabGroup(group) {
+        const groupName = group.getAttribute('data-tab-group');
+        // Direct-child buttons only (avoids matching buttons of nested groups)
+        const buttons = Array.from(group.querySelectorAll(':scope > [data-tab]'));
+        const panes = Array.from(
+            document.querySelectorAll('[data-tab-pane-group="' + groupName + '"]')
+        );
 
         function activateTab(target) {
             buttons.forEach(function(b) {
@@ -37,17 +44,21 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.addEventListener('click', function() {
                 const target = btn.getAttribute('data-tab');
                 activateTab(target);
-                try { localStorage.setItem(TAB_STORAGE_KEY, target); } catch (e) {}
+                try { localStorage.setItem(TAB_STORAGE_PREFIX + groupName, target); } catch (e) {}
             });
         });
 
-        // Restore the previously selected tab after refresh or navigation
+        // Restore previously selected tab, else default to first button
         let saved = null;
-        try { saved = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) {}
+        try { saved = localStorage.getItem(TAB_STORAGE_PREFIX + groupName); } catch (e) {}
         if (saved && buttons.some(function(b) { return b.getAttribute('data-tab') === saved; })) {
             activateTab(saved);
+        } else if (buttons.length) {
+            activateTab(buttons[0].getAttribute('data-tab'));
         }
-    });
+    }
+
+    document.querySelectorAll('[data-tab-group]').forEach(setupTabGroup);
 });
 
 async function fetchHealthIndicator() {
@@ -69,3 +80,6 @@ async function fetchHealthIndicator() {
 
 // Refresh health every 60 seconds
 setInterval(fetchHealthIndicator, 60000);
+
+// Property notes editing lives on the property detail page (see property.html).
+

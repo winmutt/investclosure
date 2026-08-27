@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 import hashlib
 import logging
+import re
 from datetime import date
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -89,6 +90,17 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     status             TEXT DEFAULT 'running',
     error_message      TEXT
 );
+
+CREATE TABLE IF NOT EXISTS property_links (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id     INTEGER NOT NULL,
+    to_id       INTEGER NOT NULL,
+    reason      TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    UNIQUE(from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_property_links_from ON property_links(from_id);
+CREATE INDEX IF NOT EXISTS idx_property_links_to ON property_links(to_id);
 """
 
 
@@ -131,8 +143,10 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     ("raw_parcel_text", "ALTER TABLE properties ADD COLUMN raw_parcel_text TEXT"),
     ("raw_deed_text", "ALTER TABLE properties ADD COLUMN raw_deed_text TEXT"),
     ("raw_paragraph", "ALTER TABLE properties ADD COLUMN raw_paragraph TEXT"),
-    ("extracted_deed_plat", "ALTER TABLE properties ADD COLUMN extracted_deed_plat TEXT"),
-    ("extracted_pin", "ALTER TABLE properties ADD COLUMN extracted_pin TEXT"),
+        ("extracted_deed_plat", "ALTER TABLE properties ADD COLUMN extracted_deed_plat TEXT"),
+        ("extracted_pin", "ALTER TABLE properties ADD COLUMN extracted_pin TEXT"),
+        ("owner_name", "ALTER TABLE properties ADD COLUMN owner_name TEXT"),
+        ("tnmap_data", "ALTER TABLE properties ADD COLUMN tnmap_data TEXT"),
     ]
     for col, sql in col_migrations:
         if col not in existing:
@@ -240,6 +254,7 @@ def _upsert_property(
     raw_paragraph: Optional[str] = None,
     extracted_deed_plat: Optional[str] = None,
     extracted_pin: Optional[str] = None,
+
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property row.
 
@@ -267,7 +282,20 @@ def _upsert_property(
             (source, source_listing_id),
         ).fetchone()
 
-    # Dedup hash fallback — only used when no unique source_listing_id exists
+    # Court-case match — collapses the same legal case that the source lists
+    # under multiple grid row ids (e.g. GA public notices re-published per
+    # defendant but sharing one civil/file action number).
+    if not existing and source and court_case:
+        existing = conn.execute(
+            "SELECT * FROM properties WHERE source=? AND court_case=? LIMIT 1",
+            (source, court_case),
+        ).fetchone()
+
+    # Dedup hash fallback — only used when no unique source_listing_id exists.
+    # NOTE: when address/city/zip are absent the hash degenerates to
+    # (county, state) and is NOT unique, so it must not be applied to
+    # listings that already carry a distinct source_listing_id — doing so
+    # would wrongly merge unrelated same-county notices.
     if not existing and not source_listing_id:
         existing = conn.execute(
             "SELECT * FROM properties WHERE dedup_hash=? LIMIT 1", (dedup_hash,)
@@ -398,8 +426,8 @@ def _upsert_property(
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
             parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
             initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
-            extracted_deed_plat, extracted_pin,
-            first_seen, last_seen, seen_count, dedup_hash, status)
+             extracted_deed_plat, extracted_pin,
+             first_seen, last_seen, seen_count, dedup_hash, status)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             source, source_listing_id, url, address, city, county, state, zip_code,
@@ -407,8 +435,8 @@ def _upsert_property(
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
             parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
             initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
-            extracted_deed_plat, extracted_pin,
-            first_seen_val, last_seen_val, 1, dedup_hash, "active",
+             extracted_deed_plat, extracted_pin,
+             first_seen_val, last_seen_val, 1, dedup_hash, "active",
         ),
     )
     conn.commit()
@@ -416,6 +444,44 @@ def _upsert_property(
         "SELECT * FROM properties WHERE id=?", (cur.lastrowid,)
     ).fetchone()
     return "new", new_row
+
+
+def update_tnmap_enrichment(
+    conn: sqlite3.Connection,
+    property_id: int,
+    owner_name: Optional[str] = None,
+    acres: Optional[float] = None,
+    gis_url: Optional[str] = None,
+    tnmap_data: Optional[str] = None,
+) -> None:
+    """Persist TNMap assessment enrichment onto a property row.
+
+    Only touches the TNMap-derived columns so it never clobbers scraper-supplied
+    fields. ``acres``/``gis_url`` are only written when the caller actually
+    provides a value (TNMap enrichment only sets them on a verified match).
+    """
+    updates = []
+    values = []
+    if owner_name:
+        updates.append("owner_name = ?")
+        values.append(owner_name)
+    if acres is not None:
+        updates.append("acres = ?")
+        values.append(acres)
+    if gis_url:
+        updates.append("gis_url = ?")
+        values.append(gis_url)
+    if tnmap_data:
+        updates.append("tnmap_data = ?")
+        values.append(tnmap_data)
+    if not updates:
+        return
+    values.append(property_id)
+    conn.execute(
+        f"UPDATE properties SET {', '.join(updates)} WHERE id=?",
+        values,
+    )
+    conn.commit()
 
 
 def insert_property(
@@ -457,6 +523,7 @@ def insert_property(
     raw_paragraph: Optional[str] = None,
     extracted_deed_plat: Optional[str] = None,
     extracted_pin: Optional[str] = None,
+
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property record."""
     return _upsert_property(
@@ -567,6 +634,149 @@ def get_by_court_case(
         "SELECT * FROM properties WHERE status = 'active' AND court_case = ?",
         (court_case,),
     ).fetchall()
+
+
+def _norm_key(value: Optional[str]) -> str:
+    """Normalize a string for loose matching (lowercase, alnum only)."""
+    return re.sub(r"[^0-9a-z]", "", (value or "").lower())
+
+
+def link_cross_source(
+    conn: sqlite3.Connection,
+    source_a: str = "kania_law",
+    source_b: str = "ncforeclosures",
+) -> Dict[str, Any]:
+    """Link properties that appear in BOTH ``source_a`` and ``source_b``.
+
+    Matches on parcel_number (exact), court_case (exact), or a normalized
+    address found in the other record's description. For each match a
+    bidirectional ``property_links`` row is created (idempotent via the
+    UNIQUE(from_id, to_id) constraint) and a human-readable cross-listing
+    note is appended to each property's ``notes`` field.
+
+    Returns a summary dict with the number of links and notes created.
+    """
+    a_rows = conn.execute(
+        "SELECT id, source, parcel_number, court_case, address, county, description "
+        "FROM properties WHERE source = ?", (source_a,)
+    ).fetchall()
+    b_rows = conn.execute(
+        "SELECT id, source, parcel_number, court_case, address, county, description "
+        "FROM properties WHERE source = ?", (source_b,)
+    ).fetchall()
+
+    links_made = 0
+    notes_added = 0
+
+    for a in a_rows:
+        a_parcel = (a["parcel_number"] or "").strip()
+        a_case = (a["court_case"] or "").strip()
+        a_addr = _norm_key(a["address"])
+        a_county = (a["county"] or "").strip().lower()
+        a_desc = _norm_key(a["description"])
+        for b in b_rows:
+            b_parcel = (b["parcel_number"] or "").strip()
+            b_case = (b["court_case"] or "").strip()
+            b_addr = _norm_key(b["address"])
+            b_county = (b["county"] or "").strip().lower()
+            b_desc = _norm_key(b["description"])
+
+            # Never link across counties — a single property can't span counties.
+            if a_county and b_county and a_county != b_county:
+                continue
+
+            reason = None
+            key = None
+            if a_parcel and a_parcel == b_parcel:
+                reason, key = "same parcel", a_parcel
+            elif a_case and a_case == b_case:
+                reason, key = "same court case", a_case
+            elif a_addr and len(a_addr) >= 8 and a_addr in b_desc:
+                reason, key = "same address", a["address"]
+            if not reason:
+                continue
+
+            lo, hi = sorted((a["id"], b["id"]))
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO property_links (from_id, to_id, reason) "
+                    "VALUES (?, ?, ?)", (lo, hi, reason)
+                )
+                if conn.execute("SELECT changes()").fetchone()[0]:
+                    links_made += 1
+            except Exception as e:  # pragma: no cover
+                logger.warning("link_cross_source insert failed: %s", e)
+                continue
+
+            notes_added += _append_cross_note(
+                conn, a["id"], b["source"], b["id"], reason, key
+            ) + _append_cross_note(
+                conn, b["id"], a["source"], a["id"], reason, key
+            )
+            break  # one link per property_a row
+
+    conn.commit()
+    return {"links": links_made, "notes": notes_added}
+
+
+def _append_cross_note(
+    conn: sqlite3.Connection,
+    prop_id: int,
+    other_source: str,
+    other_id: int,
+    reason: str,
+    key: str,
+) -> int:
+    """Append a cross-listing note to a property (idempotent). Returns 1 if added."""
+    row = conn.execute(
+        "SELECT notes FROM properties WHERE id = ?", (prop_id,)
+    ).fetchone()
+    existing = row["notes"] if row else None
+    marker = f"property #{other_id}"
+    if existing and marker in existing:
+        return 0
+    note = f"Cross-listed by {other_source} as {marker} ({reason}: {key})."
+    new_notes = f"{existing}\n{note}" if existing else note
+    conn.execute(
+        "UPDATE properties SET notes = ? WHERE id = ?", (new_notes, prop_id)
+    )
+    return 1
+
+
+def get_property_links(
+    conn: sqlite3.Connection,
+    property_id: int,
+) -> List[Dict[str, Any]]:
+    """Return properties linked to ``property_id`` via ``property_links``."""
+    rows = conn.execute(
+        """
+        SELECT pl.reason,
+               CASE WHEN pl.from_id = ? THEN pl.to_id ELSE pl.from_id END AS other_id
+        FROM property_links pl
+        WHERE pl.from_id = ? OR pl.to_id = ?
+        """,
+        (property_id, property_id, property_id),
+    ).fetchall()
+    out = []
+    for r in rows:
+        other = conn.execute(
+            "SELECT id, source, address, county, parcel_number, status, court_case "
+            "FROM properties WHERE id = ?",
+            (r["other_id"],),
+        ).fetchone()
+        if not other:
+            continue
+        out.append({
+            "id": other["id"],
+            "source": other["source"],
+            "address": other["address"],
+            "county": other["county"],
+            "parcel_number": other["parcel_number"],
+            "status": other["status"],
+            "court_case": other["court_case"],
+            "reason": r["reason"],
+        })
+    return out
 
 
 def archive_below_acres(

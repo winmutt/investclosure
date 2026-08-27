@@ -15,8 +15,10 @@ services:
       - flaresolverr
     restart: unless-stopped
     environment:
-      # Override scrape interval (default 360 = 6 hours)
-      # SCRAPE_INTERVAL: 360
+      # Run the scheduled scraper loop inside the container (default true)
+      RUN_CRON: "true"
+      # Scheduled scrapes at 01:00 and 13:00 America/New_York (12h apart)
+      SCRAPE_INTERVAL: 720
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest

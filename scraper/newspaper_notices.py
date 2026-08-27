@@ -25,9 +25,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin
 
-from playwright.sync_api import sync_playwright
-
-from .base import BaseScraper, PropertyData
+from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
 from .config import config, NC_FORECLOSURE_COUNTIES
 
 logger = logging.getLogger(__name__)
@@ -35,7 +33,7 @@ logger = logging.getLogger(__name__)
 # NC mountain counties we care about
 NC_FORECLOSURE_COUNTIES = {
     "alleghany", "ashe", "avery", "buncombe", "burke",
-    "caldwell", "cherokee", "clay", "graham", "haywood",
+    "cherokee", "clay", "graham", "haywood",
     "henderson", "jackson", "madison", "mcdowell", "mitchell",
     "polk", "macon", "swain", "transylvania", "watauga", "yancey",
 }
@@ -53,16 +51,117 @@ CITIZEN_TIMES_STATE_FILE = "citizen_times_state.json"
 CITIZEN_TIMES_BACKFILL_DAYS = 180      # initial 6-month lookback
 CITIZEN_TIMES_REGULAR_DAYS = 7         # regular rolling window
 
-# Signals that a notice is a real-property foreclosure (as opposed to
-# probate/creditor, UCC, or miscellaneous legal filings)
-_FORECLOSURE_SIGNALS = [
-    "foreclos", "tax sale", "tax lien", "substitute trustee",
-    "trustee's sale", "sheriff", "sale of real", "deed of trust",
-]
-_PROBATE_SIGNALS = [
-    "notice to creditors", "probate", "having qualified as",
-    "estate file", "executor of the estate",
-]
+# ---------------------------------------------------------------------------
+# Tax-foreclosure classification.
+#
+# Local newspaper legal-notice feeds (Transylvania Times, Watauga Democrat,
+# Sylva Herald, Mitchell News, Citizen Times) mix genuine county/city tax-sale
+# foreclosures with a large amount of non-foreclosure junk: probate/creditor
+# notices, NOTICE OF PUBLIC HEARING / bond-order notices, advertisement-for-
+# bids / request-for-proposals (county procurement), and mortgage/deed-of-trust
+# (bank) foreclosures. Only genuine *property-tax* foreclosure/sale notices are
+# investable, so every sub-scraper gates on :func:`_is_tax_foreclosure_notice`.
+#
+# Positive tax-sale language (anchored on NCGS Chapter 105 and the "satisfy
+# unpaid property taxes" phrasing used in NC tax foreclosures). Mirrors the
+# tax regex in ``ncforeclosures.py``.
+_TAX_SALE_RE = re.compile(
+    r"foreclosure\s+sale\s+to\s+satisfy\s+unpaid|"
+    r"satisfy\s+unpaid\s+(?:property\s+)?taxes|"
+    r"unpaid\s+property\s+taxes\s+owing|"
+    r"taxes\s+owing\s+to|"
+    r"\btax\s+foreclosure\b|"
+    r"foreclosure\s+(?:of|for)\s+(?:the\s+)?tax|"
+    r"tax\s+lien|lien\s+(?:for|of)\s+tax|"
+    r"in\s+rem\s+foreclosure|"
+    r"delinquent\s+(?:property\s+)?tax|"
+    r"delinquent\s+ad\s+valorem|"
+    r"commissioner\s+of\s+(?:revenue|taxes)|"
+    r"chapter\s+105|\bgs\s*105\b|"
+    r"general\s+statute[s]?\s+(?:chapter\s+)?105|"
+    r"tax\s+sale|certificate\s+of\s+tax|"
+    r"unpaid\s+(?:property\s+)?tax|"
+    r"lien\s+for\s+tax",
+    re.IGNORECASE,
+)
+
+# Mortgage / deed-of-trust (bank) sales. Present alone these are NOT
+# tax foreclosures (they sell to satisfy a loan, not unpaid property taxes).
+_MORTGAGE_SALE_RE = re.compile(
+    r"deed\s+of\s+trust|substitute\s+trustee|"
+    r"trustee'?s?\s+sale|power\s+of\s+sale|"
+    r"foreclosure\s+of\s+a\s+deed|notice\s+of\s+trustee'?s?\s+sale|"
+    r"pursuant\s+to\s+(?:a\s+|the\s+)?deed\s+of\s+trust|"
+    r"holder\s+of\s+the\s+(?:note|deed)",
+    re.IGNORECASE,
+)
+
+# Probate / creditor / administration notices ("having qualified as Executor",
+# NOTICE TO CREDITORS, NOTICE OF ADMINISTRATION). These are estate proceedings,
+# not property sales.
+_PROBATE_RE = re.compile(
+    r"having\s+qualified\s+as\s+(?:executor|executrix|administrator|administratrix|"
+    r"personal\s+representative|trustee)|"
+    r"executor(?:s)?\s+of\s+the\s+estate|"
+    r"notice\s+to\s+creditors|notice\s+of\s+administration|"
+    r"estate\s+file|probate|deceased\s+late\s+of|"
+    r"creditor'?s\?*\s+notice",
+    re.IGNORECASE,
+)
+
+# County/municipal government procurement & public-hearing notices (bond
+# orders, grant applications, parks/transportation projects, RFP / sealed
+# proposals). Not property foreclosures.
+_GOVERNMENT_RE = re.compile(
+    r"notice\s+of\s+public\s+hearing|public\s+hearing\s+on|"
+    r"advertisement\s+for\s+bids|request\s+for\s+(?:proposals|bids|quotes)|\brfp\b|\bifb\b|"
+    r"sealed\s+proposals?|sealed\s+bids?|"
+    r"bond\s+order|general\s+obligation\s+(?:school\s+)?bonds?|"
+    r"grant\s+application|community\s+development\s+block|community\s+transportation",
+    re.IGNORECASE,
+)
+
+# Miscellaneous legal / procedural filings that are not upcoming tax sales.
+_MISC_FILING_RE = re.compile(
+    r"notice\s+of\s+service\s+of\s+process|service\s+by\s+process\s+by\s+publication|"
+    r"order\s+for\s+service\s+by\s+publication|"
+    r"name\s+change|notice\s+of\s+intent\s+to\s+file|"
+    r"foreclosure\s+of\s+equity\s+of\s+redemption|excess\s+funds|surplus\s+funds|"
+    r"interpleader|quiet\s+title|establish\s+title\s+against\s+all\s+the\s+world|"
+    r"tax\s+sale\s+redemption",
+    re.IGNORECASE,
+)
+
+
+def _is_tax_foreclosure_notice(text: str) -> bool:
+    """Return True only for a genuine NC property-tax foreclosure / sale notice.
+
+    Requires positive tax-sale language (NCGS Chapter 105, "foreclosure sale
+    to satisfy unpaid property taxes", "tax foreclosure/sale/lien", delinquent
+    ad valorem, etc.). Rejects outright:
+      - probate / creditor / administration notices,
+      - county/municipal public hearing & bid/procurement notices,
+      - quiet-title / tax-redemption / excess-fund / service-by-publication
+        procedural filings,
+      - mortgage / deed-of-trust (bank) sales that carry no tax-sale language.
+    """
+    if not text:
+        return False
+    low = text.lower()
+    if _PROBATE_RE.search(low) and not _TAX_SALE_RE.search(low):
+        return False
+    if _GOVERNMENT_RE.search(low) and not _TAX_SALE_RE.search(low):
+        return False
+    if _MISC_FILING_RE.search(low) and not _TAX_SALE_RE.search(low):
+        return False
+    if not _TAX_SALE_RE.search(low):
+        return False
+    # Strong tax-sale language present. A deed-of-trust / power-of-sale bank
+    # sale is still rejected unless it carries an explicit tax-sale signal
+    # (tax-lien foreclosures by substitute trustee do).
+    if _MORTGAGE_SALE_RE.search(low) and not _TAX_SALE_RE.search(low):
+        return False
+    return True
 
 
 def _slug_to_title(slug: str) -> str:
@@ -169,8 +268,6 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
     ``CITIZEN_TIMES_REGULAR_DAYS`` (7) window starting from the last
     successful run, persisted to ``citizen_times_state.json``.
     """
-    import requests as http_req
-
     last_end = _read_citizen_times_state()
     if lookback_days is None:
         lookback_days = CITIZEN_TIMES_REGULAR_DAYS if last_end else CITIZEN_TIMES_BACKFILL_DAYS
@@ -186,83 +283,89 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
     page, total = 1, None
     seen: set[str] = set()
     try:
-        while total is None or len(seen) < total:
-            body = {
-                "publication": None,
-                "markets": None,
-                "keyword": "foreclosure",
-                "noticeType": "",
-                "state": "North Carolina",
-                "startDate": start_date,
-                "endDate": end_date,
-                "page": page,
-            }
-            resp = http_req.post(
-                CITIZEN_TIMES_API_URL,
-                headers={
-                    "Content-Type": "text/plain;charset=UTF-8",
-                    "Referer": "https://www.citizen-times.com/public-notices",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                },
-                data=json.dumps(body),
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            hits = (data.get("hits") or {}).get("hits") or []
-            total = ((data.get("hits") or {}).get("total") or {}).get("value", 0)
-            if not hits:
-                break
-            for hit in hits:
-                src = hit.get("_source") or {}
-                nid = src.get("id")
-                text = src.get("text") or ""
-                if not nid or nid in seen:
-                    continue
-                seen.add(nid)
-                slug = src.get("slug") or ""
-                county = _extract_notice_county(text, slug)
-                if not county or county.lower() not in NC_FORECLOSURE_COUNTIES:
-                    continue
-                case = scraper._extract_court_case(text)
-                pin = scraper._extract_pin(text)
-                deed_plat = scraper._extract_deed_plat(text)
-                addr = _extract_notice_address(text)
-                auction = _extract_auction_date(text)
-                if auction is None:
-                    auction = src.get("date_start")
-                title = _slug_to_title(slug)
-                parts = [part for part in [
-                    title,
-                    f"Case: {case}" if case else None,
-                    f"Auction: {auction}" if auction else None,
-                    f"PIN: {pin}" if pin else None,
-                    f"Deed/Plat: {deed_plat}" if deed_plat else None,
-                ] if part]
-                properties.append({
-                    "source": "newspaper_notices",
-                    "source_listing_id": nid,
-                    "court_case": case,
-                    "extracted_deed_plat": deed_plat,
-                    "extracted_pin": pin,
-                    "deed_book": deed_plat if (deed_plat or "").startswith("Deed:") else None,
-                    "raw_source_text": text,
-                    "raw_paragraph": text,
-                    "url": "https://www.citizen-times.com/public-notices/",
-                    "address": addr,
-                    "city": None,
-                    "county": county.title(),
-                    "state": "NC",
-                    "zip_code": None, "latitude": None, "longitude": None,
-                    "price": None, "acres": None,
-                    "description": f"[Citizen Times] {' -- '.join(parts)}",
-                    "property_type": "public_notice", "image_url": None,
-                    "parcel_number": pin,
-                    "auction_date": auction, "close_date": None,
-                })
-            page += 1
-            time.sleep(0.5)
+        from .base import camoufox_context, CamoufoxFetcher
+        with camoufox_context() as cpage:
+            fetcher = CamoufoxFetcher(cpage)
+            # Navigate to the API origin once so the POST is same-origin.
+            cpage.goto("https://www.citizen-times.com/public-notices",
+                       wait_until="domcontentloaded", timeout=60000)
+            cpage.set_extra_http_headers({
+                "Content-Type": "text/plain;charset=UTF-8",
+                "Referer": "https://www.citizen-times.com/public-notices",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            })
+            while total is None or len(seen) < total:
+                body = {
+                    "publication": None,
+                    "markets": None,
+                    "keyword": "foreclosure",
+                    "noticeType": "",
+                    "state": "North Carolina",
+                    "startDate": start_date,
+                    "endDate": end_date,
+                    "page": page,
+                }
+                raw = fetcher.post(CITIZEN_TIMES_API_URL, json.dumps(body))
+                if not raw:
+                    logger.warning("Citizen Times: empty API response on page %d", page)
+                    break
+                data = json.loads(raw)
+                hits = (data.get("hits") or {}).get("hits") or []
+                total = ((data.get("hits") or {}).get("total") or {}).get("value", 0)
+                if not hits:
+                    break
+                for hit in hits:
+                    src = hit.get("_source") or {}
+                    nid = src.get("id")
+                    text = src.get("text") or ""
+                    if not nid or nid in seen:
+                        continue
+                    seen.add(nid)
+                    slug = src.get("slug") or ""
+                    county = _extract_notice_county(text, slug)
+                    if not county or county.lower() not in NC_FORECLOSURE_COUNTIES:
+                        continue
+                    if not _is_tax_foreclosure_notice(f"{_slug_to_title(slug)} {text}"):
+                        continue
+                    case = scraper._extract_court_case(text)
+                    pin = scraper._extract_pin(text)
+                    deed_plat = scraper._extract_deed_plat(text)
+                    addr = _extract_notice_address(text)
+                    auction = _extract_auction_date(text)
+                    if auction is None:
+                        auction = src.get("date_start")
+                    title = _slug_to_title(slug)
+                    parts = [part for part in [
+                        title,
+                        f"Case: {case}" if case else None,
+                        f"Auction: {auction}" if auction else None,
+                        f"PIN: {pin}" if pin else None,
+                        f"Deed/Plat: {deed_plat}" if deed_plat else None,
+                    ] if part]
+                    properties.append({
+                        "source": "newspaper_notices",
+                        "source_listing_id": nid,
+                        "court_case": case,
+                        "extracted_deed_plat": deed_plat,
+                        "extracted_pin": pin,
+                        "deed_book": deed_plat if (deed_plat or "").startswith("Deed:") else None,
+                        "raw_source_text": text,
+                        "raw_paragraph": text,
+                        "url": "https://www.citizen-times.com/public-notices/",
+                        "address": addr,
+                        "city": None,
+                        "county": county.title(),
+                        "state": "NC",
+                        "zip_code": None, "latitude": None, "longitude": None,
+                        "price": None, "acres": None,
+                        "description": f"[Citizen Times] {' -- '.join(parts)}",
+                        "property_type": "public_notice", "image_url": None,
+                        "parcel_number": pin,
+                        "auction_date": auction, "close_date": None,
+                    })
+                page += 1
+                time.sleep(0.5)
     except Exception as exc:
         logger.error("Citizen Times search failed: %s", exc)
         return properties
@@ -440,26 +543,22 @@ class NewspaperNoticesScraper(BaseScraper):
         """Backward-compatible alias for _extract_pin."""
         return self._extract_pin(text)
 
+    @staticmethod
+    def _is_unpaid_tax_notice(text: str) -> bool:
+        """Backward-compatible alias for :func:`_is_tax_foreclosure_notice`.
+
+        Restricts the newspaper feeds to genuine unpaid/delinquent property-tax
+        foreclosure and tax-sale notices (see module docstring).
+        """
+        return _is_tax_foreclosure_notice(text)
+
     # ── Phase-2 helper: visit a single detail URL in an isolated tab ───────
 
     def _visit_detail(self, url: str) -> dict:
         """Open *url* in a fresh tab and return {parcel, pin, deed_plat, court_case, title, raw_text}."""
         parcel, title, deed_plat, court_case, raw_text = None, None, None, None, None
-        bw = sync_playwright().start()
         try:
-            browser = bw.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-            )
-            ctx = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-            )
-            page = ctx.new_page()
-            try:
+            with camoufox_context() as page:
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 # Wait until body has meaningful content
                 page.wait_for_function(
@@ -488,14 +587,8 @@ class NewspaperNoticesScraper(BaseScraper):
                     raw = page.evaluate("() => document.querySelector('head title')?.innerText || ''")
                     if raw:
                         title = raw.strip().split("|")[0].strip()
-            except Exception as exc:
-                logger.debug("detail load failed %s: %s", url[:80], exc)
-        finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
-            bw.stop()
+        except Exception as exc:
+            logger.debug("detail load failed %s: %s", url[:80], exc)
 
         return {"parcel": parcel, "pin": parcel, "deed_plat": deed_plat, "court_case": court_case, "title": title, "raw_text": raw_text}
 
@@ -505,10 +598,8 @@ class NewspaperNoticesScraper(BaseScraper):
         logger.info("Scraping Transylvania Times ...")
         url = "https://marketplace.transylvaniatimes.com/brevard-nc/public-notices/search"
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
-            ctx = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", viewport={"width": 1920, "height": 1080})
-            page = ctx.new_page()
+        with camoufox_context() as page:
+            page.set_viewport_size({"width": 1920, "height": 1080})
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(5000)
 
@@ -528,7 +619,7 @@ class NewspaperNoticesScraper(BaseScraper):
                     posted = date_match[0].replace("Posted ", "").replace("Updated ", "").strip() if date_match else ""
                     if not href or "search" in href.lower():
                         continue
-                    if not any(kw in title.upper() for kw in ("NOTICE","FORECLOS","SALE","CREDITOR","BIDDER")):
+                    if not any(kw in title.upper() for kw in ("FORECLOS","SALE","TAX","NOTICE")):
                         continue
                     combined = f"{title} {content}".lower()
                     if not any(pat in combined for pat in PROPERTY_RELEVANT_SLUGS):
@@ -537,7 +628,6 @@ class NewspaperNoticesScraper(BaseScraper):
                 except Exception:
                     pass
                 page.wait_for_timeout(200)
-            browser.close()
 
         # Phase 2: visit each detail in its own tab
         properties: list[PropertyData] = []
@@ -548,8 +638,11 @@ class NewspaperNoticesScraper(BaseScraper):
             if detail.get("parcel") is None and not detail.get("title"):
                 logger.warning("TT %s detail page failed or empty", c["href"][:40])
                 continue
-            ad_id = c["href"].split("/")[-1] if "/" in c["href"] else f"tt_skip"
             base_title = detail["title"] if detail["title"] and len(detail["title"]) > 5 else c["title"]
+            if not _is_tax_foreclosure_notice(f"{base_title} {detail.get('raw_text') or ''}"):
+                logger.info("TT %s skipped (not a tax-foreclosure notice)", c["href"][:40])
+                continue
+            ad_id = c["href"].split("/")[-1] if "/" in c["href"] else f"tt_skip"
             desc = f"[Transylvania Times] {base_title}"
             if c["posted"]:
                 desc += f" -- {c['posted']}"
@@ -578,10 +671,8 @@ class NewspaperNoticesScraper(BaseScraper):
         logger.info("Scraping Watauga Democrat ...")
         base = "https://www.wataugademocrat.com/classifieds/community/public_notices/"
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
-            ctx = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", viewport={"width": 1920, "height": 1080})
-            page = ctx.new_page()
+        with camoufox_context() as page:
+            page.set_viewport_size({"width": 1920, "height": 1080})
             page.goto(base, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(8000)
             html = page.content()
@@ -599,7 +690,6 @@ class NewspaperNoticesScraper(BaseScraper):
                 idx = len(candidates)
                 date = all_dates[idx % len(all_dates)] if all_dates else None
                 candidates.append({"uuid": uuid, "slug": slug, "date": date})
-            browser.close()
 
         # Phase 2
         properties: list[PropertyData] = []
@@ -613,6 +703,9 @@ class NewspaperNoticesScraper(BaseScraper):
             base_title = _slug_to_title(c['slug'])
             if detail.get("title") and len(detail["title"]) > 5:
                 base_title = detail["title"]
+            if not _is_tax_foreclosure_notice(f"{base_title} {detail.get('raw_text') or ''}"):
+                logger.info("WD %s skipped (not a tax-foreclosure notice)", c['slug'])
+                continue
             desc = f"[Watauga Democrat] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
@@ -641,10 +734,8 @@ class NewspaperNoticesScraper(BaseScraper):
         logger.info("Scraping Sylva Herald ...")
         base = "https://www.thesylvaherald.com/classifieds/community/announcements/legal/"
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
-            ctx = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", viewport={"width": 1920, "height": 1080})
-            page = ctx.new_page()
+        with camoufox_context() as page:
+            page.set_viewport_size({"width": 1920, "height": 1080})
             page.goto(base, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(8000)
             html = page.content()
@@ -661,20 +752,26 @@ class NewspaperNoticesScraper(BaseScraper):
                 idx = len(candidates)
                 date = all_dates[idx % len(all_dates)] if all_dates else None
                 candidates.append({"uid": uid, "date": date})
-            browser.close()
 
         # Phase 2
         properties: list[PropertyData] = []
+        skipped = 0
         for c in candidates:
             d_url = f"{base}{c['uid']}"  # uid already includes ad_ and .html
             time.sleep(2)
             detail = self._visit_detail(d_url)
-            if detail.get("parcel") is None and not detail.get("title"):
+            raw_text = detail.get("raw_text")
+            if not raw_text:
                 logger.warning("SH %s detail page failed or empty", c['uid'][:20])
                 continue
             base_title = detail.get("title", "Legal Notice")
             if not base_title or len(base_title) < 4:
                 base_title = "Legal Notice"
+            # Restrict to UNPAID / DELINQUENT PROPERTY TAX notices only.
+            if not self._is_unpaid_tax_notice(f"{base_title} {raw_text}"):
+                logger.info("SH %s skipped (not an unpaid-tax notice)", c['uid'][:20])
+                skipped += 1
+                continue
             desc = f"[Sylva Herald] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
@@ -696,17 +793,15 @@ class NewspaperNoticesScraper(BaseScraper):
                 "parcel_number": detail["parcel"],
                 "auction_date": c["date"], "close_date": None,
             })
-        logger.info("Sylva Herald: %d legal notices", len(properties))
+        logger.info("Sylva Herald: %d unpaid-tax notices (skipped %d non-tax)", len(properties), skipped)
         return properties
 
     def _scrape_mitchellnews(self) -> list[PropertyData]:
         logger.info("Scraping Mitchell News ...")
         url = "https://www.mitchellnews.com/classified/legals"
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
-            ctx = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", viewport={"width": 1920, "height": 1080})
-            page = ctx.new_page()
+        with camoufox_context() as page:
+            page.set_viewport_size({"width": 1920, "height": 1080})
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 page.wait_for_timeout(10000)
@@ -729,15 +824,18 @@ class NewspaperNoticesScraper(BaseScraper):
             except Exception as exc:
                 logger.warning("Mitchell News page load failed: %s", exc)
                 return []
-            finally:
-                browser.close()
 
         # Phase 2
         properties: list[PropertyData] = []
+        skipped = 0
         for c in candidates:
             time.sleep(0.5)
             detail = self._visit_detail(url)  # Mitchell has no per-notice URLs
-            desc = f"[Mitchell News] Legal Notice"
+            base_title = detail.get("title", "Legal Notice") or "Legal Notice"
+            if not _is_tax_foreclosure_notice(f"{base_title} {detail.get('raw_text') or ''}"):
+                skipped += 1
+                continue
+            desc = f"[Mitchell News] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
             properties.append({
@@ -758,7 +856,7 @@ class NewspaperNoticesScraper(BaseScraper):
                 "parcel_number": detail["parcel"],
                 "auction_date": c["date"], "close_date": None,
             })
-        logger.info("Mitchell News: %d legal notices", len(properties))
+        logger.info("Mitchell News: %d tax-foreclosure notices (skipped %d non-tax)", len(properties), skipped)
         return properties
 
     def _scrape_citizen_times(self, lookback_days: Optional[int] = None) -> list[PropertyData]:

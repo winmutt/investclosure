@@ -28,9 +28,6 @@ venv/
 # Sensitive / PII
 reports/
 *.json
-# Scratch / artifacts
-scraper/tmp/
-*.bak
 # OS
 .DS_Store
 Thumbs.db

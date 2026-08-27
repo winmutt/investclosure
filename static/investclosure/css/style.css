@@ -347,6 +347,31 @@ body {
     display: none;
 }
 
+/* Nested tab hierarchy: state tabs -> category (foreclosures/notices) tabs */
+.state-pane {
+    padding-top: 0.25rem;
+}
+
+.tabs-cat {
+    border-bottom-style: dashed;
+    margin-bottom: 1.25rem;
+}
+
+.tabs-cat .tab-btn {
+    font-size: 0.82rem;
+    padding: 0.4rem 0.85rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+}
+
+.empty-state .btn {
+    margin-top: 1rem;
+}
+
 /* Tiles Layout */
 .tiles {
     display: grid;
@@ -631,6 +656,80 @@ body {
     border-top: 1px solid var(--border);
 }
 
+/* Notes widget (dashboard cards) */
+.tile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.tile-notes {
+    padding: 0 1rem 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+.tile-action-btn-notes {
+    width: 100%;
+    margin-top: 0.5rem;
+    color: var(--text-muted);
+}
+
+.tile-notes-editor,
+.list-notes-editor {
+    margin-top: 0.5rem;
+}
+
+.tile-notes-input,
+.list-notes-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-family: inherit;
+    resize: vertical;
+}
+
+.tile-notes-actions,
+.list-notes-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+}
+
+.tile-notes-status,
+.list-notes-status {
+    font-size: 0.8rem;
+    color: var(--accent);
+}
+
+.tile-notes-display,
+.list-notes-display {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text);
+    white-space: pre-wrap;
+    background: var(--bg-card-alt);
+    border-left: 3px solid var(--accent);
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+}
+
+.notes-dot {
+    color: var(--accent);
+}
+
+.list-item-notes {
+    margin-top: 0.5rem;
+}
+
+.list-item-notes .btn-sm {
+    margin-right: 0.5rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .sidebar {
@@ -650,4 +749,39 @@ body {
     .search-bar form {
         flex-direction: column;
     }
+}
+
+/* Sale / upset-bid date line on dashboard cards */
+.tile-dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: #475569;
+}
+
+.tile-date {
+    display: inline-flex;
+    gap: 0.2rem;
+}
+
+.tile-date strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* Improve grey-on-white readability (raise contrast on light cards) */
+.tile-county,
+.tile-meta,
+.list-item-row,
+.topbar-subtitle,
+.tab-btn,
+.empty-state,
+.tile-empty,
+.list-empty,
+.pagination-info,
+.footer,
+.prop-detail-section h3 {
+    color: #475569;
 }

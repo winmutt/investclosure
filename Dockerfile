@@ -9,13 +9,15 @@ WORKDIR /app
 # System deps for Chromium (required by Playwright)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget gnupg ca-certificates \
+    xvfb libgl1-mesa-dri libgl1 libegl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps (install playwright, then download Chromium)
+# Python deps (install playwright + camoufox, then download browsers)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
     playwright install chromium && \
-    playwright install-deps chromium
+    playwright install-deps chromium firefox && \
+    camoufox fetch
 
 # Application code
 COPY scraper/ ./scraper/
@@ -32,6 +34,10 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENV PYTHONPATH=/app
+
+# Headed Camoufox on virtual display with software WebGL
+ENV DISPLAY=:99
+ENV LIBGL_ALWAYS_SOFTWARE=1
 
 # Configurable cron interval in minutes (default 360 = 6 hours)
 ENV SCRAPE_INTERVAL=360

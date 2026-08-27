@@ -28,9 +28,7 @@ import re
 import time
 from typing import Any, Optional
 
-import requests
-
-from .base import BaseScraper, PropertyData
+from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
 from .config import config
 
 logger = logging.getLogger(__name__)
@@ -136,17 +134,22 @@ class BuncombeTaxScraper(BaseScraper):
     def scrape(self) -> list[PropertyData]:
         logger.info("Fetching Buncombe tax foreclosure iCal feed ...")
         try:
-            resp = requests.get(
-                ICAL_URL,
-                timeout=30,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"},
-            )
-            resp.raise_for_status()
+            with camoufox_context() as page:
+                fetcher = CamoufoxFetcher(page)
+                fetcher.set_headers({
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/131.0.0.0 Safari/537.36",
+                })
+                raw = fetcher.get(ICAL_URL, timeout=60000, download=True)
+            if not raw:
+                logger.error("Buncombe iCal fetch returned empty response")
+                return []
         except Exception as e:
             logger.error("Buncombe iCal fetch failed: %s", e)
             return []
 
-        text = _unfold_ical(resp.text)
+        text = _unfold_ical(raw)
         blocks = re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text, re.DOTALL)
         if not blocks:
             logger.warning("No VEVENT blocks found in Buncombe feed")

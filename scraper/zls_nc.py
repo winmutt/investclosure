@@ -9,9 +9,7 @@ import logging
 import re
 from typing import Optional, Any
 
-from playwright.sync_api import sync_playwright
-
-from .base import BaseScraper, PropertyData
+from .base import BaseScraper, PropertyData, camoufox_context
 from .config import config, NC_FORECLOSURE_COUNTIES
 
 logger = logging.getLogger(__name__)
@@ -22,7 +20,7 @@ class ZLSNCScraper(BaseScraper):
 
     SOURCE_NAME = "zls_nc"
     BASE_URL = "https://zls-nc.com/listings"
-    MIN_ACREAGE = 5.0
+    MIN_ACREAGE = config.MIN_ACRES
 
     def __init__(self, delay_range: tuple[float, float] = (2.0, 4.0)):
         super().__init__(delay_range=delay_range, use_selenium=False)
@@ -31,20 +29,8 @@ class ZLSNCScraper(BaseScraper):
         all_properties: list[PropertyData] = []
         logger.info("Starting ZLS-NC scraper ...")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-            )
-            ctx = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1920, "height": 1080},
-            )
-            page = ctx.new_page()
+        with camoufox_context() as page:
+            page.set_viewport_size({"width": 1920, "height": 1080})
 
             page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(3000)
@@ -75,7 +61,6 @@ class ZLSNCScraper(BaseScraper):
             table = page.locator("table:has(th:has-text('Parcel #'))")
             if not table.count():
                 logger.warning("No data grid found on %s", self.BASE_URL)
-                browser.close()
                 return []
 
             rows = table.locator("tbody tr")
@@ -97,8 +82,6 @@ class ZLSNCScraper(BaseScraper):
                 if (i + 1) % 50 == 0:
                     self._random_delay()
 
-            browser.close()
-
         # Deduplicate
         seen: set[str] = set()
         unique: list[PropertyData] = []
@@ -119,7 +102,7 @@ class ZLSNCScraper(BaseScraper):
         """Filter to NC mountain counties only."""
         NC_FORECLOSURE_COUNTIES = {
             "alleghany", "ashe", "avery", "buncombe", "burke",
-            "caldwell", "cherokee", "clay", "graham", "haywood",
+            "cherokee", "clay", "graham", "haywood",
             "henderson", "jackson", "madison", "mcdowell", "mitchell",
             "swain", "transylvania", "watauga", "yancey",
             "polk", "macon",

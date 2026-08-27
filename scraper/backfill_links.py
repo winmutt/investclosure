@@ -28,8 +28,9 @@ from .nc_gis_lookup import (
 logger = logging.getLogger(__name__)
 
 
-def _rebuild(lat, lng, parcel_ref, address_raw, city_raw, county_raw):
-    gis_url = build_gis_url(lng, lat, parcel_ref)
+def _rebuild(lat, lng, parcel_ref, address_raw, city_raw, county_raw, state_raw=None):
+    gis_url = build_gis_url(lng, lat, parcel_ref, address=address_raw,
+                           county=county_raw, state=state_raw)
     maps_url = build_google_maps_url(lng, lat, address_raw, city_raw, county_raw)
     topo_url = build_google_maps_topo_url(lng, lat, address_raw, city_raw, county_raw)
     return gis_url, maps_url, topo_url
@@ -46,7 +47,7 @@ def backfill_links(source: str = "all") -> dict:
         params.append(source)
 
     rows = conn.execute(
-        f"SELECT id, source, status, county, parcel_number, address, city, "
+        f"SELECT id, source, status, county, parcel_number, address, city, state, "
         f"latitude, longitude FROM properties WHERE {where} ORDER BY "
         f"CASE WHEN status='active' THEN 0 ELSE 1 END, id",
         params,
@@ -56,7 +57,7 @@ def backfill_links(source: str = "all") -> dict:
     api_calls = 0
     active_total = sum(1 for r in rows if r[2] == "active")
 
-    for i, (row_id, src, status, county, parcel, address, city, lat0, lng0) in enumerate(rows, 1):
+    for i, (row_id, src, status, county, parcel, address, city, state, lat0, lng0) in enumerate(rows, 1):
         parcel_raw = (parcel or "").strip()
         county_raw = (county or "").strip()
         address_raw = (address or "").strip() or None
@@ -90,7 +91,7 @@ def backfill_links(source: str = "all") -> dict:
                 time.sleep(random.uniform(0.3, 0.6))
 
         gis_url, maps_url, topo_url = _rebuild(
-            lat, lng, parcel_ref, address_raw, city_raw, county_raw
+            lat, lng, parcel_ref, address_raw, city_raw, county_raw, state
         )
 
         # Only touch rows where something actually changes.

@@ -16,6 +16,7 @@ Usage:
 """
 from __future__ import annotations
 import logging
+import os
 import sys
 import sqlite3
 import json
@@ -27,13 +28,12 @@ from pathlib import Path
 # Ensure scraper package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scraper.db import _ensure_db, update_scrape_run, get_stats, get_new_since, archive_below_acres, insert_property, get_all_active
+from scraper.db import _ensure_db, update_scrape_run, get_stats, get_new_since, archive_below_acres, insert_property, get_all_active, update_tnmap_enrichment
 from scraper.config import config
 
 logger = logging.getLogger(__name__)
 
 # Map scraper names to classes
-# DISABLED: ncforeclosures, tnforeclosures, tnmap — broken/unreliable
 SCRAPER_MODULES: dict = {}
 
 try:
@@ -49,12 +49,6 @@ except ImportError as e:
     logger.warning("zls_nc not available: %s", e)
 
 try:
-    from scraper.hutchens_law import HutchensLawScraper
-    SCRAPER_MODULES["hutchens_law"] = HutchensLawScraper
-except ImportError as e:
-    logger.warning("hutchens_law not available: %s", e)
-
-try:
     from scraper.newspaper_notices import NewspaperNoticesScraper
     SCRAPER_MODULES["newspaper_notices"] = NewspaperNoticesScraper
 except ImportError as e:
@@ -65,6 +59,24 @@ try:
     SCRAPER_MODULES["buncombe_tax"] = BuncombeTaxScraper
 except ImportError as e:
     logger.warning("buncombe_tax not available: %s", e)
+
+try:
+    from scraper.ncforeclosures import NCForeclosureScraper
+    SCRAPER_MODULES["ncforeclosures"] = NCForeclosureScraper
+except ImportError as e:
+    logger.warning("ncforeclosures not available: %s", e)
+
+try:
+    from scraper.tnforeclosures import scrape_with_enrichment
+    SCRAPER_MODULES["tnforeclosures"] = "tnforeclosures"
+except ImportError as e:
+    logger.warning("tnforeclosures not available: %s", e)
+
+try:
+    from scraper.ganotices import GanoticesScraper
+    SCRAPER_MODULES["ganotices"] = GanoticesScraper
+except ImportError as e:
+    logger.warning("ganotices not available: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +164,21 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
                     prop.get("county") or "?", prop.get("state") or "?",
                 )
 
+            # Persist TNMap enrichment (owner, acres, gis_url, raw payload)
+            # when the scraper produced it. These fields aren't part of the
+            # base insert, so write them once we have the row id.
+            if prop.get("tnmap_data"):
+                try:
+                    update_tnmap_enrichment(
+                        conn, row["id"],
+                        owner_name=prop.get("owner_name"),
+                        acres=prop.get("acres"),
+                        gis_url=prop.get("gis_url"),
+                        tnmap_data=prop.get("tnmap_data"),
+                    )
+                except Exception as e:
+                    logger.warning("TNMap persistence failed for #%s: %s", row["id"], e)
+
         except Exception as e:
             logger.error("Failed to save property: %s", e, exc_info=True)
 
@@ -199,6 +226,25 @@ def _reset_failure_counter(scraper_name: str) -> None:
     fpath = logs_dir / f"{scraper_name}.json"
     if fpath.exists():
         fpath.unlink()
+
+
+def _inc_failure_counter(scraper_name: str) -> None:
+    """Increment consecutive failure count for a scraper."""
+    logs_dir = config.logs_dir / "scraper_failures"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    fpath = logs_dir / f"{scraper_name}.json"
+    count = 0
+    if fpath.exists():
+        try:
+            with open(fpath) as f:
+                count = json.load(f).get("count", 0)
+        except (ValueError, OSError):
+            count = 0
+    count += 1
+    with open(fpath, "w") as f:
+        json.dump({"count": count}, f)
+    if count >= 3:
+        logger.warning("%s failed %d consecutive runs — will be disabled", scraper_name, count)
 
 
 def _is_scraper_disabled(scraper_name: str, max_failures: int = 3) -> bool:
@@ -285,12 +331,12 @@ def cmd_run_all() -> list[dict]:
             total_found += result.get("found", 0)
             total_new += result.get("new", 0)
 
-     # Auto-archive properties with 0 < acres < 2
+     # Auto-archive properties with 0 < acres < MIN_ACRES
     print(f"\n{'='*60}")
-    print(f"  Auto-archiving properties with 0 < acres < 2 ...")
+    print(f"  Auto-archiving properties with 0 < acres < {config.MIN_ACRES:g} ...")
     conn = _ensure_db()
     try:
-        archived = archive_below_acres(conn, min_acres=2.0, include_sources=list(SCRAPER_MODULES.keys()))
+        archived = archive_below_acres(conn, min_acres=config.MIN_ACRES, include_sources=list(SCRAPER_MODULES.keys()))
         conn.close()
         if archived:
             print(f"  Auto-archived: {archived} properties")
@@ -299,6 +345,20 @@ def cmd_run_all() -> list[dict]:
     except Exception as e:
         conn.close()
         logger.warning("Auto-archive failed: %s", e)
+
+    # Auto-link properties appearing in both kania_law and ncforeclosures
+    try:
+        conn = _ensure_db()
+        try:
+            from scraper import db as scraper_db
+            link_result = scraper_db.link_cross_source(conn)
+            if link_result.get("links"):
+                print(f"  Cross-linked: {link_result.get('links')} pairs "
+                      f"({link_result.get('notes')} notes)")
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Cross-link failed: %s", e)
 
     print(f"\n  TOTAL: found={total_found}, new={total_new}")
     print(f"{'='*60}\n")
@@ -381,17 +441,44 @@ def cmd_archive(min_acres: float | None = None) -> int:
         conn.close()
 
 
-def cmd_cron(minutes: int = 360) -> None:
-    """Run in continuous mode — execute scrapers every `minutes` minutes."""
-    print(f"\n  CRON MODE: running every {minutes} minutes (Ctrl+C to stop)")
+def _next_run_time(hours: tuple[int, ...] = (1, 13)) -> datetime:
+    """Return the next scheduled run datetime (local America/New_York)."""
+    now = datetime.now()
+    candidates = []
+    for h in hours:
+        t = now.replace(hour=h, minute=0, second=0, microsecond=0)
+        if t <= now:
+            t = t + timedelta(days=1)
+        candidates.append(t)
+    return min(candidates)
+
+
+def cmd_cron(minutes: int = 720, hours: tuple[int, ...] = (1, 13)) -> None:
+    """Run on a fixed daily schedule (default 1:00 AM & 1:00 PM America/New_York).
+
+    `minutes` is kept for CLI compatibility but the schedule is driven by `hours`
+    so scrapes land on exact wall-clock times regardless of start time.
+    """
+    os.environ.setdefault("TZ", "America/New_York")
+    try:
+        time.tzset()
+    except Exception:
+        pass
+    schedule = ", ".join(f"{h:02d}:00" for h in hours)
+    print(f"\n  CRON MODE: scheduled daily at {schedule} America/New_York (Ctrl+C to stop)")
     print(f"  Scrapers: {', '.join(sorted(SCRAPER_MODULES))}")
     print()
 
     while True:
         try:
+            nxt = _next_run_time(hours)
+            sleep_secs = (nxt - datetime.now()).total_seconds()
+            print(f"  Next run scheduled for {nxt.strftime('%Y-%m-%d %H:%M:%S %Z')} "
+                  f"(in {sleep_secs / 3600:.1f}h)")
+            time.sleep(max(sleep_secs, 1))
+            print(f"\n  --- Starting scheduled scrape at "
+                  f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S %Z')} ---")
             cmd_run_all()
-            print(f"\n  Next run in {minutes} minutes...")
-            time.sleep(minutes * 60)
         except KeyboardInterrupt:
             print("\n  Stopped.")
             break
@@ -447,7 +534,7 @@ def main():
     parser.add_argument(
         "--cron",
         action="store_true",
-        help="Run continuously, every SCRAPE_INTERVAL minutes",
+        help="Run on a fixed daily schedule (1:00 AM & 1:00 PM America/New_York)",
     )
     parser.add_argument(
         "--interval",
@@ -468,6 +555,24 @@ def main():
         "--repair-links",
         action="store_true",
         help="Rebuild map/GIS links for all properties (fast: reuses stored coords)",
+    )
+    parser.add_argument(
+        "--re-enrich",
+        action="store_true",
+        help="Re-enrich the entire list with corrected GIS logic (Cherokee via "
+             "authoritative county GIS, others via NC OneMap)",
+    )
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Make archive status consistent with current acreage "
+             "(archive active < MIN_ACRES, unarchive archived >= MIN_ACRES)",
+    )
+    parser.add_argument(
+        "--link-cross",
+        action="store_true",
+        help="Link properties that appear in both kania_law and ncforeclosures "
+             "(adds cross-source notes + links for the dashboard)",
     )
 
     args = parser.parse_args()
@@ -498,6 +603,36 @@ def main():
                   f"{result.get('failed', 0)} failed")
         else:
             print(f"\n  Enrichment complete: {result} updated")
+    elif args.re_enrich:
+        conn = _ensure_db()
+        try:
+            from scraper.nc_gis_lookup import re_enrich_all
+            result = re_enrich_all(conn)
+            print(f"\n  Re-enrich complete:")
+            print(f"    Cherokee (county GIS): {result.get('cherokee')}")
+            print(f"    NC OneMap fallback:    {result.get('nc_onemap_updated')}")
+            print(f"    Skipped (manual lock): {result.get('skipped_locked')}")
+            print(f"    Failed (no match):     {result.get('failed')}")
+        finally:
+            conn.close()
+    elif args.reconcile:
+        conn = _ensure_db()
+        try:
+            from scraper.nc_gis_lookup import reconcile_archive
+            result = reconcile_archive(conn, args.threshold)
+            print(f"\n  Reconcile complete: archived={result.get('archived')}, "
+                  f"unarchived={result.get('unarchived')}")
+        finally:
+            conn.close()
+    elif args.link_cross:
+        conn = _ensure_db()
+        try:
+            from scraper import db as scraper_db
+            result = scraper_db.link_cross_source(conn)
+            print(f"\n  Cross-link complete: links={result.get('links')}, "
+                  f"notes={result.get('notes')}")
+        finally:
+            conn.close()
     elif args.status:
         cmd_status()
     elif args.new:

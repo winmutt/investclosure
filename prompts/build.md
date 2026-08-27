@@ -68,7 +68,7 @@ Must contain:
   - `TNFORECLOSURES_CAPTCHA_SITE_KEY = "6LdtSg8sAAAAADTdRyZxJ2R2sS82pKALNMvMqSyL"`
   - `TNFORECLOSURES_POPULAR_SEARCH_VALUE = "4"`
 - County lists:
-  - `NC_FORECLOSURE_COUNTIES` (21 counties, lowercase): alleghany, ashe, avery, buncombe, burke, caldwell, catawba, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, swain, transylvania, watauga, wilkes, yancey
+  - `NC_FORECLOSURE_COUNTIES` (21 counties, lowercase): alleghany, ashe, avery, buncombe, burke, catawba, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, swain, transylvania, watauga, wilkes, yancey
   - `TN_FORECLOSURE_COUNTIES` (95 counties, lowercase): anderson, bedford, benton, bledsoe, blount, bradley, campbell, cannon, carroll, carter, cheatham, chester, claiborne, clay, cocke, coffee, crockett, cumberland, davidson, decatur, dekalb, dickson, dyer, fayette, fentress, franklin, gibson, giles, grainger, greene, grundy, hamblen, hamilton, hancock, hardeman, hardin, hawkins, haywood, henderson, henry, hickman, houston, humphreys, jackson, jefferson, johnson, knox, lake, lauderdale, lawrence, lewis, lincoln, loudon, macon, madison, marion, marshall, maury, mcminn, mcnairy, meigs, monroe, montgomery, moore, morgan, obion, overton, perry, pickett, polk, putnam, rhea, roane, robertson, rutherford, scott, sequatchie, sevier, shelby, smith, stewart, sullivan, sumner, tipton, troubsdale, unaioi, union, vanburen, warren, washington, wayne, weakley, white, williamson, wilson
   - `TNFORECLOSURES_COUNTY_INDICES` dict mapping each TN county to 0-based index (anderson=0, bedford=1, ..., wilson=94)
 - `Config` dataclass (NOT frozen):

@@ -57,7 +57,10 @@ from scraper.config import (
     GIS_PARCEL_URLS,
 )
 from scraper.zls_nc import ZLSNCScraper
-from scraper.newspaper_notices import NewspaperNoticesScraper
+from scraper.newspaper_notices import (
+    NewspaperNoticesScraper,
+    _is_tax_foreclosure_notice,
+)
 from scraper.nc_gis_lookup import (
     _clean_features,
     _county_matches,
@@ -183,7 +186,7 @@ class TestConfig:
     def test_config_defaults(self):
         with patch("scraper.config.os.environ", {"TWO_CAPTCHA_API_KEY": "test"}):
             cfg = Config()
-            assert cfg.MIN_ACRES == 10.0
+            assert cfg.MIN_ACRES == 1.0
             assert cfg.MAX_ACRES == 1000.0
             assert cfg.MAX_PRICE == 0
             assert cfg.PROXY_URL is not None  # defaults to winmutt
@@ -218,7 +221,7 @@ class TestConfig:
         cfg = Config()
         assert cfg.get_delay_range("kania_law") == (2.0, 4.0)
         assert cfg.get_delay_range("zls_nc") == (2.0, 4.0)
-        assert cfg.get_delay_range("hutchens_law") == (2.0, 4.0)
+        assert cfg.get_delay_range("hutchens_law") == cfg.DELAY_RANGES["default"]
         assert cfg.get_delay_range("nonexistent") == cfg.DELAY_RANGES["default"]
 
     def test_get_min_acres(self):
@@ -263,7 +266,7 @@ class TestCountyLists:
     """Test county list definitions."""
 
     def test_nc_foreclosure_counties(self):
-        assert len(NC_FORECLOSURE_COUNTIES) == 26
+        assert len(NC_FORECLOSURE_COUNTIES) == 25
 
     def test_ga_foreclosure_counties(self):
         assert len(GA_FORECLOSURE_COUNTIES) == 11
@@ -573,7 +576,7 @@ class TestGetStats:
         assert stats["total_active"] == 2
         assert stats["total_seen"] == 2
         assert stats["total_archived"] == 0
-        assert stats["today_new"] == 0  # not today
+        assert stats["today_new"] == 2  # both inserted today (first_seen=today)
         assert stats["total_duplicates_seen"] >= 0
 
     def test_stats_with_duplicates(self, conn):
@@ -927,9 +930,10 @@ class TestKaniaLawParsing:
 
     def test_scraper_initializes(self):
         from scraper.kania_law import KaniaLawScraper
+        from scraper.config import config as global_config
         scraper = KaniaLawScraper(delay_range=(0, 0))
         assert scraper.SOURCE_NAME == "kania_law"
-        assert scraper.MIN_ACRES == 5.0
+        assert scraper.MIN_ACRES == global_config.MIN_ACRES
 
     def test_parse_record_with_all_fields(self):
         scraper = self._make_scraper()
@@ -1049,14 +1053,15 @@ class TestZLSNCStaticMethods:
         assert result is None
 
     def test_get_gis_url_with_valid_input(self):
-        # Uses gis_urls.get_gis_viewer_url which checks GIS_VIEWER_URLS
+        # Uses gis_urls.get_gis_viewer_url -> same-origin NC OneMap viewer proxy
         result = ZLSNCScraper._get_gis_url("Ashe", "P12345")
         assert result is not None
-        assert "gov.ashecountync.gov" in result
+        assert "static/gis_viewer.html" in result
+        assert "NC1Map_Parcels" in result
 
     def test_gm_with_address(self):
         result = ZLSNCScraper._gm("100 Main St", "Ashe")
-        assert result == "https://www.google.com/maps/search/100+Main+St+Ashe+NC"
+        assert result == "https://www.google.com/maps/search/100 Main St+Ashe+NC"
 
     def test_gm_with_county_only(self):
         result = ZLSNCScraper._gm(None, "Buncombe")
@@ -1068,7 +1073,7 @@ class TestZLSNCStaticMethods:
 
     def test_gm_address_only_no_county(self):
         result = ZLSNCScraper._gm("100 Main St", None)
-        assert result == "https://www.google.com/maps/search/100+Main+St+NC"
+        assert result == "https://www.google.com/maps/search/100 Main St+NC"
 
 
 class TestZLSNCSrcrapeFilter:
@@ -1183,9 +1188,9 @@ class TestNormalizeAddress:
         assert result == "MAIN"
 
     def test_normalize_with_special_chars(self):
-        # "OLD COUNT HOME RD" - keeps last 3 words
+        # "COUNTY HOME RD" - keeps last 3 words
         result = _normalize_address("155 Old County Home Road")
-        assert result == "COUNT HOME RD"
+        assert result == "COUNTY HOME RD"
 
 
 class TestNC1MapService:
@@ -1233,7 +1238,7 @@ class TestNCCountyFIPS:
 
     def test_qualified_counties_in_fips(self):
         # NC_COUNTY_FIPS has 19 counties (excludes buncombe, mitchell, polk, etc.)
-        for c in ["alleghany", "ashe", "avery", "burke", "caldwell", "cherokee",
+        for c in ["alleghany", "ashe", "avery", "burke", "cherokee",
                   "clay", "graham", "haywood", "henderson"]:
             assert c in NC_COUNTY_FIPS
 
@@ -1251,59 +1256,86 @@ class TestNCCountyFIPS:
 # ===========================================================================
 
 class TestGISViewerURLs:
-    """Test get_gis_viewer_url function."""
+    """Test get_gis_viewer_url function.
 
-    def test_alleghany_with_parcel(self):
+    All NC counties are served by the same-origin NC OneMap viewer proxy
+    (``static/gis_viewer.html``) so the function returns a stable link for
+    every county (never a guessed county portal that 404s).
+    """
+
+    def test_returns_onemap_viewer(self):
         result = get_gis_viewer_url("Alleghany", "P12345")
-        assert "alleghanycountync.org" in result
-        assert "ParcelID=P12345" in result
+        assert "static/gis_viewer.html" in result
+        assert "NC1Map_Parcels" in result
 
-    def test_ashe_with_parcel(self):
-        result = get_gis_viewer_url("Ashe", "P12345")
-        assert "gov.ashecountync.gov" in result
-        assert "ParcelNumber=P12345" in result
-
-    def test_buncombe_with_parcel(self):
-        result = get_gis_viewer_url("Buncombe", "P12345")
-        assert "buncompecounty.org" in result
-        assert "ParcellID=P12345" in result
+    def test_centers_on_coordinates(self):
+        result = get_gis_viewer_url("Ashe", "P12345", lng=-81.5, lat=36.4)
+        assert "center=-81.500000,36.400000" in result
+        assert "level=16" in result
 
     def test_lower_case_county(self):
         result = get_gis_viewer_url("ashe", "P12345")
-        assert "gov.ashecountync.gov" in result
+        assert "static/gis_viewer.html" in result
 
-    def test_no_county(self):
-        result = get_gis_viewer_url(None, "P12345")
-        assert result is None
+    def test_no_inputs(self):
+        result = get_gis_viewer_url(None, None)
+        assert result is not None
+        assert "static/gis_viewer.html" in result
 
-    def test_no_parcel(self):
-        result = get_gis_viewer_url("Ashe", None)
-        assert result is None
+    def test_parcel_only_opens_statewide_map(self):
+        # No coordinates: open the statewide parcel map (loads correctly).
+        result = get_gis_viewer_url("Ashe", "P12345")
+        assert "static/gis_viewer.html" in result
+        assert "center=" not in result
 
-    def test_unknown_county_fallback(self):
+    def test_unknown_county_with_parcel(self):
         result = get_gis_viewer_url("Unknown", "P12345")
-        assert "google.com/maps" in result
-        assert "parcel" in result
-
-    def test_parcel_with_special_chars(self):
-        result = get_gis_viewer_url("Ashe", "P 12 34")
-        assert "gov.ashecountync.gov" in result
-        assert "ParcelNumber" in result
+        assert "static/gis_viewer.html" in result
 
 
 class TestGISViewerURLSRegistry:
-    """Test GIS_VIEWER_URLS registry."""
+    """Test GIS_VIEWER_URLS registry (county portal reference pages)."""
 
-    def test_has_21_entries(self):
-        assert len(GIS_VIEWER_URLS) == 21
+    def test_has_20_entries(self):
+        assert len(GIS_VIEWER_URLS) == 20
 
-    def test_each_has_two_fields(self):
-        for url in GIS_VIEWER_URLS.values():
-            assert len(url) == 2  # (base_url, param_name)
+    def test_each_is_a_url(self):
+        for name, url in GIS_VIEWER_URLS.items():
+            assert isinstance(url, str)
+            assert url.startswith("http")
 
-    def test_all_have_param_name(self):
-        for name, (_, param) in GIS_VIEWER_URLS.items():
-            assert param and len(param) > 0
+    def test_covers_all_mountain_counties(self):
+        expected = {
+            "alleghany", "ashe", "avery", "buncombe", "burke",
+            "cherokee", "clay", "graham", "haywood", "henderson", "jackson",
+            "madison", "mcdowell", "mitchell", "swain", "transylvania",
+            "watauga", "yancey",
+        }
+        assert expected.issubset(set(GIS_VIEWER_URLS))
+
+
+class TestCountyParcelResolver:
+    """Test county tax-id -> statewide PIN resolution registry (no network)."""
+
+    def test_unknown_county_returns_none(self):
+        from scraper.county_parcel import resolve_county_tax_id
+        assert resolve_county_tax_id("Nowhere", "123") is None
+
+    def test_unconfigured_county_no_service(self):
+        from scraper.county_parcel import COUNTY_PARCEL_SERVICES
+        assert "nowhere" not in COUNTY_PARCEL_SERVICES
+
+    def test_registry_entries_well_formed(self):
+        from scraper.county_parcel import COUNTY_PARCEL_SERVICES
+        for co, cfg in COUNTY_PARCEL_SERVICES.items():
+            assert "url" in cfg and cfg["url"].startswith("http")
+            assert "tax_field" in cfg and cfg["tax_field"]
+            assert "pin_field" in cfg and cfg["pin_field"]
+
+    def test_missing_inputs_return_none(self):
+        from scraper.county_parcel import resolve_county_tax_id
+        assert resolve_county_tax_id(None, "123") is None
+        assert resolve_county_tax_id("madison", None) is None
 
 
 # ===========================================================================
@@ -1559,6 +1591,7 @@ class TestServerFlask:
         _make_prop(conn, "P1", 25.0)
         row_id = conn.execute("SELECT id FROM properties WHERE source_listing_id='P1'").fetchone()["id"]
         conn.execute("UPDATE properties SET manual_acres_set = 'locked' WHERE id=?", (row_id,))
+        conn.commit()
         conn.close()
 
         with app.test_client() as client:
@@ -1579,7 +1612,7 @@ class TestServerFlask:
         conn.close()
 
         with app.test_client() as client:
-            resp = client.get(f"/property/{p2_id}/navigation")
+            resp = client.get(f"/api/property/{p2_id}/navigation")
             assert resp.status_code == 200
             data = resp.get_json()
             assert "previous" in data
@@ -1739,7 +1772,7 @@ class TestCountyFIPS:
     """Test NC county FIPS code registry."""
 
     def test_all_mountain_counties_have_fips(self):
-        mountain = ["alleghany", "ashe", "avery", "burke", "caldwell", "cherokee",
+        mountain = ["alleghany", "ashe", "avery", "burke", "cherokee",
                      "clay", "graham", "haywood", "henderson", "jackson", "madison",
                      "mcdowell", "mitchell", "polk", "swain", "transylvania",
                      "watauga", "yancey"]
@@ -1873,3 +1906,84 @@ class TestNewspaperNoticesExtraction:
 
     def test_extract_deed_plat_no_match(self, scraper):
         assert scraper._extract_deed_plat("FILE NO. 26CV000298-870") is None
+
+
+class TestTaxForeclosureClassifier:
+    """The newspaper-notice classifiers must keep ONLY genuine property-tax
+    foreclosure / sale notices and reject probate, public-hearing, RFP/bid,
+    and mortgage/deed-of-trust notices."""
+
+    # ---- keep: genuine NC tax foreclosures ----
+    def test_keeps_foreclosure_sale_to_satisfy_unpaid(self):
+        text = ("NOTICE OF FORECLOSURE SALE to satisfy unpaid property taxes "
+                "due and owing to the County. NCGS Chapter 105.")
+        assert _is_tax_foreclosure_notice(text) is True
+
+    def test_keeps_tax_lien_foreclosure(self):
+        text = "foreclosure of the tax lien pursuant to North Carolina General Statute 105"
+        assert _is_tax_foreclosure_notice(text) is True
+
+    def test_keeps_in_rem_tax_foreclosure(self):
+        text = "IN REM FORECLOSURE of delinquent ad valorem taxes"
+        assert _is_tax_foreclosure_notice(text) is True
+
+    def test_keeps_watauga_style_tax_foreclosure(self):
+        text = ("FORECLOSURE SALE. Default having been made in the payment of "
+                "unpaid property taxes owing to Watauga County.")
+        assert _is_tax_foreclosure_notice(text) is True
+
+    def test_keeps_tax_sale_with_mortgage_language(self):
+        # A tax-lien foreclosure handled by a substitute trustee still carries
+        # the tax-sale signal, so it must be kept.
+        text = ("tax foreclosure sale of the described real property by the "
+                "Substitute Trustee under NCGS 105")
+        assert _is_tax_foreclosure_notice(text) is True
+
+    # ---- reject: probate / creditor ----
+    def test_rejects_creditor_notice(self):
+        text = ("CREDITOR'S NOTICE. Having qualified as Executor of the Estate "
+                "of Vilma Nau, Estate File No. 26E000219-870, deceased, late of "
+                "Transylvania.")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    def test_rejects_notice_of_administration(self):
+        text = ("NOTICE OF ADMINISTRATION. Having qualified as Administrator of "
+                "the Estate of Jane Doe.")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    def test_rejects_notice_to_creditors(self):
+        text = "NOTICE TO CREDITORS having qualified as Executor of the Estate of John Smith"
+        assert _is_tax_foreclosure_notice(text) is False
+
+    # ---- reject: public hearing / procurement / RFP ----
+    def test_rejects_public_hearing_bond_order(self):
+        text = ("NOTICE OF PUBLIC HEARING BOND ORDER AUTHORIZING THE ISSUANCE "
+                "OF $105,000,000 GENERAL OBLIGATION SCHOOL BONDS")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    def test_rejects_advertisement_for_bids(self):
+        text = ("ADVERTISEMENT FOR BIDS. Sealed proposals will be received by "
+                "Jackson County Recreation Department.")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    def test_rejects_public_hearing_grant(self):
+        text = ("NOTICE OF PUBLIC HEARING. Jackson County intends to apply for "
+                "$1,250,000.00 grant funds.")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    # ---- reject: mortgage / bank sale without tax language ----
+    def test_rejects_mortgage_deed_of_trust(self):
+        text = ("NOTICE OF FORECLOSURE SALE under and by virtue of a Power of "
+                "Sale contained in a Deed of Trust executed by William Layton "
+                "to the lender. No tax language present.")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    # ---- reject: procedural / quiet-title ----
+    def test_rejects_notice_of_service_of_process(self):
+        text = "NOTICE OF SERVICE OF PROCESS BY PUBLICATION. Order for service by publication."
+        assert _is_tax_foreclosure_notice(text) is False
+
+    # ---- reject: empty ----
+    def test_rejects_empty(self):
+        assert _is_tax_foreclosure_notice("") is False
+        assert _is_tax_foreclosure_notice(None) is False

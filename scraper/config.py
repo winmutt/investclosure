@@ -114,9 +114,46 @@ NCFORECLOSURES_POPULAR_SEARCH_VALUE = _site_env(
     "NCFORECLOSURES", "POPULAR_SEARCH_VALUE",
     "Foreclosures"
 )
+NCNOTICES_EMAIL = _site_env("NCNOTICES", "EMAIL", "")
+NCNOTICES_PASSWORD = _site_env("NCNOTICES", "PASSWORD", "")
+NCNOTICES_TURNSTILE_SITE_KEY = _site_env(
+    "NCNOTICES", "TURNSTILE_SITE_KEY",
+    "0x4AAAAAADs-29tdUBxeI6cO"
+)
+NCNOTICES_SAVED_SEARCH_ID = _site_env("NCNOTICES", "SAVED_SEARCH_ID", "770")
+NCNOTICES_SAVED_SEARCH_NAME = _site_env(
+    "NCNOTICES", "SAVED_SEARCH_NAME", "nc foreclosures")
+NCNOTICES_SEARCH_KEYWORDS = _site_env("NCNOTICES", "SEARCH_KEYWORDS", "foreclosure tax unpaid")
+NCNOTICES_SEARCH_TYPE = _site_env("NCNOTICES", "SEARCH_TYPE", "AND")  # AND=All Words, OR=Any Words
 TNFORECLOSURES_POPULAR_SEARCH_VALUE = _site_env(
     "TNFORECLOSURES", "POPULAR_SEARCH_VALUE",
-    "Foreclosures"
+    "Tax Sales"
+)
+# TN public notice detail pages are gated by a Cloudflare Turnstile that uses
+# the SAME sitekey as ncnotices.com (shared Tennessee Press Association infra).
+TNFORECLOSURES_TURNSTILE_SITE_KEY = _site_env(
+    "TNFORECLOSURES", "TURNSTILE_SITE_KEY",
+    "0x4AAAAAADs-29tdUBxeI6cO"
+)
+
+# GA public notices (Georgia Press Association) -- same ASP.NET WebForms
+# platform as the TN site, but its own Turnstile sitekey.
+GAFORECLOSURES_BASE_URL = _site_env("GAFORECLOSURES", "BASE_URL", "https://www.georgiapublicnotice.com")
+GAFORECLOSURES_TURNSTILE_SITE_KEY = _site_env(
+    "GAFORECLOSURES", "TURNSTILE_SITE_KEY",
+    "0x4AAAAAADs-xpiU_yrMy8ZY"
+)
+GAFORECLOSURES_POPULAR_SEARCH_VALUE = _site_env(
+    "GAFORECLOSURES", "POPULAR_SEARCH_VALUE",
+    "Tax Sales"
+)
+# Popular-search categories to scrape. Defaults to tax sales plus the two
+# categories that host mortgage / lender foreclosure "Sheriff's Sales" (which
+# the original tax-sale-only scope deliberately excluded). Override with a
+# comma-separated list via GAFORECLOSURES_CATEGORIES.
+GAFORECLOSURES_CATEGORIES = _site_env(
+    "GAFORECLOSURES", "CATEGORIES",
+    "Tax Sales,Foreclosures,Sheriff's/Marshal's Sales"
 )
 
 
@@ -145,10 +182,20 @@ KY_FORECLOSURE_COUNTIES = [
 # NC counties (26)
 NC_FORECLOSURE_COUNTIES = [
     "alleghany", "ashe", "avery", "buncombe", "burke",
-    "caldwell", "catawba", "cherokee", "clay", "cleveland",
+    "catawba", "cherokee", "clay", "cleveland",
     "franklin", "graham", "haywood", "henderson", "jackson",
     "macon", "madison", "mcdowell", "mitchell", "polk", "rutherford",
     "swain", "transylvania", "watauga", "wilkes", "yancey",
+]
+
+# NC mountain counties (21) — the investclosure target set
+# (same list Kania Law uses; excludes river-valley/urban counties)
+NC_MOUNTAIN_COUNTIES = [
+    "alleghany", "ashe", "avery", "buncombe", "burke",
+    "cherokee", "clay", "graham", "haywood",
+    "henderson", "jackson", "macon", "madison", "mcdowell",
+    "mitchell", "polk", "swain", "transylvania", "watauga",
+    "yancey",
 ]
 
 # SC counties (4)
@@ -164,6 +211,13 @@ TN_FORECLOSURE_COUNTIES = [
     "johnson", "knox", "marion", "mcminn", "monroe", "morgan", "overton",
     "pickett", "polk", "roane", "scott", "sequatchie", "sevier",
     "sullivan", "unico", "union", "van_buren", "warren", "washington", "white",
+]
+
+# GA mountain counties (7) — N GA high-country core, averaging well above
+# ~1700ft (excludes lower foothill counties like dawson, habersham, murray,
+# pickens). Used by the ganotices scraper, scoped to the "Tax Sales" category.
+GA_MOUNTAIN_COUNTIES = [
+    "fannin", "gilmer", "lumpkin", "rabun", "towns", "union", "white",
 ]
 
 # All states with county lists
@@ -314,7 +368,7 @@ class Config:
         self.TWO_CAPTCHA_API_KEY = _opt_str("TWO_CAPTCHA_API_KEY", "")
 
         # Thresholds (env overridable)
-        self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 10.0)
+        self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 1.0)
         self.MAX_ACRES = _opt_float("INVESTCLOSURE_MAX_ACRES", 1000.0)
         self.MAX_PRICE = _opt_int("INVESTCLOSURE_MAX_PRICE", 0)  # no cap for foreclosures
 
@@ -329,7 +383,6 @@ class Config:
             "ncforeclosures": (1.5, 3.0),
             "tnforeclosures": (1.5, 3.0),
             "zls_nc": (2.0, 4.0),
-            "hutchens_law": (2.0, 4.0),
             "newspaper_notices": (2.0, 4.0),
             "default": (1.5, 3.0),
         }

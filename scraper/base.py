@@ -1,11 +1,15 @@
 from __future__ import annotations
+import contextlib
+import json
 import logging
 import re
 import random
+import sys
 import time
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Optional, TypedDict, List
+from urllib.parse import urlparse
 
 from .config import config
 
@@ -76,7 +80,12 @@ class PropertyData(TypedDict, total=False):
 
 
 class BaseScraper(ABC):
-    """Base class for simple HTTP-based scrapers (curl_cffi)."""
+    """Base class for scrapers that fetch via a Camoufox (stealth Firefox) page.
+
+    Subclasses open a browser session with :func:`camoufox_context` (or the
+    :class:`CamoufoxFetcher` helper) rather than plain HTTP, so requests
+    inherit Firefox TLS/JA3 fingerprinting and bypass Cloudflare Turnstile.
+    """
     SOURCE_NAME: str = "unknown"
 
     def __init__(
@@ -88,7 +97,6 @@ class BaseScraper(ABC):
         self.delay_range = delay_range
         self.use_selenium = use_selenium
         self.use_browser_manager = kwargs.get('use_browser_manager', False)
-        self.session = __import__("requests").Session()
 
     def _random_delay(self) -> None:
         """Sleep for a random duration in the configured range."""
@@ -164,7 +172,7 @@ class BaseForeclosureScraper(ABC):
                 acres = prop.get("acres")
 
                 if county and county in state_counties:
-                    if acres and acres >= config.MIN_ACRES:
+                    if acres is None or acres >= config.MIN_ACRES:
                         prop["county"] = county.title()
                         filtered.append(prop)
                     else:
@@ -249,6 +257,61 @@ class BaseForeclosureScraper(ABC):
             print(f"error: {e})", end=" ", flush=True)
         return None
 
+    def _solve_turnstile(self, page_url: str, site_key: str) -> Optional[str]:
+        """Solve a Cloudflare Turnstile challenge via 2captcha API.
+
+        Returns the token string, or None on failure. The token is bound to
+        page_url + site_key, so both must match the live page exactly.
+        """
+        import requests as http_req
+        print("(solving turnstile ...", end=" ", flush=True)
+        try:
+            resp = http_req.post(
+                "https://2captcha.com/in.php", timeout=30,
+                data={
+                    "key": config.TWO_CAPTCHA_API_KEY,
+                    "method": "turnstile",
+                    "sitekey": site_key,
+                    "pageurl": page_url,
+                    "json": 1,
+                },
+            )
+            data = resp.json()
+            if data.get("status") != 1:
+                print(f"fail: {data.get('request', '?')})", end=" ", flush=True)
+                return None
+            rid = data["request"]
+            for _ in range(60):
+                time.sleep(5)
+                resp = http_req.get(
+                    "https://2captcha.com/res.php", timeout=30,
+                    params={
+                        "key": config.TWO_CAPTCHA_API_KEY,
+                        "action": "get",
+                        "id": rid,
+                        "json": 1,
+                    },
+                )
+                data = resp.json()
+                if data.get("status") == 1:
+                    print("solved)", end=" ", flush=True)
+                    return data["request"]
+        except Exception as e:
+            print(f"error: {e})", end=" ", flush=True)
+        print("timeout)", end=" ", flush=True)
+        return None
+
+    def _inject_turnstile_token(self, page, token: str) -> None:
+        """Set the Turnstile hidden field value from the page's own form.
+
+        The widget renders a hidden input named 'cf-turnstile-response'
+        (its id is dynamic: cf-chl-widget-<n>_response), so select by name.
+        """
+        page.evaluate("""(t) => {
+            const el = document.querySelector('input[name="cf-turnstile-response"]');
+            if (el) { el.value = t; el.textContent = t; }
+        }""", token)
+
     def _inject_token_and_submit(self, page, token: str) -> None:
         """Set g-recaptcha-response and submit via __doPostBack."""
         page.evaluate("""(token) => {
@@ -295,6 +358,100 @@ class BaseForeclosureScraper(ABC):
             elif c and os.path.isfile(c):
                 return c
         return None
+
+
+@contextlib.contextmanager
+def camoufox_context(headless: str = "virtual", humanize: bool = False, **camoufox_kwargs):
+    """Yield a Camoufox page (stealth Firefox) for scraping real web pages.
+
+    Camoufox is a privacy-hardened Firefox build that bypasses Cloudflare
+    Turnstile and similar bot defenses. Use it in place of Playwright's
+    ``chromium.launch`` for any scraper that navigates rendered pages.
+
+    Extra keyword args (e.g. ``proxy={"server": "..."}``) are forwarded to
+    the underlying Camoufox launcher.
+
+    Usage::
+
+        from .base import camoufox_context
+        with camoufox_context() as page:
+            page.goto(url, wait_until="domcontentloaded")
+            ...
+    """
+    from camoufox.sync_api import Camoufox
+    with Camoufox(headless=headless, humanize=humanize, **camoufox_kwargs) as browser:
+        page = browser.new_page()
+        try:
+            yield page
+        finally:
+            page.close()
+
+
+class CamoufoxFetcher:
+    """Route plain HTTP GET/POST through a Camoufox page so requests inherit
+    Firefox TLS/JA3 fingerprinting + anti-detect evasion.
+
+    For scrapers that fetch a single JSON / iCal / HTML endpoint without DOM
+    interaction (e.g. WordPress admin-ajax, ASPX sales lists, iCal feeds, JSON
+    search APIs). Open a :func:`camoufox_context` and pass its ``page``::
+
+        with camoufox_context() as page:
+            fetcher = CamoufoxFetcher(page)
+            fetcher.set_headers({"Referer": "..."})
+            body = fetcher.get(url)
+    """
+
+    def __init__(self, page):
+        self.page = page
+
+    def set_headers(self, headers: dict) -> None:
+        self.page.set_extra_http_headers(headers or {})
+
+    def get(self, url: str, timeout: int = 60000,
+            wait: str = "domcontentloaded", download: bool = False) -> str:
+        """Fetch *url* and return the response body as text.
+
+        Set ``download=True`` for endpoints the browser treats as a file
+        download (e.g. iCal / .ics feeds) — the body is read from the
+        captured download instead of the page response.
+        """
+        if download:
+            import os
+            import pathlib
+            import tempfile
+            holder: dict = {}
+            self.page.on("download", lambda d: holder.setdefault("d", d))
+            try:
+                self.page.goto(url, wait_until=wait, timeout=timeout)
+            except Exception:
+                pass  # goto raises "Download is starting" once the save begins
+            dl = holder.get("d")
+            if not dl:
+                return ""
+            tmp = pathlib.Path(tempfile.mkdtemp()) / "download"
+            dl.save_as(str(tmp))
+            return tmp.read_text(errors="replace")
+        resp = self.page.goto(url, wait_until=wait, timeout=timeout)
+        return resp.text() if resp else ""
+
+    def post(self, url: str, body: str, headers: dict | None = None) -> str:
+        """POST *body* (already-serialized string) to *url* from the current
+        page context. The page must already be on the same origin as *url*
+        (caller navigates there first) so the fetch is not blocked by CORS.
+        Returns the raw response text."""
+        headers = headers or {}
+        result = self.page.evaluate(
+            """(args) => {
+                const [u, b, h] = args;
+                return fetch(u, {
+                    method: 'POST',
+                    headers: Object.assign({}, h),
+                    body: b,
+                }).then(r => r.text());
+            }""",
+            [url, body, headers],
+        )
+        return result or ""
 
 
 def get_gis_url(county: str, state: str = "NC", parcel_number: str = "") -> str:

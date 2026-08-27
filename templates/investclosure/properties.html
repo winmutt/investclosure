@@ -41,11 +41,18 @@
                     {% endif %}
                 </span>
                 <span>First seen: {{ prop.first_seen }}</span>
+                {% set sale_date = prop.auction_date|clean_date %}
+                {% set upset_date = prop.upset_bid_end|clean_date %}
+                {% if sale_date %}<span><strong>Sale:</strong> {{ sale_date }}</span>{% endif %}
+                {% if upset_date %}<span><strong>Upset bid:</strong> {{ upset_date }}</span>{% endif %}
             </div>
             {% if prop.get('tnmap_owner') %}
             <div class="list-item-enriched">
                 Owner: {{ prop.tnmap_owner }} · Parcel: {{ prop.tnmap_gislink or 'N/A' }}
             </div>
+            {% endif %}
+            {% if prop.notes %}
+            <div class="list-notes-display">{{ prop.notes }}</div>
             {% endif %}
         </div>
         <div class="list-item-actions">

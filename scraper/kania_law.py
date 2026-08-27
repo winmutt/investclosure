@@ -16,16 +16,16 @@ Properties are enriched with GIS data using NC OneMap statewide service:
   - Commercial properties excluded via code filter
 """
 from __future__ import annotations
+import json
 import logging
 import re
 import time
 import random
 from typing import Optional, Any
 
-from curl_cffi import requests as curl_requests
-
-from .base import BaseScraper, PropertyData
+from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
 from .config import config, QUALIFYING_COUNTIES
+from .nc_gis_lookup import build_gis_url, build_google_maps_url, build_google_maps_topo_url
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ CANIA_API_URL = (
 
 class KaniaLawScraper(BaseScraper):
     SOURCE_NAME = "kania_law"
-    MIN_ACRES = 5.0
+    MIN_ACRES = config.MIN_ACRES
 
     def __init__(self, delay_range: tuple[float, float] = (0.5, 1.5)):
         super().__init__(delay_range=delay_range, use_selenium=False)
@@ -52,29 +52,26 @@ class KaniaLawScraper(BaseScraper):
         """Fetch all records from the Kania law firm API in a single call, filtered to qualifying NC counties."""
         # NC mountain counties only (from qualifying_counties.json NON_QUALIFYING list inverted)
         NC_QUALIFYING = {
-            "alleghany", "ashe", "avery", "buncombe", "burke", "caldwell", "cherokee",
+            "alleghany", "ashe", "avery", "buncombe", "burke", "cherokee",
             "clay", "graham", "haywood", "henderson", "jackson", "macon", "madison",
             "mcdowell", "mitchell", "polk", "swain", "transylvania", "watauga", "yancey",
         }
 
-        session = curl_requests.Session(impersonate="chrome131")
-        session.headers.update({
-            "Accept": "application/json",
-            "Referer": "https://kanialawfirm.com/tax-foreclosures/foreclosure-listings/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/131.0.0.0 Safari/537.36",
-        })
-
         logger.info("Fetching Kania Law tax foreclosure listings ...")
 
         try:
-            resp = session.get(CANIA_API_URL, timeout=30)
-            if resp.status_code != 200:
-                logger.error("API returned HTTP %d", resp.status_code)
-                return []
+            with camoufox_context() as page:
+                fetcher = CamoufoxFetcher(page)
+                fetcher.set_headers({
+                    "Accept": "application/json",
+                    "Referer": "https://kanialawfirm.com/tax-foreclosures/foreclosure-listings/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/131.0.0.0 Safari/537.36",
+                })
+                raw = fetcher.get(CANIA_API_URL, timeout=60000)
 
-            data = resp.json()
+            data = json.loads(raw) if raw else None
             if not isinstance(data, list):
                 logger.error("Expected JSON array, got %s", type(data).__name__)
                 return []
@@ -210,13 +207,13 @@ class KaniaLawScraper(BaseScraper):
             "property_type": property_type or None,
             "image_url": None,
             "parcel_number": parcel or None,
-            "gis_url": None,
+            "gis_url": build_gis_url(None, None, parcel or None, address, county) if (parcel or address) else None,
             "auction_date": saledatetime_raw or None,
             "close_date": closedate_raw or None,
             "upset_bid": currentbid_raw or None,
             "foreclosure_key": "|".join([saledatetime_raw, closedate_raw, currentbid_raw, openingbid_raw]),
-            "google_maps_url": None,
-            "google_maps_topo_url": None,
+            "google_maps_url": build_google_maps_url(None, None, address, city, county) if address else None,
+            "google_maps_topo_url": build_google_maps_topo_url(None, None, address, city, county) if address else None,
         }
 
         return prop
