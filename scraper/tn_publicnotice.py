@@ -32,7 +32,7 @@ COUNTY_SET = set(TN_FORECLOSURE_COUNTIES)
 
 # Only process notices published within this many days (the grid is sorted by
 # publication date, newest first, so we paginate until we pass the cutoff).
-LOOKBACK_DAYS = 61
+LOOKBACK_DAYS = 7
 
 _MONTHS = {m: i for i, m in enumerate(
     ["January", "February", "March", "April", "May", "June", "July",
@@ -261,6 +261,13 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         # Authoritative tax-foreclosure check on the full notice text.
         if not self._is_tax_foreclosure(raw_text):
             logger.info("Dropping non-tax foreclosure %s (mortgage/bank)", pk_id)
+            return None
+
+        # Reject court *service* publications (non-resident / cannot-be-located
+        # delinquent-taxpayer lists) even though they mention "delinquent tax" —
+        # they name dozens of parties with no single parcel or auction.
+        if self._is_publication_notice(raw_text):
+            logger.info("Dropping court publication %s (non-resident service list)", pk_id)
             return None
 
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
