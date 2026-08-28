@@ -24,6 +24,7 @@ from .publicnotice_base import (
     PublicNoticeScraper,
     dedup_by_content,
     extract_street_address,
+    PER_PAGE_SELECT,
 )
 
 logger = logging.getLogger(__name__)
@@ -239,7 +240,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         )
         page.wait_for_timeout(8000)
         try:
-            page.select_option(self.PER_PAGE_SELECT, "50")
+            page.select_option(PER_PAGE_SELECT, "50")
             page.wait_for_timeout(4000)
         except Exception as e:
             logger.warning("Could not raise per-page count: %s", e)

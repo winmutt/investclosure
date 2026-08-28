@@ -17,11 +17,72 @@ import html as html_lib
 import io
 import logging
 import re
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from .base import BaseForeclosureScraper, PropertyData
 
 logger = logging.getLogger(__name__)
+
+# --- shared search recency --------------------------------------------------
+# Limit the grid search to notices *published* within the last N days. The
+# sites paginate newest-first, so this keeps each run scoped to recent
+# publications instead of re-processing months of stale notices.
+LOOKBACK_DAYS = 7
+
+_MONTHS = {m: i for i, m in enumerate(
+    ["January", "February", "March", "April", "May", "June", "July",
+     "August", "September", "October", "November", "December"], 1)}
+
+# "Published: 8/21/2026" / "Posted: 8/21/2026" tokens (NC grid rows).
+_PUBLISHED_TOKEN_RE = re.compile(
+    r"Published:\s*(\d{1,2})/(\d{1,2})/(\d{4})", re.IGNORECASE)
+
+# Leading full date in the notice body, e.g. "Tuesday, August 25, 2026"
+# (TN/GA grid full_text starts with the publication date).
+_FULL_DATE_RE = re.compile(
+    r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*)?"
+    r"([A-Z][a-z]+)\s+(\d{1,2}),\s+(\d{4})"
+)
+
+
+def _parse_grid_publication_date(text: str) -> Optional[date]:
+    """Best-effort publication date from a PublicNotice grid row's text.
+
+    Tries the explicit ``Published: M/D/YYYY`` token first (NC), then the
+    leading calendar date embedded in the notice body (TN/GA). Returns
+    ``None`` when no date can be parsed (callers keep such rows).
+    """
+    if not text:
+        return None
+    m = _PUBLISHED_TOKEN_RE.search(text)
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            pass
+    m = _FULL_DATE_RE.search(text)
+    if m:
+        mon = _MONTHS.get(m.group(1).title())
+        if mon:
+            try:
+                return date(int(m.group(3)), mon, int(m.group(2)))
+            except ValueError:
+                pass
+    return None
+
+
+def _is_recent_publication(text: str, days: int = LOOKBACK_DAYS,
+                           today: Optional[date] = None) -> bool:
+    """True when the grid row's publication date is within ``days`` of today.
+
+    Rows with no parseable date return True (do not drop unparseable rows).
+    """
+    d = _parse_grid_publication_date(text)
+    if d is None:
+        return True
+    today = today or date.today()
+    return d >= today - timedelta(days=days)
 
 # --- shared selectors --------------------------------------------------------
 TURNSTILE_FIELD = 'input[name="cf-turnstile-response"]'
@@ -71,6 +132,22 @@ TAX_FC_PATTERNS = [
     r"\bt\.?c\.?a\.?\s*[§]?\s*67",
     r"section\s+67[-\s]",
     r"county\s+trustee",
+]
+
+# Strong, authoritative tax-sale signals. A notice that ALSO reads as a
+# mortgage/deed-of-trust (bank) sale must carry one of THESE to be accepted as
+# a genuine tax foreclosure -- a bare "T.C.A. 67" reference or "delinquent tax"
+# aside is not enough (e.g. a substitute-trustee deed-of-trust sale that merely
+# mentions taxes in its default language).
+STRONG_TAX_FC_PATTERNS = [
+    r"county\s+trustee",
+    r"delinquent\s+property\s+taxes",
+    r"delinquent\s+tax\s+sale",
+    r"tax\s+sale",
+    r"for\s+delinquent\s+taxes",
+    r"t\.?c\.?a\.?\s*[§]?\s*67-5",
+    r"tennessee\s+code\s+annotated\s*[§]?\s*67-5",
+    r"section\s+67-5",
 ]
 
 # --- shared street-address extraction ---------------------------------------
@@ -478,4 +555,10 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
         if has_mortgage and not has_tax:
             return False
+        if has_mortgage:
+            # A deed-of-trust / substitute-trustee sale is a private-lender
+            # (mortgage) foreclosure. Only accept it as a tax sale when it also
+            # carries a STRONG tax signal (county-trustee sale for delinquent
+            # property taxes under T.C.A. 67-5).
+            return any(re.search(p, low) for p in STRONG_TAX_FC_PATTERNS)
         return has_tax
