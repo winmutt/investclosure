@@ -17,7 +17,9 @@ services:
     environment:
       # Run the scheduled scraper loop inside the container (default true)
       RUN_CRON: "true"
-      # Scheduled scrapes at 01:00 and 13:00 America/New_York (12h apart)
+      # Scheduled scrapes at 4:00 AM and 4:00 PM America/New_York (12h apart)
+      CRON_HOURS: "4,16"
+      # Interval is kept for CLI compatibility; schedule is driven by CRON_HOURS
       SCRAPE_INTERVAL: 720
 
   flaresolverr:

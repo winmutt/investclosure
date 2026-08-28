@@ -144,7 +144,7 @@ python3 -m scraper --scraper zls_nc     # Run ZLS-NC only
 python3 -m scraper --status              # DB stats
 python3 -m scraper --new                 # New properties since last run
 python3 -m scraper --archive             # Archive below MIN_ACRES
-python3 -m scraper --cron                # Continuous mode (every 360 min)
+python3 -m scraper --cron                # Scheduled mode (default 4a & 4p, --cron-hours to override)
 python3 -m scraper --help                # Show all options
 ```
 
@@ -228,6 +228,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-08-28**: Removed `hutchens_law` scraper (mortgage-only) and Caldwell County from all scrapers; stale DB rows archived. Cron schedule set to **4a & 4p America/New_York** (`--cron-hours 4,16`, env `CRON_HOURS`). All publicnotice scrapers now limit the search grid to notices **published in the last 7 days** (`LOOKBACK_DAYS` in `scraper/publicnotice_base.py`); newspaper Citizen-Times already used a 7-day rolling window.
 - **2026-07-29**: ZLS NC scraper — filtered to NC mountain counties (21 counties), NC OneMap GIS enrichment
 - **2026-07-29**: Kania Law scraper — county filtering to 21 NC mountain counties added
 - **2026-07-29**: DB cleaned — archived 62 properties from non-qualifying counties (Rowan, Burke, etc.)

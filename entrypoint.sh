@@ -22,8 +22,8 @@ for i in $(seq 1 30); do
     sleep 1
 done
 if [ "${RUN_CRON:-true}" = true ]; then
-    echo "Starting scraper (interval: 360 minutes)..."
-    python -m scraper --cron --interval "${SCRAPE_INTERVAL:-360}" &
+    echo "Starting scraper (daily at ${CRON_HOURS:-4,16} America/New_York)..."
+    python -m scraper --cron --interval "${SCRAPE_INTERVAL:-360}" --cron-hours "${CRON_HOURS:-4,16}" &
     echo "Scraper PID: $!"
 fi
 wait $SERVER_PID

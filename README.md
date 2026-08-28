@@ -8,7 +8,6 @@ enriches with county GIS parcel data, saves to SQLite with dashboard.
 | Scraper | Working? | Coverage | Notes |
 |---|---|---|---|
 | `kania_law` | ✅ | ~8/21 counties | GIS enriched via NC1Map POST API |
-| `hutchens_law` | ✅ | 26 NC counties | Address-based GIS enrichment |
 | `newspaper_notices` | ✅ | NC mountain | State-wide newspaper notices |
 | `zls_nc` | ❌ | 21 NC mountain | 0 qualifying mountain records |
 | `nc_publicnotice` | ❌ | NC mountain | Banned/unreliable |
@@ -18,7 +17,6 @@ enriches with county GIS parcel data, saves to SQLite with dashboard.
 | Source | Total | GIS Enriched | Notes |
 |---|---|---|---|
 | Kania Law | 51 | 12 | Parcel lookup via nparno/altparno strategies |
-| Hutchens Law | 23 | 6 | Address matching (street format normalization) |
 | Newspaper | 3 | 1 | Mountain counties |
 | **Total** | **77** | **19** | 25% enrichment rate |
 
@@ -43,7 +41,6 @@ The scraper uses a separation of scraping and enrichment phases:
 ### Phase 1: Scrape (fast, no GIS)
 ```bash
 python3 -m scraper --scraper kania_law   # Scrape listing sites only
-python3 -m scraper --scraper hutchens_law
 python3 -m scraper --all                 # Run all scrapers
 ```
 Records stored with `acres_source = 'placeholder'`.
@@ -72,7 +69,6 @@ docker compose up --build       # Docker
 
 # Scrape (fast)
 python3 -m scraper --scraper kania_law    # Kania Law only
-python3 -m scraper --scraper hutchens_law # Hutchens Law only  
 python3 -m scraper --all                  # Run all scrapers
 
 # Enrich (GIS lookup)
@@ -86,7 +82,7 @@ python3 -m scraper --new             # New properties
 python3 -m scraper --archive         # Archive small parcels
 
 # Continuous mode
-python3 -m scraper --cron            # Every 360 minutes
+python3 -m scraper --cron            # Daily at 4 AM & 4 PM America/New_York (--cron-hours to override)
 ```
 
 ## Requirements
@@ -129,7 +125,6 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 |---|---|---|---|---|
 | `kania_law` | kaniabailbond.com | 21 NC mountain | None | NC OneMap POST API |
 | `newspaper_notices` | NC newspapers | Mountain NC | None | NC OneMap POST API |
-| `hutchens_law` | sales.hutchenslawfirm.com | 26 NC | None | Address-based NC1Map |
 | `zls_nc` | zls-nc.com/listings | 21 NC mountain | None | NC OneMap POST API |
 
 ### Selection Criteria
@@ -139,7 +134,6 @@ Properties filtered to **21 NC mountain counties** (elevation >1700ft, within 25
 `alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
 
 - **Kania Law**: NC tax foreclosure auctions — scrapes ALL records from API, filters to qualifying counties
-- **Hutchens Law**: NC foreclosure listing with 26 NC counties (+franklin, macon, polk, rutherford)
 - **ZLS-NC / Zacchaeus Legal Services**: NC tax foreclosure listings — filters to mountain counties only
 
 **Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).
@@ -164,12 +158,10 @@ Properties filtered to **21 NC mountain counties** (elevation >1700ft, within 25
   1. `cntyfips='XXX' AND nparno='37XXX_YYY'` — National parcel query
   2. `cntyfips='XXX' AND altparno='YYY'` — Alternate parcel query (Burke, etc.)
   3. `cntyfips='XXX' AND parno='YYY'` — Primary parcel query
-  4. `cntyfips='XXX' AND siteadd LIKE '%STREET%TYPE%'` — Address-based (Hutchens)
 - **NC1Map FIPS codes**: NC1Map uses different codes than Census Bureau
   - Cherokee=039 (NC1Map), NOT 035 (Census)
   - Clay=043 (NC1Map), NOT 037 (Census)
   - Burke=023 (NC1Map)
-- **Address matching**: Hutchens records use normalized street format (e.g., "OVERLOOK DR" → "OVE DR")
 
 ### Kania Law Enrichment
 
@@ -186,20 +178,6 @@ enriched = enrich_kania_record(kania_record)
 result = enrich_properties(source="kania_law")
 # Returns: {"enriched": N, "skipped_no_parcel": M, "failed": P}
 ```
-
-### Hutchens Law Enrichment
-
-Hutchens records have deed book/page but no parcel number. Enrichment uses address normalization:
-
-```python
-from scraper.nc_gis_lookup import enrich_hutchens_properties
-
-# Enrich all Hutchens records
-result = enrich_hutchens_properties()
-# Returns: {"enriched": N, "skipped_no_address": M, "failed": P}
-```
-
-Address normalization: "16 Overlook Drive" → "OVERLOOK DR" → query NC1Map with LIKE pattern.
 
 Enriched fields:
 | Field | Description | Source |
@@ -228,9 +206,7 @@ Key columns:
 
 - **2026-08-03**: Two-phase workflow — scrape (fast) + enrich (GIS lookup) phases
 - **2026-08-03**: NC1Map parcel lookup uses `nparno` (National format), `altparno` (Alternate format), and `parno` strategies with `cntyfips` filter
-- **2026-08-03**: Hutchens Law address-based enrichment (normalized street format)
 - **2026-08-03**: Burke parcels correctly resolved via `altparno + cntyfips=023`
-- **2026-08-03**: 19/77 properties enriched (Kania: 12, Hutchens: 6, Newspaper: 1)
 - **2026-08-02**: Removed Zillow scraper (banned) and broken foreclosure scrapers
 - **2026-07-29**: Kania Law — county filtering to 21 NC mountain counties
 - **2026-07-26**: Dashboard overhaul — parcel + address on tiles, topo/GIS links

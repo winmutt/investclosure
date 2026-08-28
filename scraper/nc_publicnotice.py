@@ -30,7 +30,9 @@ from .config import (
     NCNOTICES_TURNSTILE_SITE_KEY,
 )
 from .publicnotice_base import (
+    LOOKBACK_DAYS,
     PublicNoticeScraper,
+    _is_recent_publication,
     trim_notice_body,
 )
 
@@ -428,6 +430,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
             state = self._grid_state(page)
             print(f"  Results: {state.get('total') or '?'} — "
                   f"{len(state.get('rows', []))} rows on page 1")
+            print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
 
             candidates: list[dict] = []
             seen: set[str] = set()
@@ -437,11 +440,20 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                     rid = row.get("id") or row.get("pk")
                     if not rid or rid in seen:
                         continue
-                    rc = _row_county(row.get("text", ""))
+                    row_text = row.get("text", "")
+                    rc = _row_county(row_text)
                     if rc and rc not in COUNTY_SET:
+                        continue
+                    if not _is_recent_publication(row_text):
                         continue
                     seen.add(rid)
                     candidates.append(row)
+                # Grid sorts newest-first; stop once even the freshest
+                # (first) row on a page is past the lookback window.
+                rows = state.get("rows") or []
+                if rows and not _is_recent_publication(rows[0].get("text", "")):
+                    print(f"  page {page_num}: past {LOOKBACK_DAYS}-day lookback window (stale rows) — stopping paging")
+                    break
                 if not candidates or len(candidates) >= self.max_candidates:
                     break
                 if state.get("next_disabled"):

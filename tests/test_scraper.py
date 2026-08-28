@@ -8,7 +8,6 @@ Tests:
 - zls_nc.py: _extract_county, _parse_price, _desc, _get_gis_url, _gm
 - nc_gis_lookup.py: _clean_features, _county_matches, _normalize_address
 - gis_urls.py: get_gis_viewer_url
-- hutchens_law.py: _parse_bid, _parse_cszip, _parse_saledate, _build_description
 - run.py: cmd_list
 - server.py: Flask routes, helpers
 """
@@ -69,7 +68,6 @@ from scraper.nc_gis_lookup import (
     NC_COUNTY_FIPS,
 )
 from scraper.gis_urls import get_gis_viewer_url, GIS_VIEWER_URLS
-from scraper.hutchens_law import HutchensLawScraper
 from scraper import db as scraper_db
 from scraper.config import Config
 
@@ -221,7 +219,6 @@ class TestConfig:
         cfg = Config()
         assert cfg.get_delay_range("kania_law") == (2.0, 4.0)
         assert cfg.get_delay_range("zls_nc") == (2.0, 4.0)
-        assert cfg.get_delay_range("hutchens_law") == cfg.DELAY_RANGES["default"]
         assert cfg.get_delay_range("nonexistent") == cfg.DELAY_RANGES["default"]
 
     def test_get_min_acres(self):
@@ -1336,98 +1333,6 @@ class TestCountyParcelResolver:
         from scraper.county_parcel import resolve_county_tax_id
         assert resolve_county_tax_id(None, "123") is None
         assert resolve_county_tax_id("madison", None) is None
-
-
-# ===========================================================================
-# hutchens_law.py tests
-# ===========================================================================
-
-class TestHutchensParsing:
-    """Test Hutchens Law scraper parsing helpers."""
-
-    def test_parse_bid_simple(self):
-        result = HutchensLawScraper._parse_bid("$169,894.26")
-        assert result == pytest.approx(169894.26)
-
-    def test_parse_bid_not_available(self):
-        result = HutchensLawScraper._parse_bid("Bid not available yet")
-        assert result is None
-
-    def test_parse_bid_with_upset(self):
-        result = HutchensLawScraper._parse_bid("Bid upset 07/24/2026, increasing bid to $127,248.07")
-        assert result == pytest.approx(127248.07)
-
-    def test_parse_bid_empty(self):
-        result = HutchensLawScraper._parse_bid("")
-        assert result is None
-
-    def test_parse_bid_none(self):
-        # _parse_bid doesn't handle None directly (calls .strip() on text)
-        # This is expected behavior from the real code
-        with pytest.raises(AttributeError):
-            HutchensLawScraper._parse_bid(None)
-
-    def test_parse_cszip_simple(self):
-        city, state, zip_code = HutchensLawScraper._parse_cszip("Leicester, NC 28748")
-        assert city == "Leicester"
-        assert state == "NC"
-        assert zip_code == "28748"
-
-    def test_parse_cszip_with_ext(self):
-        city, state, zip_code = HutchensLawScraper._parse_cszip("Clemmons, NC 27012-7296")
-        assert city == "Clemmons"
-        assert state == "NC"
-        assert zip_code == "27012-7296"
-
-    def test_parse_cszip_no_match(self):
-        city, state, zip_code = HutchensLawScraper._parse_cszip("Not valid")
-        assert city == "Not valid"
-        assert state is None
-        assert zip_code is None
-
-    def test_parse_saledate_m_d_yyyy(self):
-        result = HutchensLawScraper._parse_saledate("1/15/2026")
-        assert result == "2026-01-15"
-
-    def test_parse_saledate_single_digit(self):
-        result = HutchensLawScraper._parse_saledate("5/3/2025")
-        assert result == "2025-05-03"
-
-    def test_parse_saledate_not_found(self):
-        result = HutchensLawScraper._parse_saledate("Not yet set")
-        assert result is None
-
-    def test_parse_saledate_empty(self):
-        result = HutchensLawScraper._parse_saledate("")
-        assert result is None
-
-    def test_build_description_with_all_fields(self):
-        result = HutchensLawScraper._build_description(
-            "2026-02-01", "BK1 pg1", 150000.0, "SP123", "Case 2026-001"
-        )
-        assert "Sale: 2026-02-01" in result
-        assert "Bid: $150,000.00" in result or "Bid: $150000.00" in result
-        assert "SP#: SP123" in result
-        assert "Case: Case 2026-001" in result
-        assert "Deed: BK1 pg1" in result
-
-    def test_build_description_empty(self):
-        result = HutchensLawScraper._build_description("", "", None, "", "")
-        assert result is None
-
-    def test_build_description_no_deed(self):
-        result = HutchensLawScraper._build_description("2026-02-01", "not available", None, "", "Case 1")
-        assert "Deed" not in result
-
-
-class TestHutchensScraperInit:
-    """Test HutchensLawScraper initialization."""
-
-    def test_scraper_initializes(self):
-        from scraper.hutchens_law import HutchensLawScraper
-        scraper = HutchensLawScraper(delay_range=(0, 0))
-        assert scraper.SOURCE_NAME == "hutchens_law"
-        assert scraper.MIN_ACRES == 5.0
 
 
 # ===========================================================================

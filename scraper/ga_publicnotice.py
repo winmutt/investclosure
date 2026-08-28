@@ -24,10 +24,12 @@ from .config import (
     GA_MOUNTAIN_COUNTIES,
 )
 from .publicnotice_base import (
+    LOOKBACK_DAYS,
     PublicNoticeScraper,
     MORTGAGE_FC_PATTERNS,
     TAX_FC_PATTERNS,
     ADDRESS_RE,
+    _is_recent_publication,
     extract_street_address,
 )
 
@@ -314,6 +316,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
 
                 categories = [c.strip() for c in GAFORECLOSURES_CATEGORIES.split(",") if c.strip()]
                 print(f"  [2/4] Searching GA mountain-county sales across {len(categories)} categories: {categories}")
+                print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
                 all_records = []
                 for category in categories:
                     self._select_category(page, category)
@@ -340,12 +343,20 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                                     seen_pk.add(r["pk_id"])
                                     r["county"] = county
                                     recs.append(r)
+                                # Grid sorts newest-first; stop once the first
+                                # row on a page is past the lookback window.
+                                if more and not _is_recent_publication(
+                                        more[0].get("full_text") or ""):
+                                    break
                                 nxt = self._page_info(page)
                                 if not nxt:
                                     break
                                 cur, total = nxt["cur"], nxt["total"]
+                        # Drop records published before the lookback window.
+                        recs = [r for r in recs
+                                if _is_recent_publication(r.get("full_text") or "")]
                         all_records.extend(recs)
-                        print(f"    [{category}] {county}: {len(recs)} notices")
+                        print(f"    [{category}] {county}: {len(recs)} recent notices")
 
                 records = all_records
                 print("  [3/4] Parsing results ...")

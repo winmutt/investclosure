@@ -444,7 +444,7 @@ def cmd_archive(min_acres: float | None = None) -> int:
         conn.close()
 
 
-def _next_run_time(hours: tuple[int, ...] = (1, 13)) -> datetime:
+def _next_run_time(hours: tuple[int, ...] = (4, 16)) -> datetime:
     """Return the next scheduled run datetime (local America/New_York)."""
     now = datetime.now()
     candidates = []
@@ -456,8 +456,8 @@ def _next_run_time(hours: tuple[int, ...] = (1, 13)) -> datetime:
     return min(candidates)
 
 
-def cmd_cron(minutes: int = 720, hours: tuple[int, ...] = (1, 13)) -> None:
-    """Run on a fixed daily schedule (default 1:00 AM & 1:00 PM America/New_York).
+def cmd_cron(minutes: int = 720, hours: tuple[int, ...] = (4, 16)) -> None:
+    """Run on a fixed daily schedule (default 4:00 AM & 4:00 PM America/New_York).
 
     `minutes` is kept for CLI compatibility but the schedule is driven by `hours`
     so scrapes land on exact wall-clock times regardless of start time.
@@ -537,13 +537,19 @@ def main():
     parser.add_argument(
         "--cron",
         action="store_true",
-        help="Run on a fixed daily schedule (1:00 AM & 1:00 PM America/New_York)",
+        help="Run on a fixed daily schedule (4:00 AM & 4:00 PM America/New_York)",
     )
     parser.add_argument(
         "--interval",
         type=int,
         default=360,
-        help="Cron interval in minutes (default 360)",
+        help="Cron interval in minutes (default 360, kept for CLI compatibility)",
+    )
+    parser.add_argument(
+        "--cron-hours",
+        default="4,16",
+        metavar="HH,HH",
+        help="Cron schedule hours (comma-separated, 24h clock). Default '4,16' = 4 AM & 4 PM America/New_York",
     )
     parser.add_argument(
         "--enrich",
@@ -643,7 +649,10 @@ def main():
     elif args.archive:
         cmd_archive(args.threshold)
     elif args.cron:
-        cmd_cron(args.interval)
+        hours = tuple(
+            int(h) for h in args.cron_hours.split(",") if h.strip().isdigit()
+        ) or (4, 16)
+        cmd_cron(args.interval, hours=hours)
     elif args.scraper:
         cmd_run(args.scraper)
     elif args.all or not any([args.list, args.status, args.new, args.archive, args.cron, args.scraper]):

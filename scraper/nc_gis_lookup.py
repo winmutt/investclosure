@@ -694,7 +694,7 @@ def enrich_properties(source: Optional[str] = None) -> dict:
     Upserts the enriched data back into the properties table.
     
     Args:
-        source: Optional source filter (e.g., "kania_law", "hutchens_law"). Defaults to all.
+        source: Optional source filter (e.g., "kania_law"). Defaults to all.
     
     Returns:
         dict with counts: enriched, skipped_no_parcel, skipped_already_gis, failed
@@ -934,103 +934,6 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
                 return result
     
     return None
-
-
-def enrich_hutchens_properties() -> dict:
-    """Enrich Hutchens Law properties using address-based NC1Map lookup.
-    
-    Hutchens records have deed_book but no parcel_number.
-    This function normalizes the address and searches NC1Map parcels.
-    """
-    try:
-        import sqlite3
-    except ImportError:
-        logger.warning("sqlite3 not available, skipping Hutchens enrichment")
-        return {"error": "sqlite3 not available"}
-
-    db_path = str(config.db_path)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout = 30000")
-
-    # Get Hutchens records without GIS but with address
-    rows = conn.execute(
-        "SELECT id, address, city, county, deed_book "
-        "FROM properties WHERE source='hutchens_law' "
-        "AND acres IS NULL AND address IS NOT NULL AND address != ''"
-    ).fetchall()
-
-    if not rows:
-        logger.info("No Hutchens properties need address enrichment")
-        conn.close()
-        return {"enriched": 0, "skipped_no_address": 0, "failed": 0}
-
-    enriched = 0
-    skipped_no_address = 0
-    failed = 0
-
-    for row_id, address, city, county, deed_book in rows:
-        if not address:
-            skipped_no_address += 1
-            continue
-
-        result = search_address_in_nc1map(address, county)
-        if result and result.get("acres", 0) > 0:
-            update_fields = {
-                "id": row_id,
-                "acres": result["acres"],
-                "acres_source": "gis",
-                "parcel_number": result.get("parno"),
-                "owner_name": result.get("owner_name"),
-                "land_use": None,
-                "gis_county": result.get("cntyname") or county,
-            }
-
-            # Update coordinates from parcel centroid
-            if result.get("latitude") and result.get("longitude"):
-                update_fields["latitude"] = result["latitude"]
-                update_fields["longitude"] = result["longitude"]
-
-            # Build gis_url (human-viewable Map Viewer)
-            parcel_ref = result.get("parno", "")
-            actual_county = result.get("cntyname") or county
-            update_fields["gis_url"] = build_gis_url(
-                result.get("longitude"), result.get("latitude"), parcel_ref
-            )
-
-            # Build gmaps URLs
-            update_fields["google_maps_url"] = build_google_maps_url(
-                result.get("latitude"), result.get("longitude"),
-                address, city, actual_county,
-            )
-            update_fields["google_maps_topo_url"] = build_google_maps_topo_url(
-                result.get("latitude"), result.get("longitude"),
-                address, city, actual_county,
-            )
-
-            set_parts = ", ".join(f"{k} = ?" for k in update_fields if k != "id")
-            conn.execute(
-                f"UPDATE properties SET {set_parts} WHERE id = ?",
-                [update_fields[k] for k in update_fields if k != "id"] + [row_id],
-            )
-            conn.commit()
-            enriched += 1
-            logger.info("Hutchens enriched #%s %s parcel=%s -> %sac", row_id, county, result.get("parno")[:20], result["acres"])
-        else:
-            failed += 1
-            logger.debug("Hutchens address match failed for #%s %s addr=%s", row_id, county, address[:40])
-
-        time.sleep(random.uniform(0.3, 0.6))
-
-    conn.commit()
-    conn.close()
-
-    result = {
-        "enriched": enriched,
-        "skipped_no_address": skipped_no_address,
-        "failed": failed,
-    }
-    logger.info(f"Hutchens enrichment: {enriched} enriched, {skipped_no_address} skipped, {failed} failed")
-    return result
 
 
 # --- Cherokee County authoritative GIS (ArcGIS Open Data FeatureServer) ---
