@@ -72,10 +72,35 @@
   `https://qpublic.schneidercorp.com/Application.aspx?App=FanninCountyGA&Layer=Parcels&PageType=Search`
 - **To do:** discover AppID/LayerID/PageID and KeyValue spacing.
 
-## 6. Rabun County (NOT yet verified)
-- **qPublic app:** unknown — falls back to generic search landing
-  `https://qpublic.schneidercorp.com/Application.aspx?App=RabunCountyGA&Layer=Parcels&PageType=Search`
-- **To do:** discover AppID/LayerID/PageID and KeyValue spacing.
+## 6. Rabun County (Verified — qPublic app)
+- **qPublic AppID:** 674
+- **LayerID:** 11359
+- **Parcel/Report page:** PageTypeID=4, PageID=4744
+- **KeyValue format:** map + **single internal space** + parcel
+  (e.g. `"MC06 037"` → `KeyValue=MC06+037`; three-segment parcel
+  `"014C 701 101"` → `KeyValue=014C+701+101`). Verified 2026-08-29 by
+  navigating qPublic's own search results and resolving each key directly.
+- **To do:** confirm whether the two-`+`/three-`+` hrefs qPublic's own grid
+  emits (e.g. `MC06++037`) are a display artifact — a single-space key resolves
+  the parcel report (title `Report: MC06 037`).
+- **Legal notices (newspaper source):** The Clayton Tribune
+  (`https://www.theclaytontribune.com/classified/legals`) is the Rabun legal
+  paper. Drupal `node--type-classified-ad` taxonomy view, 10 per page, full
+  notice body inline (no per-notice URL). The **free listing only keeps the
+  latest ~30 notices** (as of 2026-08-29: Aug 6–27 editions; pager `?page=N`,
+  3 pages). Older editions are only in the **NewsBank archive**
+  (`https://theclaytontribune.newsbank.com/`, ToS "I agree" gate, searchable via
+  GET `/search?text=...&date_from=MM/DD/YYYY&date_to=MM/DD/YYYY&pub[0]=CTC9`;
+  results are **newspaper-page granularity**, full page text behind
+  subscription). The newspaper's own `/search/node` does **not** index
+  classified-ad nodes. **2026-08-29 review (Jun 29–Aug 29 window): zero
+  tax-sale (tax foreclosure) notices published** — the only foreclosure-sale
+  notices were 3 security-deed power-of-sale (mortgage) notices in the
+  Aug 6/7 edition, all sold at the Rabun County Courthouse on the first
+  Tuesday in September 2026 (142 Connector Rd Lakemont; 372 W Langston Ave
+  Clayton; 2386 Ridgepole Dr Sky Valley). Corroborates that the DB rows once
+  tagged `county='Rabun'` from georgiapublicnotice.com were actually Lumpkin
+  parcels (the site's checkbox search mis-attribution).
 
 ## 7. Union County (NOT yet verified)
 - **qPublic app:** unknown — falls back to generic search landing
@@ -91,4 +116,14 @@
   `scraper/backfill_ga_gis.py`.
 - Gilmer and Towns app IDs carried over from earlier discovery; direct-link
   format confirmed by `get_ga_gis_url` output.
-- Fannin / Rabun / Union still on the generic qPublic search fallback.
+- **2026-08-29** — Rabun qPublic deep link verified: `AppID=674&LayerID=11359&
+  PageTypeID=4&PageID=4744` with a single-space `KeyValue` (parcel number as
+  mapped on the tax notice). Added to `GA_QPUBLIC_APPS` in `gis_urls.py`.
+  (Also fixed the GA scraper to trust the notice/grid county instead of the
+  unreliable site county checkbox, and fixed comma-in-thousands acreage
+  parsing for GA parcels.)
+- **2026-08-29** — Clayton Tribune legals reviewed for the Jun 29–Aug 29
+  window (free 30-notice listing + NewsBank archive keyword sweep): no
+  Rabun tax-sale notices published; 3 mortgage power-of-sale notices in the
+  Aug 6/7 edition (first Tuesday in September 2026 sales).
+- Fannin / Union still on the generic qPublic search fallback.
