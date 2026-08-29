@@ -367,6 +367,65 @@ class TestUpsertProperty:
         )
         assert status == "duplicate"
 
+    def test_dedup_by_parcel_number_new_listing_id(self, conn):
+        # Same physical parcel re-posted under a NEW source_listing_id
+        # (NC notice re-publication / GA listing-id format change) must
+        # collapse onto the existing row instead of inserting a duplicate.
+        status, row = _upsert_property(
+            conn, "test", "old-123", None, "100 Main St", None, "Buncombe", "NC",
+            None, None, None, 10000, 25.0,
+            parcel_number="971042384300000",
+        )
+        assert status == "new"
+        first_id = row["id"]
+
+        status, row = _upsert_property(
+            conn, "test", "new-456", None, None, None, "Buncombe", "NC",
+            None, None, None, 15000, 30.0,
+            parcel_number="971042384300000",
+        )
+        assert status == "duplicate"
+        assert row["id"] == first_id
+        assert row["seen_count"] == 2
+        assert row["price_cents"] == 15000
+
+    def test_parcel_dedup_does_not_resurrect_archived(self, conn):
+        # When the ONLY existing copy of a parcel is archived, a fresh sighting
+        # still collapses onto that single row (no duplicate active row is
+        # created) — matching how the other resolvers keep archived status.
+        status, row = _upsert_property(
+            conn, "test", "old-1", None, None, None, "Clay", "NC",
+            None, None, None, 5000, 10.0,
+            parcel_number="P0099",
+        )
+        first_id = row["id"]
+        conn.execute("UPDATE properties SET status='archived' WHERE id=?", (first_id,))
+
+        status, row = _upsert_property(
+            conn, "test", "new-3", None, None, None, "Clay", "NC",
+            None, None, None, 7000, 12.0,
+            parcel_number="P0099",
+        )
+        assert status == "duplicate"
+        assert row["id"] == first_id
+        assert row["seen_count"] == 2
+
+    def test_parcel_dedup_scoped_to_source(self, conn):
+        # The same parcel_number may legitimately exist across different
+        # sources; the parcel match must NOT collapse them into one row.
+        _upsert_property(
+            conn, "src_a", "a-1", None, None, None, "Buncombe", "NC",
+            None, None, None, 10000, 25.0,
+            parcel_number="P77",
+        )
+        status, row = _upsert_property(
+            conn, "src_b", "b-1", None, None, None, "Buncombe", "NC",
+            None, None, None, 20000, 30.0,
+            parcel_number="P77",
+        )
+        assert status == "new"
+        assert row["source"] == "src_b"
+
     def test_manual_acres_not_overwritten(self, conn):
         _upsert_property(
             conn, "test", "P1", None, "100 Main St", None, "Ashe", "NC",

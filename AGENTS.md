@@ -228,6 +228,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-08-29**: Fixed dashboard duplicates — same parcel re-posted under different notice listing IDs (NC republications, GA listing-key format change) created duplicate active rows. `_upsert_property` now also matches `(source, county, parcel_number)` (preferring active rows); 11 stale duplicate rows archived (143 active remain). Regression tests added.
 - **2026-08-28**: Removed `hutchens_law` scraper (mortgage-only) and Caldwell County from all scrapers; stale DB rows archived. Cron schedule set to **4a & 4p America/New_York** (`--cron-hours 4,16`, env `CRON_HOURS`). All publicnotice scrapers now limit the search grid to notices **published in the last 7 days** (`LOOKBACK_DAYS` in `scraper/publicnotice_base.py`); newspaper Citizen-Times already used a 7-day rolling window.
 - **2026-07-29**: ZLS NC scraper — filtered to NC mountain counties (21 counties), NC OneMap GIS enrichment
 - **2026-07-29**: Kania Law scraper — county filtering to 21 NC mountain counties added

@@ -313,6 +313,18 @@ def _upsert_property(
             (source, court_case),
         ).fetchone()
 
+    # Physical-parcel match — collapses the same parcel when the source issues
+    # a NEW listing id per publication (NC notice re-postings) or the listing-id
+    # key format changes (GA). Prefer an active copy so a re-posted sale updates
+    # the live row instead of resurrecting an archived one.
+    if not existing and source and county and parcel_number:
+        existing = conn.execute(
+            """SELECT * FROM properties
+               WHERE source=? AND county=? AND parcel_number=?
+               ORDER BY status='active' DESC, id DESC LIMIT 1""",
+            (source, county, parcel_number),
+        ).fetchone()
+
     # Dedup hash fallback — only used when no unique source_listing_id exists.
     # NOTE: when address/city/zip are absent the hash degenerates to
     # (county, state) and is NOT unique, so it must not be applied to
