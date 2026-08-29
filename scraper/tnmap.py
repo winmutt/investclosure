@@ -272,14 +272,25 @@ class TNMapScraper:
                         prop.update(enriched)
                         # Surface TNMap values onto the standard columns so
                         # they persist + render on the dashboard.
-                        acres = enriched.get("tnmap_deeded_acres")
-                        if acres is None:
-                            acres = enriched.get("tnmap_calculated_acres")
-                        if acres is not None:
+                        # Prefer the deeded acreage, but fall back to the
+                        # calculated acreage when the deeded value is 0/empty
+                        # (TN's CADASTRAL layer frequently stores DEEDAC=0 while
+                        # CALCAC holds the real figure).
+                        acres = None
+                        for _src in (
+                            enriched.get("tnmap_deeded_acres"),
+                            enriched.get("tnmap_calculated_acres"),
+                        ):
+                            if _src in (None, "", 0, "0"):
+                                continue
                             try:
-                                prop["acres"] = float(acres)
+                                if float(_src) > 0:
+                                    acres = float(_src)
+                                    break
                             except (TypeError, ValueError):
                                 pass
+                        if acres is not None:
+                            prop["acres"] = acres
                         if enriched.get("tnmap_gislink"):
                             prop["gis_url"] = enriched["tnmap_gislink"]
                         if enriched.get("tnmap_owner"):
@@ -383,7 +394,13 @@ class TNMapScraper:
             return False
         common = len(w1 & w2)
         union = len(w1 | w2)
-        return common >= 1 and common / union >= 0.5
+        if common >= 1 and common / union >= 0.5:
+            return True
+        # Fallback: a directional sometimes fuses to the street name in one
+        # source but not the other (e.g. "esevier" vs "e sevier"). Treat the
+        # normalized streets as matching when one is a substring of the other.
+        s1, s2 = street1.replace(" ", ""), street2.replace(" ", "")
+        return bool(s1 and s2) and (s1 in s2 or s2 in s1)
 
     def _find_chromium(self) -> Optional[str]:
         """Find chromium executable."""
