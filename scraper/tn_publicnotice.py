@@ -62,6 +62,138 @@ def _parse_notice_date(text: str):
         return None
 
 
+# TN county-trustee tax-sale notices are published as a single notice containing
+# a *table* of delinquent parcels. Each parcel row ends with a "Total:$<amount>"
+# marker; we split the notice into one listing per parcel (mirroring
+# ga_publicnotice's bundled-notice handling).
+_TN_TOTAL_RE = re.compile(r"Total:\s*\$[\d,]+\.\d{2}")
+_TN_PARCEL_ID_RE = re.compile(r"(\d{2,3}-[A-Za-z]/[A-Za-z\d]+/\d+\.\d{2})")
+_TN_ADDR_RE = re.compile(
+    r"(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}\s+(?:STREET|ST|AVENUE|"
+    r"AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|HIGHWAY|HWY|COURT|CT|CIRCLE|"
+    r"CIR|PARKWAY|PKWY|PIKE|WAY|TRAIL)\.?)",
+    re.IGNORECASE,
+)
+_TN_ADDR_NO_NUM_RE = re.compile(
+    r"([A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,3}\s+(?:STREET|ST|AVENUE|AVE|"
+    r"BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|"
+    r"PARKWAY|PKWY|PIKE|WAY|TRAIL)\.?)",
+    re.IGNORECASE,
+)
+_TN_SALE_DATE_RE = re.compile(
+    r"(January|February|March|April|May|June|July|August|September|October|"
+    r"November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})",
+    re.IGNORECASE,
+)
+_TN_ACRES_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*(?:Acs?|AC)\b", re.IGNORECASE)
+
+
+def _tn_extract_sale_date(text: str):
+    if not text:
+        return None
+    m = _TN_SALE_DATE_RE.search(text)
+    if not m:
+        return None
+    mon = _MONTHS.get(m.group(1).title())
+    if not mon:
+        return None
+    try:
+        return datetime.date(int(m.group(3)), mon, int(m.group(2))).isoformat()
+    except Exception:
+        return None
+
+
+def _tn_extract_address(block: str):
+    if not block:
+        return None
+    # Prefer the *last* address occurrence in the block: each parcel row ends
+    # with a "Total:$" marker, so the parcel's own street address sits near the
+    # end of its block (the leading preamble, e.g. "2026 IN THE CHANCERY COURT",
+    # would otherwise be matched first).
+    matches = list(_TN_ADDR_RE.finditer(block))
+    if matches:
+        return matches[-1].group(1).strip()[:120]
+    matches = list(_TN_ADDR_NO_NUM_RE.finditer(block))
+    if matches:
+        return matches[-1].group(1).strip()[:120]
+    return None
+
+
+def _tn_parse_acres(block: str):
+    if not block:
+        return None
+    m = _TN_ACRES_RE.search(block)
+    if m:
+        try:
+            v = float(m.group(1).replace(",", ""))
+            if 0.1 < v < 10000:
+                return v
+        except Exception:
+            pass
+    return None
+
+
+def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str):
+    """Split a consolidated TN tax-sale notice into per-parcel listings.
+
+    Each parcel row in the delinquent-tax table terminates with a
+    ``Total:$<amount>`` marker; we slice the notice into one block per parcel
+    and extract address / parcel number / acres from each block. Returns an
+    empty list when the notice has no parcel table (caller falls back to a
+    single consolidated record).
+    """
+    if not text:
+        return []
+    # The PDF text is frequently delivered space-stripped (e.g.
+    # "NOTICEOFSULLIVANCOUNTY..."), which breaks the whitespace-dependent
+    # address regexes below — re-insert spaces before splitting.
+    text = normalize_notice_text(text)
+    matches = list(_TN_TOTAL_RE.finditer(text))
+    if not matches:
+        return []
+
+    county = (county or "").lower().strip()
+    blocks = [text[: matches[0].start()]]  # first parcel + preamble
+    for i in range(1, len(matches)):
+        blocks.append(text[matches[i - 1].end(): matches[i].start()])
+
+    parcels: List[PropertyData] = []
+    for blk in blocks:
+        if not blk.strip():
+            continue
+        address = _tn_extract_address(blk)
+        pid_m = _TN_PARCEL_ID_RE.search(blk)
+        parcel_no = pid_m.group(1).strip() if pid_m else None
+        acres = _tn_parse_acres(blk)
+        key = parcel_no or address
+        if not key:
+            # No stable identifier (no parcel id and no street address) — skip
+            # rather than emit an un-keyed, non-dedupable row.
+            continue
+        desc = blk.strip()
+        parcels.append({
+            "source": "tn_publicnotice",
+            "source_listing_id": f"{county}:{key}",
+            "url": detail_url,
+            "address": address,
+            "city": None,
+            "county": county,
+            "state": "TN",
+            "zip_code": None,
+            "latitude": None,
+            "longitude": None,
+            "price": 1,
+            "acres": acres,
+            "description": desc,
+            "property_type": "tax_foreclosure",
+            "auction_date": auction_date,
+            "parcel_number": parcel_no,
+            "raw_source_text": desc,
+            "raw_paragraph": desc,
+        })
+    return parcels
+
+
 class TNPublicNoticeScraper(PublicNoticeScraper):
     """Scraper for TN public foreclosure notices from tnpublicnotice.com."""
 
@@ -219,10 +351,10 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 for i, rec in enumerate(target_records):
                     print(f"    [{i+1}/{len(target_records)}] {rec['sp_case'] or rec['pk_id']} - {rec.get('county', '?')}",
                           end=" ", flush=True)
-                    prop = self._extract_detail(page, session_id, rec)
-                    if prop:
-                        print("-> qualifying property")
-                        properties.append(prop)
+                    props = self._extract_detail(page, session_id, rec)
+                    if props:
+                        print(f"-> {len(props)} qualifying parcel(s)")
+                        properties.extend(props)
                     else:
                         print("(skipped)")
 
@@ -246,40 +378,49 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         except Exception as e:
             logger.warning("Could not raise per-page count: %s", e)
 
-    def _extract_detail(self, page, session_id: str, record: dict) -> Optional[PropertyData]:
-        """Navigate to detail page, pass the Turnstile gate, extract notice text."""
+    def _extract_detail(self, page, session_id: str, record: dict) -> List[PropertyData]:
+        """Navigate to detail page, pass the Turnstile gate, extract notice text.
+
+        County-trustee tax-sale notices are consolidated tables of delinquent
+        parcels, so we return one listing per parcel (see ``_tn_parse_parcels``).
+        """
         pk_id = record["pk_id"]
         raw_text = self._extract_notice_text(page, session_id, pk_id)
         if not raw_text:
-            return None
-
-        # Drop explicit acreage that is below threshold (keep unknown for later GIS).
-        acres = self._extract_acreage(raw_text)
-        if acres is not None and acres < config.MIN_ACRES:
-            return None
-
-        address = extract_street_address(raw_text)
+            return []
 
         # Authoritative tax-foreclosure check on the full notice text.
         if not self._is_tax_foreclosure(raw_text):
             logger.info("Dropping non-tax foreclosure %s (mortgage/bank)", pk_id)
-            return None
+            return []
 
         # Reject court *service* publications (non-resident / cannot-be-located
         # delinquent-taxpayer lists) even though they mention "delinquent tax" —
         # they name dozens of parties with no single parcel or auction.
         if self._is_publication_notice(raw_text):
             logger.info("Dropping court publication %s (non-resident service list)", pk_id)
-            return None
+            return []
 
+        auction_date = _tn_extract_sale_date(raw_text)
+        county = (record.get("county") or "").lower().strip()
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
+
+        parcels = _tn_parse_parcels(raw_text, county, auction_date, detail_url)
+        if parcels:
+            return parcels
+
+        # Fallback: single consolidated record (no parseable parcel table).
+        acres = self._extract_acreage(raw_text)
+        if acres is not None and acres < config.MIN_ACRES:
+            return []
+        address = extract_street_address(raw_text)
         prop: PropertyData = {
             "source": self.SOURCE_NAME,
             "source_listing_id": record.get("sp_case") or pk_id,
             "url": detail_url,
             "address": address,
             "city": None,
-            "county": (record.get("county") or "").lower().strip(),
+            "county": county,
             "state": "TN",
             "zip_code": None,
             "latitude": None,
@@ -289,10 +430,11 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             "description": raw_text[:2000],
             "property_type": "tax_foreclosure",
             "image_url": None,
+            "auction_date": auction_date,
             "raw_source_text": raw_text,
             "raw_paragraph": raw_text,
         }
-        return prop
+        return [prop]
 
 
 def scrape_with_enrichment(

@@ -56,6 +56,11 @@ from scraper.config import (
     GIS_PARCEL_URLS,
 )
 from scraper.zls_nc import ZLSNCScraper
+from scraper.tn_publicnotice import (
+    TNPublicNoticeScraper,
+    _tn_parse_parcels,
+    _tn_extract_sale_date,
+)
 from scraper.newspaper_notices import (
     NewspaperNoticesScraper,
     _is_tax_foreclosure_notice,
@@ -1951,3 +1956,326 @@ class TestTaxForeclosureClassifier:
     def test_rejects_empty(self):
         assert _is_tax_foreclosure_notice("") is False
         assert _is_tax_foreclosure_notice(None) is False
+
+
+class TestGAPublicNoticeCountyAttribution:
+    """GA tax-sale notices are bundled and returned by EVERY county's checkbox
+    search, but the notice's own grid text names the authoritative county.
+    County attribution must come from the grid text, never the search checkbox,
+    so a Lumpkin notice cannot be stored under rabun/towns/union/white."""
+
+    @pytest.fixture()
+    def scraper(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        return GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+
+    def test_county_from_grid_text_named(self, scraper):
+        grid = ("The Dahlonega Nugget Wednesday, August 26, 2026 City: "
+                "Dahlonega County: Lumpkin")
+        assert scraper._county_from_grid_text(grid).lower() == "lumpkin"
+
+    def test_county_from_grid_text_courthouse(self, scraper):
+        grid = "Sheriff's/Marshal's Sales Rabun County Courthouse, 25 Courthouse Square"
+        assert scraper._county_from_grid_text(grid).lower() == "rabun"
+
+    def test_county_from_grid_text_state_of_georgia(self, scraper):
+        grid = "STATE OF GEORGIA COUNTY OF UNION, being an upcoming tax sale"
+        assert scraper._county_from_grid_text(grid).lower() == "union"
+
+    def test_county_from_grid_text_plain_county(self, scraper):
+        grid = ("Towns County Herald Wednesday, August 19, 2026 City: "
+                "Hiawassee County: Towns NOTICE OF TAX SALE")
+        assert scraper._county_from_grid_text(grid).lower() == "towns"
+
+    def test_county_from_notice_text_georgia(self, scraper):
+        block = ("...lying and being in Land Lot 25 of the 11th Land District, "
+                 "Lumpkin County, Georgia, containing 10.69 acres...")
+        assert scraper._county_from_notice_text(block) == "Lumpkin"
+
+    def test_county_from_grid_text_none(self, scraper):
+        assert scraper._county_from_grid_text("no county label here") is None
+
+    def test_parse_parcels_keys_on_notice_county_not_search_county(self, scraper):
+        # Notice 9355195 - all 24 blocks are genuine Lumpkin parcels, but the
+        # scraper loop may surface them under ANY county checkbox. The parcel
+        # key must come from the county the notice body names, not the search.
+        notice_text = """File #: 73 Map/Parcel Number: 120 029 Defendant(s) in FiFa: Nix, Jason W; 120 029 / 10.69 Acs LL 25 LD 11- O Hall Current Property Owner: Same as Defendant(s) in FiFa Reference Deed: 1376/791 Property Description: All and only that parcel of land designated as Tax Parcel 120 029, lying and being in Land Lot 25 of the 11th Land District, Lumpkin County, Georgia, containing 10.69 acres, more or less, known as 472 Amanda Drive. Years Due: 2023-2025
+File #: 77 Map/Parcel Number: 098 185 Defendant(s) in FiFa: Roe, John; 098 185 / 4.2 Acs LL 5 LD 11- O Hall Property Description: Tax Parcel 098 185, Land Lot 5 of the 11th Land District, Lumpkin County, Georgia, containing 4.2 acres, more or less. Years Due: 2023-2025"""
+        props = scraper._parse_parcels(notice_text, "rabun", "2026-09-01", "http://x/ID=9355195")
+        assert len(props) == 2
+        # The search-checkbox county ("rabun") must NOT leak into the keys.
+        assert props[0]["source_listing_id"] == "lumpkin:120 029"
+        assert props[1]["source_listing_id"] == "lumpkin:098 185"
+        assert props[0]["county"] == "lumpkin"
+        assert props[1]["county"] == "lumpkin"
+        assert props[0]["parcel_number"] == "120 029"
+        assert props[1]["parcel_number"] == "098 185"
+
+    def test_parse_parcels_falls_back_to_passed_county(self, scraper):
+        # Towns notices often give only "Tax Map & Parcel: <no>" with no county
+        # in the body; the grid-derived county is then the correct fallback.
+        notice = ("File #: 12 Map/Parcel Number: 221 003 Defendant(s) in FiFa: "
+                  "Doe, Jane; Tax Map & Parcel 221 003 / 1.5 Acs. Years Due: 2023-2025")
+        props = scraper._parse_parcels(notice, "towns", "2026-09-01", "http://x")
+        assert props[0]["source_listing_id"] == "towns:221 003"
+
+    def test_single_county_grid_rows_collapse_by_pk(self):
+        """The scrape loop keeps only the FIRST grid occurrence of a pk_id --
+        a multi-county notice must not be extracted once per county search."""
+        with patch(
+            "scraper.ga_publicnotice.GAPublicNoticeScraper._extract_detail",
+            return_value=[{"source_listing_id": "lumpkin:120 029"}],
+        ), patch(
+            "scraper.ga_publicnotice.GAPublicNoticeScraper._is_tax_foreclosure",
+            return_value=True,
+        ), patch(
+            "scraper.ga_publicnotice.GAPublicNoticeScraper._is_quiet_title",
+            return_value=False,
+        ), patch(
+            "scraper.ga_publicnotice.GAPublicNoticeScraper._is_post_sale",
+            return_value=False,
+        ), patch(
+            "scraper.ga_publicnotice._is_recent_publication",
+            return_value=True,
+        ), patch(
+            "scraper.base.camoufox_context",
+        ) as ctx_mock:
+            from scraper.ga_publicnotice import GAPublicNoticeScraper
+            import json
+            pages = []
+
+            class FakePage:
+                def __init__(self):
+                    self.url = "http://example/default.aspx"
+                    self.grid_rows = []
+                    self.cur_pk = 0
+
+                def set_viewport_size(self, *a, **k):
+                    pass
+
+                def set_extra_http_headers(self, *a, **k):
+                    pass
+
+                def goto(self, *a, **k):
+                    pass
+
+                def select_option(self, *a, **k):
+                    pass
+
+                def wait_for_timeout(self, ms):
+                    pass
+
+                def wait_for_selector(self, *a, **k):
+                    pass
+
+                def wait_for_load_state(self, *a, **k):
+                    pass
+
+                def evaluate(self, fn, *a, **k):
+                    return []
+
+            p = FakePage()
+
+            def _grid_pks(page):
+                return set()
+
+            def _select_county(page, county):
+                # emulate checkbox: same notice appears under every county
+                p.grid_rows = [{
+                    "pk_id": "9355195",
+                    "sp_case": None,
+                    "full_text": "County: Lumpkin blue",
+                }]
+                p.cur_pk = 0
+
+            def _parse_grid_records(page):
+                rows = [dict(r) for r in p.grid_rows]
+                for r in rows:
+                    r["county"] = r["full_text"].split(": ")[1].split(" ")[0]
+                p.grid_rows = []
+                return rows
+
+            def _page_info(page):
+                return None
+
+            def _goto_next_page(page, n):
+                raise AssertionError("should not paginate")
+
+            s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+            s.scrape = GAPublicNoticeScraper.scrape.__get__(s)
+            s._grid_pks = _grid_pks
+            s._select_county = _select_county
+            s._select_category = lambda page, cat: None
+            s._submit_search = lambda page: None
+            s._wait_grid_refresh = lambda page, old: None
+            s._goto_next_page = _goto_next_page
+            s._page_info = _page_info
+            s._parse_grid_records = _parse_grid_records
+            s._extract_session = lambda page: "SID"
+            s.use_proxy = False
+            s.solve_captcha = False
+            s.search_type = "foreclosure"
+            ctx_mock.return_value.__enter__.return_value = p
+
+            props = s.scrape()
+            # notice is a real county="Lumpkin"; must result in a singleton
+            # lumpkin keyed record -- NOT one per checkbox county.
+            keys = [q["source_listing_id"] for q in props]
+            assert keys == ["lumpkin:120 029"]
+
+    def test_parse_acres_leading_dot(self):
+        """'.45 Ac' shorthand must not be misread as 45 via a greedy
+        integer group -- the decimal point is the leading digit."""
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        assert s._parse_acres(".45 Ac") == 0.45
+        assert s._parse_acres(".28 Ac") == 0.28
+        assert s._parse_acres(".93 Ac") == 0.93
+
+    def test_parse_acres_integer_then_decimal(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        assert s._parse_acres("1236.70 AC") == 1236.7
+        assert s._parse_acres("2.07 Acs") == 2.07
+        assert s._parse_acres("10.69 Acs") == 10.69
+
+    def test_parse_acres_leading_dot_in_real_block(self, scraper):
+        # Regression: /property/350 showed acres=45.0 but the notice says
+        # "Achasta Bear Paw #1113 .45 Ac LL 1042" (0.45 real).
+        block = ("File #: 78 Map/Parcel Number: 080 138 Defendant(s) in FiFa: "
+                 "Ore Investments LLC & O'Sullivan, Michael K & Christina K; "
+                 "MAP# 080 138, Achasta Bear Paw #1113 .45 Ac LL 1042 "
+                 "Current Property Owner: O")
+        assert scraper._parse_acres(block) == 0.45
+
+
+class TestTNPublicNoticeParcelSplit:
+    """TN county-trustee tax-sale notices are consolidated tables of delinquent
+    parcels; :func:`_tn_parse_parcels` must split them into one listing per
+    parcel (mirroring the GA bundled-notice handling)."""
+
+    # A space-stripped (as PDF-extracted) Sullivan delinquent-tax notice with
+    # two delinquent parcels, each terminated by a "Total:$" marker.
+    STRIPPED = (
+        "NOTICEOFSULLIVANCOUNTYDELINQUENTTAXSALEPursuanttotheOrdersomeOwner,"
+        "Tamika2442BroadSt020-G/G/023.00County:$2,188.55City:$1,848.64"
+        "DB3536/1636Total:$5,519.81"
+        "Owner,Brittany495EmmettRd030-L/B/001.20County:$3,000.00"
+        "Total:$3,000.00"
+    )
+
+    def test_parse_parcels_splits_by_total(self):
+        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
+        assert len(parcels) == 2
+        assert parcels[0]["address"] == "2442 Broad St"
+        assert parcels[0]["parcel_number"] == "020-G/G/023.00"
+        assert parcels[1]["address"] == "495 Emmett Rd"
+        assert parcels[1]["parcel_number"] == "030-L/B/001.20"
+
+    def test_parse_parcels_keys_on_county_and_parcel(self):
+        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
+        assert parcels[0]["source_listing_id"] == "sullivan:020-G/G/023.00"
+        assert parcels[1]["source_listing_id"] == "sullivan:030-L/B/001.20"
+        assert all(p["county"] == "sullivan" for p in parcels)
+        assert all(p["property_type"] == "tax_foreclosure" for p in parcels)
+
+    def test_parse_parcels_handles_space_stripped_text(self):
+        # The PDF often arrives with all inter-word spaces stripped; the splitter
+        # must normalize before extracting addresses.
+        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
+        assert parcels[0]["address"] == "2442 Broad St"
+
+    def test_parse_parcels_no_table_returns_empty(self):
+        assert _tn_parse_parcels("No parcel table here", "sullivan", "2026-09-02", "http://x") == []
+
+    def test_extract_sale_date(self):
+        assert _tn_extract_sale_date("SALE ON SEPTEMBER 2, 2026") == "2026-09-02"
+        assert _tn_extract_sale_date("no date here") is None
+
+    def test_extract_detail_returns_list_for_tax_sale(self):
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: self.STRIPPED
+        s._is_tax_foreclosure = lambda t: True
+        s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
+        rec = {"pk_id": "553715", "sp_case": None, "county": "Sullivan"}
+        props = s._extract_detail(None, "SID", rec)
+        assert isinstance(props, list)
+        assert len(props) == 2
+        assert props[0]["property_type"] == "tax_foreclosure"
+
+    def test_extract_detail_drops_non_tax(self):
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: (
+            "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ..."
+        )
+        s._is_tax_foreclosure = lambda t: False
+        s._is_publication_notice = lambda t: False
+        rec = {"pk_id": "1", "sp_case": None, "county": "Sullivan"}
+        assert s._extract_detail(None, "SID", rec) == []
+
+
+class TestTNPublicNoticeParcelSplit:
+    """TN county-trustee tax-sale notices are consolidated tables of delinquent
+    parcels; :func:`_tn_parse_parcels` must split them into one listing per
+    parcel (mirroring the GA bundled-notice handling)."""
+
+    # A space-stripped (as PDF-extracted) Sullivan delinquent-tax notice with
+    # two delinquent parcels, each terminated by a "Total:$" marker.
+    STRIPPED = (
+        "NOTICEOFSULLIVANCOUNTYDELINQUENTTAXSALEPursuanttotheOrdersomeOwner,"
+        "Tamika2442BroadSt020-G/G/023.00County:$2,188.55City:$1,848.64"
+        "DB3536/1636Total:$5,519.81"
+        "Owner,Brittany495EmmettRd030-L/B/001.20County:$3,000.00"
+        "Total:$3,000.00"
+    )
+
+    def test_parse_parcels_splits_by_total(self):
+        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
+        assert len(parcels) == 2
+        assert parcels[0]["address"] == "2442 Broad St"
+        assert parcels[0]["parcel_number"] == "020-G/G/023.00"
+        assert parcels[1]["address"] == "495 Emmett Rd"
+        assert parcels[1]["parcel_number"] == "030-L/B/001.20"
+
+    def test_parse_parcels_keys_on_county_and_parcel(self):
+        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
+        assert parcels[0]["source_listing_id"] == "sullivan:020-G/G/023.00"
+        assert parcels[1]["source_listing_id"] == "sullivan:030-L/B/001.20"
+        assert all(p["county"] == "sullivan" for p in parcels)
+        assert all(p["property_type"] == "tax_foreclosure" for p in parcels)
+
+    def test_parse_parcels_handles_space_stripped_text(self):
+        # The PDF often arrives with all inter-word spaces stripped; the splitter
+        # must normalize before extracting addresses.
+        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
+        assert parcels[0]["address"] == "2442 Broad St"
+
+    def test_parse_parcels_no_table_returns_empty(self):
+        assert _tn_parse_parcels("No parcel table here", "sullivan", "2026-09-02", "http://x") == []
+
+    def test_extract_sale_date(self):
+        assert _tn_extract_sale_date("SALE ON SEPTEMBER 2, 2026") == "2026-09-02"
+        assert _tn_extract_sale_date("no date here") is None
+
+    def test_extract_detail_returns_list_for_tax_sale(self):
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: self.STRIPPED
+        s._is_tax_foreclosure = lambda t: True
+        s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
+        rec = {"pk_id": "553715", "sp_case": None, "county": "Sullivan"}
+        props = s._extract_detail(None, "SID", rec)
+        assert isinstance(props, list)
+        assert len(props) == 2
+        assert props[0]["property_type"] == "tax_foreclosure"
+
+    def test_extract_detail_drops_non_tax(self):
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: (
+            "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ..."
+        )
+        s._is_tax_foreclosure = lambda t: False
+        s._is_publication_notice = lambda t: False
+        rec = {"pk_id": "1", "sp_case": None, "county": "Sullivan"}
+        assert s._extract_detail(None, "SID", rec) == []
