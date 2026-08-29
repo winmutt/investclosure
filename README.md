@@ -115,7 +115,7 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `INVESTCLOSURE_DB_PATH` | `./data/investclosure.db` | SQLite database |
 | `INVESTCLOSURE_BACKUPS_DIR` | `./data/backups` | DB backups |
 | `INVESTCLOSURE_LOGS_DIR` | `./data/logs` | Log files |
-| `INVESTCLOSURE_MIN_ACRES` | `5.0` | Minimum acreage filter |
+| `INVESTCLOSURE_MIN_ACRES` | `2.0` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` (optional) |
 

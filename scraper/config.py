@@ -8,7 +8,7 @@ Usage:
     from scraper.config import config
 
     # Filter thresholds
-    config.MIN_ACRES            # default 10.0
+    config.MIN_ACRES            # default 2.0
     config.MAX_PRICE            # default 0 (no cap for foreclosures)
 
     # File-system paths
@@ -368,7 +368,7 @@ class Config:
         self.TWO_CAPTCHA_API_KEY = _opt_str("TWO_CAPTCHA_API_KEY", "")
 
         # Thresholds (env overridable)
-        self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 1.0)
+        self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 2.0)
         self.MAX_ACRES = _opt_float("INVESTCLOSURE_MAX_ACRES", 1000.0)
         self.MAX_PRICE = _opt_int("INVESTCLOSURE_MAX_PRICE", 0)  # no cap for foreclosures
 

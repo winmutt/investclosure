@@ -189,7 +189,7 @@ class TestConfig:
     def test_config_defaults(self):
         with patch("scraper.config.os.environ", {"TWO_CAPTCHA_API_KEY": "test"}):
             cfg = Config()
-            assert cfg.MIN_ACRES == 1.0
+            assert cfg.MIN_ACRES == 2.0
             assert cfg.MAX_ACRES == 1000.0
             assert cfg.MAX_PRICE == 0
             assert cfg.PROXY_URL is not None  # defaults to winmutt

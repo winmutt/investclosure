@@ -118,6 +118,9 @@ GA_QPUBLIC_APPS = {
     "white":  {"app_id": 982, "layer_id": 19945, "pages": [
         {"page_type_id": 1, "page_id": 8773, "space": True,
          "space_at": 3, "space_count": 1}]},
+    "rabun":  {"app_id": 674, "layer_id": 11359, "pages": [
+        {"page_type_id": 4, "page_id": 4744, "space": True,
+         "space_count": 1}]},
 }
 
 
