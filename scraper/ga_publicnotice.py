@@ -70,8 +70,17 @@ _PARCEL_SPLIT_RE = re.compile(
     r"(.+?)\s+Defendant",
     re.IGNORECASE,
 )
-# Acreage within a single parcel block, e.g. "containing 1.06 acres".
-_PARCEL_ACRES_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s+acres?\b", re.IGNORECASE)
+# Acreage within a single parcel block. Two forms:
+#   * the legal body -- "containing 1,236.7 acres, more or less" (authoritative)
+#   * the parcel-line shorthand -- "063 001 / 1236.70 AC" / "2.07 Acs"
+# Both may carry thousands commas, so the captured number is passed through
+# ``_normalize_acres`` before use.
+_CONTAINING_ACRES_RE = re.compile(
+    r"containing\s+([\d,]+(?:\.\d+)?)\s+acres?\b", re.IGNORECASE)
+# Parcel-line shorthand (".45 Ac", "1236.70 AC", "2.07 Acs"). The integer part
+# is optional so a leading-dot decimal like ".45 Ac" is not misread as 45.
+_LINE_ACRES_RE = re.compile(
+    r"([\d,]+(?:\.[\d,]+)?|\.\d+)\s*(?:Acs?|AC)\b", re.IGNORECASE)
 
 # Signals that a notice is a QUIET-TITLE / TAX-REDEMPTION title-clearing
 # proceeding (post-tax-sale), NOT an upcoming tax-sale foreclosure.
@@ -100,6 +109,16 @@ _CASE_NO_RE = re.compile(
     re.IGNORECASE,
 )
 
+# County patterns used to pull the *property* county out of a notice body
+# (bundled notices may be returned by every county's checkbox search).
+_COUNTY_IN_TEXT_PATTERNS = (
+    r"COUNTY OF\s+([A-Z][A-Za-z]+)",
+    r"([A-Z][A-Za-z]+)\s+County\s*Courthouse",
+    r"County:\s*([A-Z][A-Za-z]+)",
+    r"([A-Z][A-Za-z]+)\s+County\s*,?\s*(?:Georgia|GA)\b",
+    r"STATE OF GEORGIA,?\s*COUNTY OF\s+([A-Z][A-Za-z]+)",
+)
+
 
 class GAPublicNoticeScraper(PublicNoticeScraper):
     """Scraper for GA tax-foreclosure notices from georgiapublicnotice.com."""
@@ -122,19 +141,16 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         return COUNTY_SET
 
     def _county_from_grid_text(self, full_text: str) -> Optional[str]:
-        """Pull the GA property county from a grid-row's text."""
-        if not full_text:
-            return None
-        for pat in (
-            r"STATE OF GEORGIA,?\s*COUNTY OF\s+([A-Z][A-Za-z]+)",
-            r"([A-Z][A-Za-z]+)\s+COUNTY,?\s*GEORGIA",
-            r"COUNTY OF\s+([A-Z][A-Za-z]+)",
-            r"([A-Z][A-Za-z]+)\s+County\s*Courthouse",
-        ):
-            m = re.search(pat, full_text, re.IGNORECASE)
-            if m:
-                return m.group(1).strip()
-        return None
+        """Pull the GA property county from a grid-row's text.
+
+        The georgiapublicnotice.com result grid lists each notice with its
+        newspaper/county label, typically ``County: <Name>`` on the row. Because
+        the site's county checkboxes do not reliably filter by the *property*
+        county (selecting "Rabun" can return Lumpkin newspaper notices), we
+        trust the county named in the row text rather than the checkbox -- the
+        notice's own county label reflects the sheriff's-sale jurisdiction.
+        """
+        return self._county_from_notice_text(full_text)
 
     @staticmethod
     def _is_quiet_title(text: str) -> bool:
@@ -234,15 +250,51 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             return None
 
     @staticmethod
+    def _parse_acres(block: str) -> Optional[float]:
+        """Parse acreage from a single GA parcel block, handling thousands.
+
+        Prefers the authoritative legal-body "containing X acres" phrase, then
+        the parcel-line shorthand ("<n> AC"/"<n> Acs"). Commas are stripped so
+        "1,236.7 acres" resolves to 1236.7 rather than a partial 236.7.
+        """
+        for pat in (_CONTAINING_ACRES_RE, _LINE_ACRES_RE):
+            m = pat.search(block)
+            if m:
+                try:
+                    val = float(m.group(1).replace(",", ""))
+                except ValueError:
+                    continue
+                if 0.1 < val < 10000:
+                    return val
+        return None
+
+    @staticmethod
+    def _county_from_notice_text(text: str) -> Optional[str]:
+        """County named by a GA sheriff's-sale notice / parcel block itself.
+
+        A bundled notice may be returned by every county's checkbox search, so
+        the property's true county must come from the notice body (e.g. "lying
+        and being in ... Lumpkin County, Georgia") rather than the search box.
+        """
+        if not text:
+            return None
+        for pat in _COUNTY_IN_TEXT_PATTERNS:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
+        return None
+
+    @staticmethod
     def _parse_parcels(text: str, county: str, auction_date: Optional[str],
                        detail_url: Optional[str]) -> List[PropertyData]:
         """Split a bundled GA tax-sale notice into one record per parcel.
 
         Each block is its own listing, keyed on ``<county>:<parcel_number>`` so
         the same parcel across duplicate postings collapses but distinct
-        parcels do not.
+        parcels do not. The county is the one the notice body itself names
+        (falling back to the grid-derived county) -- never the search box.
         """
-        county = (county or "").lower().strip()
+        fallback_county = (county or "").lower().strip()
         matches = list(_PARCEL_SPLIT_RE.finditer(text))
         if not matches:
             return []
@@ -252,22 +304,22 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             block = text[start:end]
             parcel_no = m.group(1).strip()
+            block_county = (GAPublicNoticeScraper._county_from_notice_text(block)
+                            or fallback_county).lower().strip()
 
             addr_m = _GA_PARCEL_ADDR_RE.search(block)
             address = addr_m.group(1).strip() if addr_m else None
             if not address:
                 address = f"Parcel {parcel_no}"
-            acres_m = _PARCEL_ACRES_RE.search(block)
-            acres = float(acres_m.group(1)) if acres_m else None
-
+            acres = GAPublicNoticeScraper._parse_acres(block)
             desc = block.strip()
             parcel: PropertyData = {
                 "source": "ga_publicnotice",
-                "source_listing_id": f"{county}:{parcel_no}",
+                "source_listing_id": f"{block_county}:{parcel_no}",
                 "url": detail_url,
                 "address": address[:120] if address else None,
                 "city": None,
-                "county": county,
+                "county": block_county,
                 "state": "GA",
                 "zip_code": None,
                 "latitude": None,
@@ -318,6 +370,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 print(f"  [2/4] Searching GA mountain-county sales across {len(categories)} categories: {categories}")
                 print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
                 all_records = []
+                global_seen_pk = set()
                 for category in categories:
                     self._select_category(page, category)
                     for county in sorted(COUNTY_SET):
@@ -327,8 +380,6 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                         self._wait_grid_refresh(page, old_pks)
 
                         recs = self._parse_grid_records(page)
-                        for r in recs:
-                            r["county"] = county
 
                         seen_pk = set(r["pk_id"] for r in recs)
                         info = self._page_info(page)
@@ -341,7 +392,6 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                                     if r["pk_id"] in seen_pk:
                                         continue
                                     seen_pk.add(r["pk_id"])
-                                    r["county"] = county
                                     recs.append(r)
                                 # Grid sorts newest-first; stop once the first
                                 # row on a page is past the lookback window.
@@ -355,8 +405,16 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                         # Drop records published before the lookback window.
                         recs = [r for r in recs
                                 if _is_recent_publication(r.get("full_text") or "")]
-                        all_records.extend(recs)
-                        print(f"    [{category}] {county}: {len(recs)} recent notices")
+                        # Collapse notices seen under an earlier county's
+                        # (unreliable) checkbox selection; the grid-text county
+                        # is authoritative, so the true county governs the
+                        # record's *source_listing_id* and dedup.
+                        fresh = [r for r in recs
+                                 if r["pk_id"] not in global_seen_pk]
+                        global_seen_pk.update(r["pk_id"] for r in fresh)
+                        all_records.extend(fresh)
+                        print(f"    [{category}] {county}: {len(recs)} recent notices, "
+                              f"{len(fresh)} new")
 
                 records = all_records
                 print("  [3/4] Parsing results ...")
