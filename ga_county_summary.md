@@ -106,6 +106,23 @@
 - **qPublic app:** unknown — falls back to generic search landing
   `https://qpublic.schneidercorp.com/Application.aspx?App=UnionCountyGA&Layer=Parcels&PageType=Search`
 - **To do:** discover AppID/LayerID/PageID and KeyValue spacing.
+- **Legal notices (newspaper source):** The North Georgia News (Blairsville,
+  GA) is the Union legal organ — confirmed via georgiapublicnotice.com grid
+  rows ("The North Georgia News / City: Blairsville / County: Union"). The
+  paper's own website has not been located (elbertondailyjournal.com /
+  elbertoncitizen.com / tngnews.com do not resolve / are parked);
+  georgiapublicnotice.com is the reliable text source for Union legals.
+  **2026-08-29 review (Jun 29–Aug 29 window): ONE delinquent-property-tax
+  sale** — "DELINQUENT PROPERTY TAX SALE" under tax Fi.Fa.'s issued by the
+  Union County Tax Commissioner, published weekly Jul 8/15/22/29 (gpn pks
+  9298982/9307572/9315412/9322353), sold **Aug 4, 2026** (first Tuesday),
+  10a–4p at the Blairsville courthouse door, continuing Aug 5 if needed;
+  10 parcels, tax years 2023–2025, amounts $722.53–$6,611.97. Sale already
+  held; **no Sep 1, 2026 sale noticed as of Aug 29** (latest pub Jul 29).
+  Parcels: 002023A10 (1.077ac), 030022 (0.71), 035188 (1.748), 055063
+  (2.32), 056003A37 (1.526), 072A010 (1.06), 072A011 (1.06), 072A012
+  (1.03), 072A013 (0.94) — Kohuth Estate x4 + Prather/Kohuth — 082001A13
+  (4.033). Only 055063 & 082001A13 pass MIN_ACRES=2.0.
 
 ---
 
@@ -126,4 +143,8 @@
   window (free 30-notice listing + NewsBank archive keyword sweep): no
   Rabun tax-sale notices published; 3 mortgage power-of-sale notices in the
   Aug 6/7 edition (first Tuesday in September 2026 sales).
+- **2026-08-29** — Union County legals reviewed via georgiapublicnotice.com:
+  legal organ is The North Georgia News (Blairsville). One delinquent-property
+  tax sale in the window (Aug 4, 2026, 10 parcels, published Jul 8/15/22/29);
+  no Sep 1, 2026 sale noticed yet.
 - Fannin / Union still on the generic qPublic search fallback.
