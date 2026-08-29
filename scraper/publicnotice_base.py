@@ -196,6 +196,25 @@ def extract_street_address(text: str) -> Optional[str]:
     return addr[:120] if addr else None
 
 
+def normalize_notice_text(text: str) -> str:
+    """Re-insert word breaks into PDF-extracted notice text.
+
+    pdfplumber sometimes yields text with all inter-word spaces stripped
+    (e.g. "NOTICEOFSULLIVANCOUNTYDELINQUENTTAXSALE"), which breaks the
+    whitespace-dependent tax/mortgage classifiers below. Re-insert a space at
+    letter/digit/section-symbol boundaries so "DELINQUENTTAXSALE" becomes
+    "DELINQUENT TAX SALE" and classification works regardless of extraction
+    quality. Harmless on already-spaced text.
+    """
+    if not text:
+        return text
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
+    text = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", text)
+    text = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", text)
+    text = re.sub(r"(?<=[A-Za-z])(?=§)", " ", text)
+    return re.sub(r"\s+", " ", text)
+
+
 def dedup_by_content(properties: List[PropertyData]) -> List[PropertyData]:
     """Collapse properties sharing the same (lowercased) notice text.
 
@@ -535,7 +554,7 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         """
         if not text:
             return False
-        low = text.lower()
+        low = normalize_notice_text(text).lower()
         has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
         has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
         return has_mortgage and not has_tax
@@ -550,7 +569,7 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         """
         if not text:
             return False
-        low = text.lower()
+        low = normalize_notice_text(text).lower()
         has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
         has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
         if has_mortgage and not has_tax:

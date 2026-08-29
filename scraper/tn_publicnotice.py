@@ -25,6 +25,7 @@ from .publicnotice_base import (
     dedup_by_content,
     extract_street_address,
     PER_PAGE_SELECT,
+    normalize_notice_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         """
         if not text:
             return False
-        t = text.upper()
+        t = normalize_notice_text(text).upper()
         if "NOTICE OF PUBLICATION" not in t:
             return False
         return any(
