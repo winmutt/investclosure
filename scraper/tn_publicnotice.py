@@ -157,6 +157,19 @@ def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str
     for i in range(1, len(matches)):
         blocks.append(text[matches[i - 1].end(): matches[i].start()])
 
+    # Pre-import URL builders (avoid circular imports at module load)
+    try:
+        from .gis_urls import get_tn_gis_url
+        from .nc_gis_lookup import (
+            build_google_maps_url,
+            build_google_maps_topo_url,
+            build_satellite_url,
+            build_street_view_url,
+        )
+        _has_urls = True
+    except Exception:
+        _has_urls = False
+
     parcels: List[PropertyData] = []
     for blk in blocks:
         if not blk.strip():
@@ -171,7 +184,7 @@ def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str
             # rather than emit an un-keyed, non-dedupable row.
             continue
         desc = blk.strip()
-        parcels.append({
+        prop: PropertyData = {
             "source": "tn_publicnotice",
             "source_listing_id": f"{county}:{key}",
             "url": detail_url,
@@ -190,7 +203,17 @@ def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str
             "parcel_number": parcel_no,
             "raw_source_text": desc,
             "raw_paragraph": desc,
-        })
+        }
+        if _has_urls and address:
+            try:
+                prop["google_maps_url"] = build_google_maps_url(None, None, address, None, county, state="TN")
+                prop["google_maps_topo_url"] = build_google_maps_topo_url(None, None, address, None, county, state="TN")
+                prop["google_maps_satellite_url"] = build_satellite_url(None, None, address, None, county, state="TN")
+                prop["google_maps_street_url"] = build_street_view_url(None, None, address, None, county, state="TN")
+                prop["gis_url"] = get_tn_gis_url(county, parcel_no or "")
+            except Exception:
+                pass
+        parcels.append(prop)
     return parcels
 
 
@@ -434,6 +457,22 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             "raw_source_text": raw_text,
             "raw_paragraph": raw_text,
         }
+        if address:
+            try:
+                from .gis_urls import get_tn_gis_url
+                from .nc_gis_lookup import (
+                    build_google_maps_url,
+                    build_google_maps_topo_url,
+                    build_satellite_url,
+                    build_street_view_url,
+                )
+                prop["google_maps_url"] = build_google_maps_url(None, None, address, None, county, state="TN")
+                prop["google_maps_topo_url"] = build_google_maps_topo_url(None, None, address, None, county, state="TN")
+                prop["google_maps_satellite_url"] = build_satellite_url(None, None, address, None, county, state="TN")
+                prop["google_maps_street_url"] = build_street_view_url(None, None, address, None, county, state="TN")
+                prop["gis_url"] = get_tn_gis_url(county, "")
+            except Exception:
+                pass
         return [prop]
 
 

@@ -17,6 +17,8 @@ import logging
 import time
 from typing import Optional
 
+from urllib.parse import quote
+
 from .base import camoufox_context
 from .config import config, TN_FORECLOSURE_COUNTIES
 
@@ -292,9 +294,41 @@ class TNMapScraper:
                         if acres is not None:
                             prop["acres"] = acres
                         if enriched.get("tnmap_gislink"):
-                            prop["gis_url"] = enriched["tnmap_gislink"]
+                            gislink = str(enriched["tnmap_gislink"]).strip()
+                            # TPAD GIS deep link is the working viewer for TN parcels
+                            prop["gis_url"] = f"https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={quote(gislink)}"
+                        elif prop.get("county"):
+                            # Fallback pre-enrichment TNMap search link
+                            from .gis_urls import get_tn_gis_url
+                            prop["gis_url"] = get_tn_gis_url(prop.get("county"), prop.get("parcel_number") or "")
                         if enriched.get("tnmap_owner"):
                             prop["owner_name"] = enriched["tnmap_owner"]
+                        # Build correct Google Maps URLs with TN state (previous code used NC default)
+                        try:
+                            from .nc_gis_lookup import (
+                                build_google_maps_url,
+                                build_google_maps_topo_url,
+                                build_satellite_url,
+                                build_street_view_url,
+                            )
+                            addr = prop.get("address")
+                            cty = prop.get("county")
+                            cty_city = prop.get("city")
+                            if addr and cty:
+                                prop["google_maps_url"] = build_google_maps_url(
+                                    None, None, addr, cty_city, cty, state="TN"
+                                )
+                                prop["google_maps_topo_url"] = build_google_maps_topo_url(
+                                    None, None, addr, cty_city, cty, state="TN"
+                                )
+                                prop["google_maps_satellite_url"] = build_satellite_url(
+                                    None, None, addr, cty_city, cty, state="TN"
+                                )
+                                prop["google_maps_street_url"] = build_street_view_url(
+                                    None, None, addr, cty_city, cty, state="TN"
+                                )
+                        except Exception:
+                            pass
                         prop["tnmap_data"] = json.dumps(enriched)
 
                 print(f" {matched_count} matched")

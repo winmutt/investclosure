@@ -177,6 +177,8 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
                         owner_name=prop.get("owner_name"),
                         acres=prop.get("acres"),
                         gis_url=prop.get("gis_url"),
+                        google_maps_url=prop.get("google_maps_url"),
+                        google_maps_topo_url=prop.get("google_maps_topo_url"),
                         tnmap_data=prop.get("tnmap_data"),
                     )
                 except Exception as e:

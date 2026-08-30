@@ -92,12 +92,12 @@ def _row_to_dict(row):
     if not d.get("google_maps_satellite_url"):
         d["google_maps_satellite_url"] = build_satellite_url(
             d.get("longitude"), d.get("latitude"),
-            d.get("address"), d.get("city"), d.get("county"),
+            d.get("address"), d.get("city"), d.get("county"), state=d.get("state"),
         )
     if not d.get("google_maps_street_url"):
         d["google_maps_street_url"] = build_street_view_url(
             d.get("longitude"), d.get("latitude"),
-            d.get("address"), d.get("city"), d.get("county"),
+            d.get("address"), d.get("city"), d.get("county"), state=d.get("state"),
         )
     return d
 

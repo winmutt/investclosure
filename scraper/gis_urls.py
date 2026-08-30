@@ -197,6 +197,25 @@ def get_nconemap_viewer_url(lng: float = None, lat: float = None,
     return url
 
 
+def get_tn_gis_url(county: str = "", parcel: str = "", lng: float = None, lat: float = None) -> str:
+    """Tennessee TNMap Assessment viewer URL."""
+    # The GISLINK-based TPAD deep link (https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink=...)
+    # is set directly by tnmap.py after enrichment. This helper builds a
+    # pre-enrichment TNMap link from county/parcel or coordinates.
+    if lng is not None and lat is not None:
+        try:
+            # TNMap assessment site centers on lat/lng when provided via viewer;
+            # fall back to Google Maps pin if needed, but prefer TNMap base.
+            return f"https://tnmap.tn.gov/assessment/?lat={float(lat):.6f}&lng={float(lng):.6f}"
+        except (TypeError, ValueError):
+            pass
+    if parcel and str(parcel).strip():
+        return f"https://tnmap.tn.gov/assessment/?parcel={quote(str(parcel).strip())}&county={quote(str(county or '').strip())}"
+    if county and str(county).strip():
+        return f"https://tnmap.tn.gov/assessment/?county={quote(str(county).strip())}"
+    return "https://tnmap.tn.gov/assessment/"
+
+
 def get_gis_viewer_url(county: str, parcel: str,
                         lng: float = None, lat: float = None,
                         state: str = None) -> str:
@@ -204,10 +223,13 @@ def get_gis_viewer_url(county: str, parcel: str,
 
     For Georgia (``state='GA'``) properties, returns the county's qPublic
     (Schneider Corp) parcel-search page instead, since NC OneMap does not
-    cover Georgia. All other states (NC, TN, ...) return a same-origin NC
-    OneMap viewer link centered on the parcel when coordinates are available.
+    cover Georgia. Tennessee (``state='TN'``) returns the TNMap Assessment
+    viewer. All others return a same-origin NC OneMap viewer link.
     """
-    if state and str(state).strip().upper() == "GA":
+    s = str(state or "").strip().upper()
+    if s == "GA":
         return get_ga_gis_url(county, parcel)
+    if s == "TN":
+        return get_tn_gis_url(county, parcel, lng, lat)
 
     return get_nconemap_viewer_url(lng, lat, parcel, county)

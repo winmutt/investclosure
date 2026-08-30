@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 def _rebuild(lat, lng, parcel_ref, address_raw, city_raw, county_raw, state_raw=None):
     gis_url = build_gis_url(lng, lat, parcel_ref, address=address_raw,
                            county=county_raw, state=state_raw)
-    maps_url = build_google_maps_url(lng, lat, address_raw, city_raw, county_raw)
-    topo_url = build_google_maps_topo_url(lng, lat, address_raw, city_raw, county_raw)
+    maps_url = build_google_maps_url(lng, lat, address_raw, city_raw, county_raw, state=state_raw)
+    topo_url = build_google_maps_topo_url(lng, lat, address_raw, city_raw, county_raw, state=state_raw)
     return gis_url, maps_url, topo_url
 
 
@@ -67,7 +67,11 @@ def backfill_links(source: str = "all") -> dict:
         lng = lng0
         parcel_ref = parcel_raw or None
 
-        if not (lat and lng) and status == "active":
+        # Only run NC OneMap live lookups for NC (and unknown) states.
+        # TN uses TNMap and GA uses qPublic; querying NC OneMap for those
+        # is wasteful and produces wrong links.
+        is_non_nc = (state or "").strip().upper() in ("TN", "GA")
+        if not (lat and lng) and status == "active" and not is_non_nc:
             # Active rows get a live lookup when coordinates are missing.
             if parcel_raw:
                 pd = _lookup_parcel(parcel_raw, county_raw)

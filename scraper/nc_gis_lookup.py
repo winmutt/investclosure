@@ -547,31 +547,39 @@ def build_gis_url(lng: Optional[float] = None, lat: Optional[float] = None,
     """Build a human-viewable GIS viewer URL for the parcel/address.
 
     Georgia (``state='GA'``) properties use the county's qPublic (Schneider
-    Corp) parcel-search page, since NC OneMap does not cover Georgia. All other
-    states use the NC OneMap statewide ArcGIS Map Viewer. When parcel
-    coordinates are available the NC OneMap link is centered on the parcel
-    (level 16, parcel boundaries visible). Otherwise it falls back to the
-    viewer's address search or a county-zoomed map — both always load correctly.
+    Corp) parcel-search page, since NC OneMap does not cover Georgia.
+    Tennessee (``state='TN'``) uses the TNMap Assessment viewer /
+    TN Comptroller TPAD deep link. North Carolina uses the NC OneMap
+    statewide ArcGIS Map Viewer.
     """
-    if state and str(state).strip().upper() == "GA":
+    s = str(state or "").strip().upper()
+    if s == "GA":
         return get_ga_gis_url(county, parcel)
+    if s == "TN":
+        # Prefer TNMap Assessment viewer. When GISLINK-style parcel is
+        # available the TNMap enrichment sets a TPAD deep link directly;
+        # this helper builds a pre-enrichment search link.
+        from .gis_urls import get_tn_gis_url
+        return get_tn_gis_url(county, parcel, lng, lat)
 
-    # North Carolina (and any other non-GA state) use the NC OneMap statewide
-    # parcel layer through our same-origin viewer/proxy. We center on the
-    # parcel's coordinates when available; otherwise the statewide layer loads.
-    if state and str(state).strip().upper() == "NC":
+    # North Carolina uses the NC OneMap statewide parcel layer through our
+    # same-origin viewer/proxy. Center on parcel coordinates when available.
+    if s == "NC":
         return get_nconemap_viewer_url(lng, lat, parcel, county)
 
-    # Fallback for other states (e.g. TN): legacy ArcGIS Online deep link.
+    # Fallback for other/unspecified states: treat as NC OneMap with
+    # state-aware query so we don't hardcode "NC".
     if lng is not None and lat is not None:
         return f"{NC_ONEMAP_VIEWER_URL}&center={lng:.6f},{lat:.6f}&level=16"
     if address:
-        q = " ".join(p for p in [address, county, "NC"] if p and p.strip())
+        st = s or "NC"
+        q = " ".join(p for p in [address, county, st] if p and p.strip())
         return f"{NC_ONEMAP_VIEWER_URL}&find={quote(q)}"
     if parcel:
         return NC_ONEMAP_VIEWER_URL
     if county:
-        return f"{NC_ONEMAP_VIEWER_URL}&find={quote(f'{county.strip()} NC')}"
+        st = s or "NC"
+        return f"{NC_ONEMAP_VIEWER_URL}&find={quote(f'{county.strip()} {st}')}"
     return None
 
 
@@ -609,7 +617,7 @@ def build_google_maps_topo_url(lng: Optional[float], lat: Optional[float],
 
 def build_satellite_url(lng: Optional[float] = None, lat: Optional[float] = None,
                         address: Optional[str] = None, city: Optional[str] = None,
-                        county: Optional[str] = None) -> Optional[str]:
+                        county: Optional[str] = None, state: Optional[str] = None) -> Optional[str]:
     """Build a Google Maps satellite/aerial photo URL centered on the parcel.
 
     Uses the classic Google Maps ``t=k`` (satellite) parameter, which forces an
@@ -619,7 +627,8 @@ def build_satellite_url(lng: Optional[float] = None, lat: Optional[float] = None
     """
     if lat is not None and lng is not None:
         return f"https://maps.google.com/maps?q={lat:.6f},{lng:.6f}&z=18&t=k"
-    parts = [p for p in [address, city, county, "NC"] if p and p.strip()]
+    st = (state or "NC").strip() or "NC"
+    parts = [p for p in [address, city, county, st] if p and p.strip()]
     if parts:
         q = "+".join(p.replace(" ", "+") for p in parts)
         return f"https://maps.google.com/maps?q={q}&z=15&t=k"
@@ -628,7 +637,7 @@ def build_satellite_url(lng: Optional[float] = None, lat: Optional[float] = None
 
 def build_street_view_url(lng: Optional[float] = None, lat: Optional[float] = None,
                           address: Optional[str] = None, city: Optional[str] = None,
-                          county: Optional[str] = None) -> Optional[str]:
+                          county: Optional[str] = None, state: Optional[str] = None) -> Optional[str]:
     """Build a Google Street View photo URL for the parcel (when available).
 
     Uses the Street View URL scheme (``map_action=pano``). With coordinates it
@@ -639,7 +648,8 @@ def build_street_view_url(lng: Optional[float] = None, lat: Optional[float] = No
     if lat is not None and lng is not None:
         return (f"https://www.google.com/maps/@?api=1&map_action=pano"
                 f"&viewpoint={lat:.6f},{lng:.6f}&heading=0&pitch=0&fov=80")
-    parts = [p for p in [address, city, county, "NC"] if p and p.strip()]
+    st = (state or "NC").strip() or "NC"
+    parts = [p for p in [address, city, county, st] if p and p.strip()]
     if parts:
         q = "+".join(p.replace(" ", "+") for p in parts)
         return f"https://www.google.com/maps/?api=1&query={q}&map_action=pano"
@@ -677,11 +687,19 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
     street = rec.get("address") or address
     rec["google_maps_url"] = build_google_maps_url(
         parcel_data.get("longitude"), parcel_data.get("latitude"),
-        street, city, actual_county,
+        street, city, actual_county, state=state,
     )
     rec["google_maps_topo_url"] = build_google_maps_topo_url(
         parcel_data.get("latitude"), parcel_data.get("longitude"),
-        street, city, actual_county,
+        street, city, actual_county, state=state,
+    )
+    rec["google_maps_satellite_url"] = build_satellite_url(
+        parcel_data.get("longitude"), parcel_data.get("latitude"),
+        street, city, actual_county, state=state,
+    )
+    rec["google_maps_street_url"] = build_street_view_url(
+        parcel_data.get("longitude"), parcel_data.get("latitude"),
+        street, city, actual_county, state=state,
     )
 
     rec["gis_county"] = actual_county
@@ -809,9 +827,10 @@ def enrich_properties(source: Optional[str] = None) -> dict:
         # every property — from any scraper — gets both a Google Maps link and a
         # GIS viewer link.
         if address or parcel_ref:
-            gmaps = build_google_maps_url(coords_lng, coords_lat, address, city, actual_county)
+            gmaps = build_google_maps_url(coords_lng, coords_lat, address, city, actual_county, state=state)
             if gmaps:
                 update_fields["google_maps_url"] = gmaps
+                update_fields["google_maps_topo_url"] = build_google_maps_topo_url(coords_lat, coords_lng, address, city, actual_county, state=state)
             gis = build_gis_url(coords_lng, coords_lat, parcel_ref, address, actual_county, state=state)
             if gis:
                 update_fields["gis_url"] = gis
