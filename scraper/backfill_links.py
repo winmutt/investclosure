@@ -11,12 +11,15 @@ Strategy:
     parcel / address — no API calls — so stale JSON REST URLs are replaced
     without burning NC1Map requests.
 """
+import json
 import logging
 import random
 import sqlite3
 import time
+from urllib.parse import quote
 
 from .config import config
+from .gis_urls import get_tn_gis_url
 from .nc_gis_lookup import (
     _lookup_parcel,
     build_gis_url,
@@ -48,7 +51,7 @@ def backfill_links(source: str = "all") -> dict:
 
     rows = conn.execute(
         f"SELECT id, source, status, county, parcel_number, address, city, state, "
-        f"latitude, longitude FROM properties WHERE {where} ORDER BY "
+        f"latitude, longitude, tnmap_data FROM properties WHERE {where} ORDER BY "
         f"CASE WHEN status='active' THEN 0 ELSE 1 END, id",
         params,
     ).fetchall()
@@ -57,7 +60,7 @@ def backfill_links(source: str = "all") -> dict:
     api_calls = 0
     active_total = sum(1 for r in rows if r[2] == "active")
 
-    for i, (row_id, src, status, county, parcel, address, city, state, lat0, lng0) in enumerate(rows, 1):
+    for i, (row_id, src, status, county, parcel, address, city, state, lat0, lng0, tnmap_data_raw) in enumerate(rows, 1):
         parcel_raw = (parcel or "").strip()
         county_raw = (county or "").strip()
         address_raw = (address or "").strip() or None
@@ -94,9 +97,29 @@ def backfill_links(source: str = "all") -> dict:
             if api_calls > 0:
                 time.sleep(random.uniform(0.3, 0.6))
 
-        gis_url, maps_url, topo_url = _rebuild(
-            lat, lng, parcel_ref, address_raw, city_raw, county_raw, state
-        )
+        # For TN, prefer TPAD deep link via GISLINK when available — it's the
+        # only working parcel-specific GIS link (tnmap assessment search with
+        # parcel_number is just a generic viewer). Generic tnmap URL is fallback.
+        if (state or "").strip().upper() == "TN" and tnmap_data_raw:
+            try:
+                _t = json.loads(tnmap_data_raw)
+                _gislink = (_t.get("tnmap_gislink") or _t.get("GISLINK") or "").strip()
+                if _gislink:
+                    gis_url = f"https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={quote(_gislink)}"
+                    maps_url = build_google_maps_url(lng, lat, address_raw, city_raw, county_raw, state=state)
+                    topo_url = build_google_maps_topo_url(lng, lat, address_raw, city_raw, county_raw, state=state)
+                else:
+                    gis_url, maps_url, topo_url = _rebuild(
+                        lat, lng, parcel_ref, address_raw, city_raw, county_raw, state
+                    )
+            except Exception:
+                gis_url, maps_url, topo_url = _rebuild(
+                    lat, lng, parcel_ref, address_raw, city_raw, county_raw, state
+                )
+        else:
+            gis_url, maps_url, topo_url = _rebuild(
+                lat, lng, parcel_ref, address_raw, city_raw, county_raw, state
+            )
 
         # Only touch rows where something actually changes.
         existing = conn.execute(
