@@ -106,23 +106,36 @@
 - **qPublic app:** unknown — falls back to generic search landing
   `https://qpublic.schneidercorp.com/Application.aspx?App=UnionCountyGA&Layer=Parcels&PageType=Search`
 - **To do:** discover AppID/LayerID/PageID and KeyValue spacing.
-- **Legal notices (newspaper source):** The North Georgia News (Blairsville,
-  GA) is the Union legal organ — confirmed via georgiapublicnotice.com grid
-  rows ("The North Georgia News / City: Blairsville / County: Union"). The
-  paper's own website has not been located (elbertondailyjournal.com /
-  elbertoncitizen.com / tngnews.com do not resolve / are parked);
-  georgiapublicnotice.com is the reliable text source for Union legals.
-  **2026-08-29 review (Jun 29–Aug 29 window): ONE delinquent-property-tax
-  sale** — "DELINQUENT PROPERTY TAX SALE" under tax Fi.Fa.'s issued by the
-  Union County Tax Commissioner, published weekly Jul 8/15/22/29 (gpn pks
-  9298982/9307572/9315412/9322353), sold **Aug 4, 2026** (first Tuesday),
-  10a–4p at the Blairsville courthouse door, continuing Aug 5 if needed;
-  10 parcels, tax years 2023–2025, amounts $722.53–$6,611.97. Sale already
-  held; **no Sep 1, 2026 sale noticed as of Aug 29** (latest pub Jul 29).
-  Parcels: 002023A10 (1.077ac), 030022 (0.71), 035188 (1.748), 055063
-  (2.32), 056003A37 (1.526), 072A010 (1.06), 072A011 (1.06), 072A012
-  (1.03), 072A013 (0.94) — Kohuth Estate x4 + Prather/Kohuth — 082001A13
-  (4.033). Only 055063 & 082001A13 pass MIN_ACRES=2.0.
+- **Legal notices (newspaper source):** The North Georgia News **website IS
+  `https://www.nganews.com`** (confirmed 2026-08-30) — a weekly PDF archive.
+  **PDF URL patterns** (weekly, no zero-padding on M/D):
+  - General legals: `https://www.nganews.com/pdf/NGN-{M}-{D}-{Y}Legals.pdf`
+  - Tax-delinquent sale insert (only in the ~4 weeks before a sale):
+    `https://www.nganews.com/pdf/NGN-{M}-{D}-{Y}TaxDel.pdf`
+  - Ed-Page/Sports/Front: `pdf/ngn {MM}-{DD}-{YY} Front|OpEd|Sports.pdf`
+  - Issues are indexed on `https://www.nganews.com/archives.html` →
+    `archives{YYYY}.html` (each issue lists "Public Legal Notices" + links —
+    the TaxDel-only weeks carry a "Tax Delinquents Sale" line). The PDFs are
+    1 tall page each, laid out in ~4 text columns (extractable with
+    pdfminer `boxes_flow=0.5`; avoid pdfplumber default interleave).
+  - The general **Legals PDFs contain NO tax-sale notices** — they carry
+    estates (Notice to Debtors & Creditors), name changes, corporate/business
+    filings, seizure notices, and **~26-30 mortgage power-of-sale
+    foreclosures per week** (e.g. 8-26: 28; those are NOT tax sales). Tax
+    foreclosures appear **only** in the separate **`TaxDel` PDFs**.
+  **2026-08-29/30 review (Jun 17–Aug 26 window): ONE delinquent-property-tax
+  sale** — "DELINQUENT PROPERTY TAX SALE" (tax Fi.Fa.'s issued by the Union
+  County Tax Commissioner), sold **Aug 4, 2026** (first Tuesday; continuing
+  Aug 5 if needed), 10a–4p at the Blairsville courthouse door. TaxDel PDFs
+  exist for **Jul 8, 15, 22, 29** ONLY (matching gpn pks 9298982/9307572/
+  9315412/9322353); the sale list **shrinks weekly** as owners redeem
+  (7/15: 17 parcels, 7/22: 13, 7/29: 10). Final 7/29 list = 10 parcels, tax
+  years 2023–2025, amounts $722.53–$6,611.97: 002023A10, 030022, 035188,
+  055063 (2.32ac), 056003A37, 072A010, 072A011, 072A012, 072A013 — Kohuth
+  Estate x4 — 082001A13 (4.033ac). Only 055063 & 082001A13 pass
+  MIN_ACRES=2.0. Sale already held; **no Sep 1, 2026 TaxDel PDF and no
+  TaxDel in Aug editions** (8/5/12/19/26 all Legals-only) → no Sep sale
+  advertised as of Aug 30.
 
 ---
 
