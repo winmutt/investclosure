@@ -851,8 +851,7 @@ def archive_below_acres(
         f"""\
         UPDATE properties
         SET status = ?, last_seen = ?
-        WHERE status = 'active' AND acres > 0 AND acres < ?{source_filter}
-          AND (property_type IS NULL OR property_type != 'tax_foreclosure')\
+        WHERE status = 'active' AND acres > 0 AND acres < ?{source_filter}\
         """,
         params,
     )
