@@ -69,7 +69,10 @@ CREATE TABLE IF NOT EXISTS properties (
     raw_deed_text TEXT,
     raw_paragraph TEXT,
     extracted_deed_plat TEXT,
-    extracted_pin TEXT
+    extracted_pin TEXT,
+    archived_by       TEXT,
+    archived_at       TEXT,
+    archive_reason    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_properties_source ON properties(source);
@@ -147,6 +150,9 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         ("extracted_pin", "ALTER TABLE properties ADD COLUMN extracted_pin TEXT"),
         ("owner_name", "ALTER TABLE properties ADD COLUMN owner_name TEXT"),
         ("tnmap_data", "ALTER TABLE properties ADD COLUMN tnmap_data TEXT"),
+        ("archived_by", "ALTER TABLE properties ADD COLUMN archived_by TEXT"),
+        ("archived_at", "ALTER TABLE properties ADD COLUMN archived_at TEXT"),
+        ("archive_reason", "ALTER TABLE properties ADD COLUMN archive_reason TEXT"),
     ]
     for col, sql in col_migrations:
         if col not in existing:
@@ -844,19 +850,119 @@ def archive_below_acres(
         source_filter = f" AND source IN ({placeholders})"
         params.extend(include_sources)
     elif source:
-        source_filter = " AND source = ?"
+        source_filter = f" AND source = ?"
         params.append(source)
 
+    # Audit tracking: mark as system-archived
+    from datetime import datetime
+    archived_at = datetime.now().isoformat()
+    
     conn.execute(
         f"""\
         UPDATE properties
-        SET status = ?, last_seen = ?
+        SET status = ?, last_seen = ?, archived_by = 'system', archived_at = ?, archive_reason = 'below_min_acres'
         WHERE status = 'active' AND acres > 0 AND acres < ?{source_filter}\
         """,
-        params,
+        params + [archived_at],
     )
     conn.commit()
     return conn.execute("SELECT changes()").fetchone()[0]
+
+
+def archive_property(
+    conn: sqlite3.Connection,
+    property_id: int,
+    reason: str,
+    archived_by: str = "user",
+) -> bool:
+    """Archive a single property with audit tracking.
+    
+    Args:
+        property_id: ID of the property to archive
+        reason: Reason for archiving
+        archived_by: Who archived it ('user', 'admin', 'system')
+    
+    Returns:
+        True if property was archived, False if not found or already archived
+    """
+    from datetime import datetime
+    
+    # Check if property exists and is active
+    row = conn.execute(
+        "SELECT id, status FROM properties WHERE id = ?", (property_id,)
+    ).fetchone()
+    
+    if not row:
+        logger.warning("Property %d not found", property_id)
+        return False
+    
+    if row["status"] != "active":
+        logger.info("Property %d already %s", property_id, row["status"])
+        return False
+    
+    archived_at = datetime.now().isoformat()
+    
+    conn.execute(
+        """UPDATE properties 
+           SET status = 'archived', 
+               archived_by = ?, 
+               archived_at = ?, 
+               archive_reason = ?,
+               last_seen = ?
+           WHERE id = ?""",
+        (archived_by, archived_at, reason, date.today().isoformat(), property_id),
+    )
+    conn.commit()
+    logger.info("Archived property %d by %s: %s", property_id, archived_by, reason)
+    return True
+
+
+def unarchive_property(
+    conn: sqlite3.Connection,
+    property_id: int,
+    reason: str,
+    restored_by: str = "user",
+) -> bool:
+    """Unarchive a property with audit tracking.
+    
+    Args:
+        property_id: ID of the property to unarchive
+        reason: Reason for unarchiving
+        restored_by: Who unarchived it ('user', 'admin', 'system')
+    
+    Returns:
+        True if property was unarchived, False if not found or not archived
+    """
+    from datetime import datetime
+    
+    # Check if property exists and is archived
+    row = conn.execute(
+        "SELECT id, status FROM properties WHERE id = ?", (property_id,)
+    ).fetchone()
+    
+    if not row:
+        logger.warning("Property %d not found", property_id)
+        return False
+    
+    if row["status"] != "archived":
+        logger.info("Property %d is %s, not archived", property_id, row["status"])
+        return False
+    
+    archived_at = datetime.now().isoformat()
+    
+    conn.execute(
+        """UPDATE properties 
+           SET status = 'active', 
+               archived_by = NULL, 
+               archived_at = NULL, 
+               archive_reason = ?,
+               last_seen = ?
+           WHERE id = ?""",
+        (f"Restored by {restored_by}: {reason}", date.today().isoformat(), property_id),
+    )
+    conn.commit()
+    logger.info("Unarchived property %d by %s: %s", property_id, restored_by, reason)
+    return True
 
 
 def get_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
@@ -893,4 +999,37 @@ def get_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     stats["by_county"] = [
         (f'{dict(r)["county"]}, {dict(r)["state"]}', dict(r)["cnt"]) for r in by_county
     ]
+    return stats
+
+
+def get_archive_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """Return archive audit statistics."""
+    stats: Dict[str, Any] = {}
+    
+    # Count by archived_by
+    by_archiver = conn.execute(
+        "SELECT archived_by, COUNT(*) as cnt FROM properties WHERE status='archived' GROUP BY archived_by"
+    ).fetchall()
+    stats["by_archiver"] = [(dict(r)["archived_by"] or "unknown", dict(r)["cnt"]) for r in by_archiver]
+    
+    # Count by archive_reason
+    by_reason = conn.execute(
+        "SELECT archive_reason, COUNT(*) as cnt FROM properties WHERE status='archived' GROUP BY archive_reason"
+    ).fetchall()
+    stats["by_reason"] = [(dict(r)["archive_reason"] or "unknown", dict(r)["cnt"]) for r in by_reason]
+    
+    # Recent archiving activity (last 7 days)
+    recent = conn.execute(
+        """SELECT DATE(archived_at) as day, archived_by, COUNT(*) as cnt
+           FROM properties 
+           WHERE status='archived' 
+           AND archived_at >= DATE('now', '-7 days')
+           GROUP BY day, archived_by
+           ORDER BY day DESC"""
+    ).fetchall()
+    stats["recent_activity"] = [
+        (dict(r)["day"], dict(r)["archived_by"] or "unknown", dict(r)["cnt"]) 
+        for r in recent
+    ]
+    
     return stats

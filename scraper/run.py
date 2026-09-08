@@ -30,6 +30,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.db import _ensure_db, update_scrape_run, get_stats, get_new_since, archive_below_acres, insert_property, get_all_active, update_tnmap_enrichment
 from scraper.config import config
+try:
+    from scraper.telegrams import TelegramNotifier
+    _telegram = TelegramNotifier()
+except Exception as e:
+    # fallback dummy if telegrams not importable (e.g. requests missing)
+    import logging as _log
+    _log.getLogger(__name__).warning("TelegramNotifier not available: %s", e)
+    class _DummyTelegram:
+        enabled = False
+        def send_new_properties(self, *a, **kw): return False
+        def send_new_property_single(self, *a, **kw): return False
+        def send_scrape_summary(self, *a, **kw): return False
+        def send_health_alert(self, *a, **kw): return False
+        def test_connection(self): return False
+        def _send(self, *a, **kw): return False
+    _telegram = _DummyTelegram()
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +125,10 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
         logger.error("%s FAILED: %s", scraper_name, e, exc_info=True)
         _inc_failure_counter(scraper_name)
         _end_logging(conn, run_id, 0, 0, 0, "failed", str(e))
+        try:
+            _telegram.send_health_alert(f"❌ {scraper_name.upper()} FAILED", f"Error: {e}\nCheck logs at /app/data/logs/investclosure.log")
+        except Exception:
+            pass
         return {"scraper": scraper_name, "found": 0, "new": 0, "error": str(e)}
 
     new_count = 0
@@ -166,6 +186,19 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
                     prop.get("county") or "?", prop.get("acres") or 0,
                     prop.get("county") or "?", prop.get("state") or "?",
                 )
+                # Send Telegram per new property (like realestate/scraper/run.py:189)
+                try:
+                    # Merge scraper prop + DB row so formatter sees both raw and enriched fields
+                    row_dict = dict(row) if hasattr(row, "keys") else {}
+                    telegram_prop = {**prop, **row_dict}
+                    telegram_prop["price_cents"] = price_cents
+                    # ensure essential keys
+                    telegram_prop.setdefault("parcel_number", prop.get("parcel_number") or row_dict.get("parcel_number"))
+                    telegram_prop.setdefault("google_maps_url", prop.get("google_maps_url") or row_dict.get("google_maps_url"))
+                    telegram_prop.setdefault("gis_url", prop.get("gis_url") or row_dict.get("gis_url"))
+                    _telegram.send_new_property_single(telegram_prop, source=scraper_name)
+                except Exception as e:
+                    logger.warning("Telegram per-property send failed: %s", e)
 
             # Persist TNMap enrichment (owner, acres, gis_url, raw payload)
             # when the scraper produced it. These fields aren't part of the
@@ -367,6 +400,20 @@ def cmd_run_all() -> list[dict]:
 
     print(f"\n  TOTAL: found={total_found}, new={total_new}")
     print(f"{'='*60}\n")
+
+    # Send Telegram summary (like realestate/scraper/run.py:236 send_scrape_summary)
+    try:
+        _telegram.send_scrape_summary(results)
+    except Exception as e:
+        logger.warning("Telegram summary send failed: %s", e)
+    # Health-alert on failures
+    for r in results:
+        if r.get("error"):
+            try:
+                _telegram.send_health_alert(f"❌ {r['scraper'].upper()} FAILED", f"Error: {r['error']}\nCheck logs at /app/data/logs/investclosure.log")
+            except Exception:
+                pass
+
     return results
 
 

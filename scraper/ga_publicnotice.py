@@ -178,6 +178,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         Rejects quiet-title / tax-redemption title actions and post-sale
         proceedings outright; then applies the shared tax-vs-mortgage
         classifier (county-trustee sales for delinquent property taxes).
+        Always rejects deed-of-trust / mortgage foreclosures (bank loan
+        defaults), even when the notice mentions taxes as a surviving lien.
         """
         if not text:
             return False
@@ -186,11 +188,11 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             return False
         if GAPublicNoticeScraper._is_post_sale(low):
             return False
+        # Always reject deed-of-trust / mortgage foreclosures
         has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
-        has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
-        if has_mortgage and not has_tax:
+        if has_mortgage:
             return False
-        return has_tax
+        return any(re.search(p, low) for p in TAX_FC_PATTERNS)
 
     @staticmethod
     def _extract_address(text: str) -> Optional[str]:

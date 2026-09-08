@@ -563,21 +563,16 @@ class PublicNoticeScraper(BaseForeclosureScraper):
     def _is_tax_foreclosure(text: str) -> bool:
         """Authoritative check: is *text* a tax foreclosure / tax sale notice?
 
-        Keeps county-trustee sales for delinquent property taxes. A
-        deed-of-trust / substitute-trustee bank sale is rejected unless it also
-        carries an explicit tax-sale signal.
+        Always rejects deed-of-trust / mortgage foreclosures (bank loan
+        defaults), even when the notice mentions taxes as a surviving lien.
+        Only genuine county/city tax-sale foreclosures pass through.
         """
         if not text:
             return False
         low = normalize_notice_text(text).lower()
+        # Always reject deed-of-trust / mortgage foreclosures — these are
+        # loan defaults sold to satisfy a debt, not unpaid property taxes.
         has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
-        has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
-        if has_mortgage and not has_tax:
-            return False
         if has_mortgage:
-            # A deed-of-trust / substitute-trustee sale is a private-lender
-            # (mortgage) foreclosure. Only accept it as a tax sale when it also
-            # carries a STRONG tax signal (county-trustee sale for delinquent
-            # property taxes under T.C.A. 67-5).
-            return any(re.search(p, low) for p in STRONG_TAX_FC_PATTERNS)
-        return has_tax
+            return False
+        return any(re.search(p, low) for p in TAX_FC_PATTERNS)

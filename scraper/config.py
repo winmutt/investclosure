@@ -307,6 +307,12 @@ class Config:
     # ---- required vars (fatal if missing) ----
     TWO_CAPTCHA_API_KEY: str
 
+    # ---- optional service keys (stored for back-pocket use) ----
+    GOOGLE_MAPS_API_KEY: str
+    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_CHAT_ID: str
+    TELEGRAM_ENABLED: bool
+
     # ---- filter thresholds ----
     MIN_ACRES: float
     MAX_ACRES: float
@@ -366,6 +372,17 @@ class Config:
 
         # CAPTCHA key — optional at import, required when scrapers run (validated in base.py)
         self.TWO_CAPTCHA_API_KEY = _opt_str("TWO_CAPTCHA_API_KEY", "")
+
+        # Google Maps API key — kept for back-pocket use (elevation/GMaps enrichment)
+        # Not required for current scrapers but stored like realestate's config.py
+        self.GOOGLE_MAPS_API_KEY = _opt_str("GOOGLE_MAPS_API_KEY", "")
+
+        # Telegram notification keys — copied from realestate (podman-compose.yml)
+        # TELEGRAM_ENABLED defaults false so import never crashes if unset
+        self.TELEGRAM_BOT_TOKEN = _opt_str("TELEGRAM_BOT_TOKEN", "")
+        self.TELEGRAM_CHAT_ID = _opt_str("TELEGRAM_CHAT_ID", "")
+        _telegram_enabled_raw = _opt_str("TELEGRAM_ENABLED", "false")
+        self.TELEGRAM_ENABLED = _telegram_enabled_raw.lower() in ("true", "1", "yes")
 
         # Thresholds (env overridable)
         self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 2.0)

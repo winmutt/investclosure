@@ -143,11 +143,19 @@ def _is_tax_foreclosure_notice(text: str) -> bool:
       - county/municipal public hearing & bid/procurement notices,
       - quiet-title / tax-redemption / excess-fund / service-by-publication
         procedural filings,
-      - mortgage / deed-of-trust (bank) sales that carry no tax-sale language.
+      - mortgage / deed-of-trust (bank) sales (always rejected, even if they
+        mention taxes — deed-of-trust foreclosures are loan defaults, not
+        tax foreclosures).
     """
     if not text:
         return False
     low = text.lower()
+    # Always reject deed-of-trust / mortgage foreclosures — these are loan
+    # defaults sold to satisfy a debt, not unpaid property taxes.  Even when
+    # the notice mentions "unpaid taxes" as a surviving lien, the core action
+    # is a bank foreclosure, not a county tax sale.
+    if _MORTGAGE_SALE_RE.search(low):
+        return False
     if _PROBATE_RE.search(low) and not _TAX_SALE_RE.search(low):
         return False
     if _GOVERNMENT_RE.search(low) and not _TAX_SALE_RE.search(low):
@@ -155,11 +163,6 @@ def _is_tax_foreclosure_notice(text: str) -> bool:
     if _MISC_FILING_RE.search(low) and not _TAX_SALE_RE.search(low):
         return False
     if not _TAX_SALE_RE.search(low):
-        return False
-    # Strong tax-sale language present. A deed-of-trust / power-of-sale bank
-    # sale is still rejected unless it carries an explicit tax-sale signal
-    # (tax-lien foreclosures by substitute trustee do).
-    if _MORTGAGE_SALE_RE.search(low) and not _TAX_SALE_RE.search(low):
         return False
     return True
 

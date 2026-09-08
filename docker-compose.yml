@@ -21,6 +21,11 @@ services:
       CRON_HOURS: "4,16"
       # Interval is kept for CLI compatibility; schedule is driven by CRON_HOURS
       SCRAPE_INTERVAL: 720
+      # Telegram & Google Maps keys (from realestate / investclosure copy)
+      TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      TELEGRAM_ENABLED=${TELEGRAM_ENABLED}
+      GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
