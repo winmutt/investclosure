@@ -410,7 +410,7 @@ def property_navigation(property_id):
     conn.close()
 
     ordered = [dict(r) for r in rows]
-    if category in ('notice', 'listing'):
+    if category in ('notice', 'listing', 'mortgage'):
         ordered = [p for p in ordered if property_category(p) == category]
 
     ids = [p["id"] for p in ordered]
