@@ -62,14 +62,19 @@ NOTICE_TYPE_KEYWORDS = ("notice", "estate", "proceeding")
 
 
 def property_category(prop: dict) -> str:
-    """Bucket a property into 'notice' or 'listing' for dashboard tabs.
+    """Bucket a property into 'notice', 'listing', or 'mortgage' for dashboard tabs.
 
-    Notices are legal/public notices published in newspapers (no auction
-    listing). Foreclosure listings are actual auction/sale listings from
-    law-firm and auction scrapers.
+    Notices are legal/public notices published in newspapers (no auction listing).
+    Foreclosure listings are tax foreclosure auction/sale listings.
+    Mortgage listings are mortgage/Deed-of-Trust foreclosure listings.
     """
     source = (prop.get("source") or "").strip().lower()
     ptype = (prop.get("property_type") or "").strip().lower()
+    notes = (prop.get("notes") or "").lower()
+    desc = (prop.get("description") or "").lower()
+    # Check for mortgage/Deed-of-Trust indicators first (across all sources)
+    if "mortgage" in notes or "mtg" in notes or "deed of trust" in desc:
+        return "mortgage"
     if source in NOTICE_SOURCES or any(k in ptype for k in NOTICE_TYPE_KEYWORDS):
         return "notice"
     return "listing"
@@ -140,13 +145,13 @@ def landing():
     conn.close()
     props = _rows_to_dicts(props)
 
-    # Group active properties by state, then by category (listing / notice)
+    # Group active properties by state, then by category (listing / mortgage / notice)
     states: dict[str, dict[str, list]] = {}
     for p in props:
         st = (p.get("state") or "UNKNOWN").strip().upper()
-        cat = property_category(p)  # 'listing' or 'notice'
+        cat = property_category(p)  # 'listing', 'mortgage', or 'notice'
         if st not in states:
-            states[st] = {"listing": [], "notice": []}
+            states[st] = {"listing": [], "mortgage": [], "notice": []}
         states[st][cat].append(p)
 
     # Order states: priority markets first, then alphabetically

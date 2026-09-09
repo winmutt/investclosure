@@ -118,6 +118,9 @@
         <button type="button" class="tab-btn active" data-tab="listing" aria-selected="true">
             Foreclosure Listings <span class="tab-count">{{ states[st].listing|length }}</span>
         </button>
+        <button type="button" class="tab-btn" data-tab="mortgage" aria-selected="false">
+            Mortgage Foreclosure <span class="tab-count">{{ states[st].mortgage|length }}</span>
+        </button>
         <button type="button" class="tab-btn" data-tab="notice" aria-selected="false">
             Notices <span class="tab-count">{{ states[st].notice|length }}</span>
         </button>
@@ -125,6 +128,10 @@
 
     <div class="tab-pane" data-tab-pane="listing" data-tab-pane-group="cat-{{ st }}">
         {{ tile_grid(states[st].listing, st, 'listing') }}
+    </div>
+
+    <div class="tab-pane" data-tab-pane="mortgage" data-tab-pane-group="cat-{{ st }}">
+        {{ tile_grid(states[st].mortgage, st, 'mortgage') }}
     </div>
 
     <div class="tab-pane" data-tab-pane="notice" data-tab-pane-group="cat-{{ st }}" hidden>
