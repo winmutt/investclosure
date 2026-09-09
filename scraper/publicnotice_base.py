@@ -468,8 +468,13 @@ class PublicNoticeScraper(BaseForeclosureScraper):
                         continue
         except Exception as e:
             logger.debug("turnstile frame click failed: %s", e)
+        # Fallback: click the widget iframe by coordinates in the main
+        # frame. The iframe's DOM `src` is empty (it navigates to the
+        # challenge URL after attach), so match src-agnostically.
         try:
-            frame_el = page.query_selector('iframe[src*="challenges.cloudflare.com"]')
+            frame_el = page.query_selector("div.cf-turnstile iframe")
+            if frame_el is None:
+                frame_el = page.query_selector("iframe")
             if frame_el is not None:
                 box = frame_el.bounding_box()
                 if box:
