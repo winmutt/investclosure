@@ -168,3 +168,105 @@ class TestRawlog:
         # directory collides with an existing file -> write fails internally,
         # but log_raw must not raise.
         log_raw("test_source", raw_text="x", directory=blocker)
+
+
+class _FakeEl:
+    def __init__(self):
+        self.clicked = False
+
+    def is_visible(self):
+        return True
+
+    def click(self, timeout=None):
+        self.clicked = True
+
+
+class _FakeFrame:
+    def __init__(self, url, el=None):
+        self.url = url
+        self._el = el
+
+    def query_selector(self, sel):
+        return self._el
+
+
+class _FakePage:
+    """Minimal stand-in for a camoufox page (token/body polling only)."""
+
+    def __init__(self, body_len=100, token="", frames=None):
+        self._body_len = body_len
+        self._token = token
+        self.frames = frames or []
+        self.waits = 0
+
+    def evaluate(self, script, *args):
+        if "lblMessage" in script:
+            return ""
+        if "cf-turnstile-response" in script:
+            return self._token
+        if "innerText" in script:
+            return self._body_len
+        return ""
+
+    def query_selector(self, sel):
+        return None
+
+    def wait_for_timeout(self, ms):
+        self.waits += 1
+
+
+class TestInBrowserTurnstileSolve:
+    def _solver(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        return GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+
+    def test_body_already_visible_passes(self):
+        s = self._solver()
+        assert s._solve_turnstile_in_browser(_FakePage(body_len=2000), "key") is True
+
+    def test_widget_token_passes(self):
+        s = self._solver()
+        assert s._solve_turnstile_in_browser(_FakePage(token="tok123"), "key") is True
+
+    def test_timeout_fails(self):
+        s = self._solver()
+        assert s._solve_turnstile_in_browser(_FakePage(), "key", timeout_s=0) is False
+
+    def test_checkbox_click_in_challenge_frame(self):
+        from scraper.publicnotice_base import PublicNoticeScraper
+        el = _FakeEl()
+        page = _FakePage(frames=[_FakeFrame("https://challenges.cloudflare.com/turnstile/v0", el)])
+        assert PublicNoticeScraper._click_turnstile_checkbox(page) is True
+        assert el.clicked is True
+
+    def test_checkbox_click_no_widget(self):
+        from scraper.publicnotice_base import PublicNoticeScraper
+        assert PublicNoticeScraper._click_turnstile_checkbox(_FakePage()) is False
+
+    def test_gate_submits_after_in_browser_solve(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+
+        class GatePage(_FakePage):
+            def __init__(self):
+                super().__init__(body_len=100)
+                self.posted = False
+
+            def evaluate(self, script, *args):
+                if "__doPostBack" in script:
+                    self.posted = True
+                    self._body_len = 2000
+                    return ""
+                return super().evaluate(script, *args)
+
+            def query_selector(self, sel):
+                return object()  # Turnstile widget present
+
+            def wait_for_load_state(self, *args, **kwargs):
+                pass
+
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        s.solve_captcha = True
+        s._solve_turnstile_in_browser = lambda page, key, timeout_s=90: True
+        page = GatePage()
+        assert s._pass_turnstile_gate(page, "key") is True
+        assert page.posted is True

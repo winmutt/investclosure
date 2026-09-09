@@ -102,7 +102,7 @@ playwright>=1.40     # Headless Chromium automation
 ### Services
 | Service | Required? | Purpose |
 |---|---|---|
-| 2captcha.com | No | Solves reCAPTCHA (disabled for Kania Law) |
+| Turnstile (in-browser) | Yes | Cloudflare challenges solved by the camoufox page itself — no solving service |
 | HTTP proxy | No | Optional proxy for bypassing IP blocks |
 
 ### Environment Variables

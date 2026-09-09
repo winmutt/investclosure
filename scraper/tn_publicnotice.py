@@ -1,4 +1,8 @@
-"""TN Public Notice foreclosure scraper — tnpublicnotice.com via Camoufox + 2captcha.
+"""TN Public Notice foreclosure scraper — tnpublicnotice.com via Camoufox.
+
+Turnstile challenges are solved in-browser by the camoufox page itself
+(no third-party solving service).
+
 
 tnpublicnotice.com is the "Public Notice" ASP.NET WebForms platform (shared
 base in :mod:`scraper.publicnotice_base`). Scrapes foreclosure public notices

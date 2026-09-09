@@ -4,7 +4,6 @@ import json
 import logging
 import re
 import random
-import sys
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -141,18 +140,8 @@ class BaseForeclosureScraper(ABC):
 
     def run(self) -> List[PropertyData]:
         """Run scraper, filter results, return qualifying properties."""
-        # Validate required dependencies at runtime
-        if not config.TWO_CAPTCHA_API_KEY:
-            print(
-                f"\n{'!' * 70}\n"
-                f"  FATAL: TWO_CAPTCHA_API_KEY is not set.\n"
-                f"  Set it in your .env file or as an environment variable.\n"
-                f"{'!' * 70}\n",
-                file=sys.stderr,
-                flush=True,
-            )
-            sys.exit(1)
-
+        # Turnstile challenges are solved in-browser by the camoufox page
+        # itself — no third-party solving service or API key required.
         state_counties = self._get_target_counties()
         count = len(state_counties)
         print(f"\n{'='*60}")
@@ -228,122 +217,6 @@ class BaseForeclosureScraper(ABC):
         """Extract ASP.NET session ID from URL."""
         m = re.search(r"/\(S\((\w+)\)\)/", url)
         return m.group(1) if m else None
-
-    def _solve_captcha(self, page_url: str, site_key: str) -> Optional[str]:
-        """Solve reCAPTCHA v2 via 2captcha API."""
-        import requests as http_req
-        print("(solving captcha ...", end=" ", flush=True)
-        try:
-            resp = http_req.post(
-                "https://2captcha.com/in.php", timeout=30,
-                data={
-                    "key": config.TWO_CAPTCHA_API_KEY,
-                    "method": "userrecaptcha",
-                    "googlekey": site_key,
-                    "pageurl": page_url,
-                    "json": 1,
-                },
-            )
-            data = resp.json()
-            if data.get("status") != 1:
-                print(f"fail: {data.get('request', '?')})", end=" ", flush=True)
-                return None
-            rid = data["request"]
-            for _ in range(30):
-                time.sleep(5)
-                resp = http_req.get(
-                    "https://2captcha.com/res.php", timeout=30,
-                    params={
-                        "key": config.TWO_CAPTCHA_API_KEY,
-                        "action": "get",
-                        "id": rid,
-                        "json": 1,
-                    },
-                )
-                data = resp.json()
-                if data.get("status") == 1:
-                    print("solved)", end=" ", flush=True)
-                    return data["request"]
-        except Exception as e:
-            print(f"error: {e})", end=" ", flush=True)
-        return None
-
-    def _solve_turnstile(self, page_url: str, site_key: str) -> Optional[str]:
-        """Solve a Cloudflare Turnstile challenge via 2captcha API.
-
-        Returns the token string, or None on failure. The token is bound to
-        page_url + site_key, so both must match the live page exactly.
-        """
-        import requests as http_req
-        print("(solving turnstile ...", end=" ", flush=True)
-        try:
-            resp = http_req.post(
-                "https://2captcha.com/in.php", timeout=30,
-                data={
-                    "key": config.TWO_CAPTCHA_API_KEY,
-                    "method": "turnstile",
-                    "sitekey": site_key,
-                    "pageurl": page_url,
-                    "json": 1,
-                },
-            )
-            data = resp.json()
-            if data.get("status") != 1:
-                print(f"fail: {data.get('request', '?')})", end=" ", flush=True)
-                return None
-            rid = data["request"]
-            for _ in range(60):
-                time.sleep(5)
-                resp = http_req.get(
-                    "https://2captcha.com/res.php", timeout=30,
-                    params={
-                        "key": config.TWO_CAPTCHA_API_KEY,
-                        "action": "get",
-                        "id": rid,
-                        "json": 1,
-                    },
-                )
-                data = resp.json()
-                if data.get("status") == 1:
-                    print("solved)", end=" ", flush=True)
-                    return data["request"]
-        except Exception as e:
-            print(f"error: {e})", end=" ", flush=True)
-        print("timeout)", end=" ", flush=True)
-        return None
-
-    def _inject_turnstile_token(self, page, token: str) -> None:
-        """Set the Turnstile hidden field value from the page's own form.
-
-        The widget renders a hidden input named 'cf-turnstile-response'
-        (its id is dynamic: cf-chl-widget-<n>_response), so select by name.
-        """
-        page.evaluate("""(t) => {
-            const el = document.querySelector('input[name="cf-turnstile-response"]');
-            if (el) { el.value = t; el.textContent = t; }
-        }""", token)
-
-    def _inject_token_and_submit(self, page, token: str) -> None:
-        """Set g-recaptcha-response and submit via __doPostBack."""
-        page.evaluate("""(token) => {
-            const ta = document.getElementById('g-recaptcha-response');
-            if (ta) { ta.value = token; ta.textContent = token; }
-            if (typeof ___grecaptcha_cfg !== 'undefined') {
-                for (const cid in ___grecaptcha_cfg.clients) {
-                    try {
-                        const c = ___grecaptcha_cfg.clients[cid];
-                        if (c && typeof c.callback === 'function') c.callback(token);
-                    } catch(e) {}
-                }
-            }
-        }""", token)
-        page.wait_for_timeout(500)
-        page.evaluate("""() => {
-            window.__doPostBack(
-                'ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody1$btnViewNotice',
-                ''
-            );
-        }""")
 
     @staticmethod
     def _find_chromium() -> Optional[str]:

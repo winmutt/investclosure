@@ -17,6 +17,7 @@ import html as html_lib
 import io
 import logging
 import re
+import time
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
@@ -432,8 +433,86 @@ class PublicNoticeScraper(BaseForeclosureScraper):
             return False
         return body_len > 1500
 
+    @staticmethod
+    def _turnstile_token(page) -> str:
+        """Current value of the Turnstile response field ('' when unsolved)."""
+        try:
+            return page.evaluate(
+                "() => { const el = document.querySelector("
+                "'input[name=\"cf-turnstile-response\"]');"
+                " return el ? (el.value || '') : ''; }"
+            ) or ""
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _click_turnstile_checkbox(page) -> bool:
+        """Click the interactive Turnstile checkbox, if one is rendered.
+
+        Managed challenges usually pass without interaction; when Cloudflare
+        renders the "Verify you are human" checkbox, a real in-page click
+        from the stealth-Firefox session is what passes it.
+        """
+        try:
+            for fr in page.frames:
+                url = getattr(fr, "url", "") or ""
+                if "challenges.cloudflare.com" not in url and "turnstile" not in url:
+                    continue
+                for sel in ('input[type="checkbox"]', "label", "body"):
+                    try:
+                        el = fr.query_selector(sel)
+                        if el is not None and el.is_visible():
+                            el.click(timeout=5000)
+                            return True
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.debug("turnstile frame click failed: %s", e)
+        try:
+            frame_el = page.query_selector('iframe[src*="challenges.cloudflare.com"]')
+            if frame_el is not None:
+                box = frame_el.bounding_box()
+                if box:
+                    page.mouse.click(box["x"] + box["width"] / 2,
+                                     box["y"] + box["height"] / 2)
+                    return True
+        except Exception as e:
+            logger.debug("turnstile iframe click failed: %s", e)
+        return False
+
+    def _solve_turnstile_in_browser(self, page, site_key: str,
+                                    timeout_s: int = 90) -> bool:
+        """Pass the Turnstile challenge with the live camoufox page itself.
+
+        No third-party solving service: the stealth-Firefox session satisfies
+        managed challenges passively, and an interactive checkbox (when
+        rendered) is clicked in-page. Returns True once the widget holds a
+        token or the notice body is already visible. (``site_key`` is kept
+        for call compatibility; the token is bound by the page itself.)
+        """
+        print("(solving turnstile in-browser ...", end=" ", flush=True)
+        try:
+            deadline = time.time() + timeout_s
+            clicked = False
+            while time.time() < deadline:
+                if self._notice_body_visible(page):
+                    print("passed)", end=" ", flush=True)
+                    return True
+                if self._turnstile_token(page):
+                    print("token ready)", end=" ", flush=True)
+                    return True
+                if not clicked:
+                    clicked = True
+                    self._click_turnstile_checkbox(page)
+                page.wait_for_timeout(2000)
+        except Exception as e:
+            print(f"error: {e})", end=" ", flush=True)
+            return False
+        print("timeout)", end=" ", flush=True)
+        return False
+
     def _pass_turnstile_gate(self, page, site_key: str) -> bool:
-        """Solve the Turnstile gate (if present) and reveal the notice body.
+        """Pass the Turnstile gate (if present) and reveal the notice body.
 
         Returns True when the full notice content is visible.
         """
@@ -454,11 +533,12 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         if not self.solve_captcha:
             logger.warning("Turnstile present but captcha solving disabled")
             return False
-        token = self._solve_turnstile(page.url, site_key)
-        if not token:
+        if not self._solve_turnstile_in_browser(page, site_key):
             logger.warning("turnstile solve failed")
             return False
-        self._inject_turnstile_token(page, token)
+        if self._notice_body_visible(page):
+            # The widget submitted itself; nothing left to do.
+            return True
         page.wait_for_timeout(800)
         try:
             page.evaluate(

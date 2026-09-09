@@ -1,4 +1,8 @@
-"""NC Public Notice foreclosure scraper — ncnotices.com via Camoufox + 2captcha.
+"""NC Public Notice foreclosure scraper — ncnotices.com via Camoufox.
+
+Turnstile challenges are solved in-browser by the camoufox page itself
+(no third-party solving service).
+
 
 ncnotices.com is the same "Public Notice" ASP.NET WebForms platform as
 tnpublicnotice.com / georgiapublicnotice.com (shared base in
