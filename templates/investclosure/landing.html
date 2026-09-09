@@ -107,7 +107,7 @@
 <div class="tabs tabs-states" data-tab-group="state">
     {% for st in states_order %}
     <button type="button" class="tab-btn{% if loop.first %} active{% endif %}" data-tab="{{ st }}" aria-selected="{% if loop.first %}true{% else %}false{% endif %}">
-        {{ st }} <span class="tab-count">{{ states[st].listing|length + states[st].notice|length }}</span>
+        {{ st }} <span class="tab-count">{{ states[st].tax|length + states[st].mtg|length }}</span>
     </button>
     {% endfor %}
 </div>
@@ -115,27 +115,20 @@
 {% for st in states_order %}
 <div class="tab-pane state-pane" data-tab-pane="{{ st }}" data-tab-pane-group="state"{% if not loop.first %} hidden{% endif %}>
     <div class="tabs tabs-cat" data-tab-group="cat-{{ st }}">
-        <button type="button" class="tab-btn active" data-tab="listing" aria-selected="true">
-            Foreclosure Listings <span class="tab-count">{{ states[st].listing|length }}</span>
+        <button type="button" class="tab-btn active" data-tab="tax" aria-selected="true">
+            Tax <span class="tab-count">{{ states[st].tax|length }}</span>
         </button>
-        <button type="button" class="tab-btn" data-tab="mortgage" aria-selected="false">
-            Mortgage Foreclosure <span class="tab-count">{{ states[st].mortgage|length }}</span>
-        </button>
-        <button type="button" class="tab-btn" data-tab="notice" aria-selected="false">
-            Notices <span class="tab-count">{{ states[st].notice|length }}</span>
+        <button type="button" class="tab-btn" data-tab="mtg" aria-selected="false">
+            Mtg <span class="tab-count">{{ states[st].mtg|length }}</span>
         </button>
     </div>
 
-    <div class="tab-pane" data-tab-pane="listing" data-tab-pane-group="cat-{{ st }}">
-        {{ tile_grid(states[st].listing, st, 'listing') }}
+    <div class="tab-pane" data-tab-pane="tax" data-tab-pane-group="cat-{{ st }}">
+        {{ tile_grid(states[st].tax, st, 'tax') }}
     </div>
 
-    <div class="tab-pane" data-tab-pane="mortgage" data-tab-pane-group="cat-{{ st }}">
-        {{ tile_grid(states[st].mortgage, st, 'mortgage') }}
-    </div>
-
-    <div class="tab-pane" data-tab-pane="notice" data-tab-pane-group="cat-{{ st }}" hidden>
-        {{ tile_grid(states[st].notice, st, 'notice') }}
+    <div class="tab-pane" data-tab-pane="mtg" data-tab-pane-group="cat-{{ st }}" hidden>
+        {{ tile_grid(states[st].mtg, st, 'mtg') }}
     </div>
 </div>
 {% endfor %}

@@ -7,6 +7,7 @@ playwright-playwright
 *.db-shm
 data/
 *.log
+*.jsonl
 __pycache__/
 *.pyc
 *.pyo

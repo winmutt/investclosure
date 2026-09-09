@@ -35,6 +35,7 @@ from .publicnotice_base import (
     _is_recent_publication,
     trim_notice_body,
 )
+from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,23 @@ def _is_tax_foreclosure(notice: str) -> bool:
     if _MORTGAGE_RE.search(notice or ""):
         return False
     return True
+
+
+def _classify_nc_notice(notice: str) -> Optional[str]:
+    """Classify an NC notice as tax sale, mortgage sale, or neither (drop).
+
+    Tax requires positive tax-sale language with no mortgage signal;
+    mortgage-only notices (deed-of-trust / substitute-trustee sales) are kept
+    for the Mtg tab; HOA/assessment/other liens (neither signal) are dropped.
+    """
+    text = notice or ""
+    has_tax = _TAX_RE.search(text) is not None
+    has_mortgage = _MORTGAGE_RE.search(text) is not None
+    if has_tax and not has_mortgage:
+        return "tax_foreclosure"
+    if has_mortgage and not has_tax:
+        return "mortgage_foreclosure"
+    return None
 
 
 class NCPublicNoticeScraper(PublicNoticeScraper):
@@ -336,10 +354,25 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
         notice = detail["text"]
         county = _extract_county(notice, self._all_counties)
         if county not in COUNTY_SET:
+            log_raw(
+                self.SOURCE_NAME, listing_id=cand.get("id"),
+                county=county, state="NC",
+                decision="dropped_county",
+                reason="property county outside 21-county target set",
+                raw_text=notice, url=detail.get("url"),
+            )
             return None
 
-        if not _is_tax_foreclosure(notice):
-            logger.info("Skipping non-tax foreclosure (mortgage/HOA/other lien) for %s",
+        kind = _classify_nc_notice(notice)
+        if kind is None:
+            log_raw(
+                self.SOURCE_NAME, listing_id=cand.get("id"),
+                county=county, state="NC",
+                decision="dropped_non_foreclosure",
+                reason="no tax-only or mortgage-only signal (HOA/other lien?)",
+                raw_text=notice, url=detail.get("url"),
+            )
+            logger.info("Skipping non-foreclosure (HOA/other lien) for %s",
                         cand.get("id"))
             return None
 
@@ -349,6 +382,13 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
         pin = _extract_pin(notice)
         address = _extract_address(notice)
 
+        log_raw(
+            self.SOURCE_NAME, listing_id=cand.get("id"),
+            county=county, state="NC",
+            decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
+            reason=f"{'pdf' if detail.get('had_pdf') else 'html'} source; pin={pin}",
+            raw_text=notice, url=detail.get("url"),
+        )
         return PropertyData(
             source=self.SOURCE_NAME,
             source_listing_id=cand["id"],
@@ -363,7 +403,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
             price=1,
             acres=acres,
             description=notice[:2000],
-            property_type="foreclosure",
+            property_type=kind,
             court_case=case_m.group(1).replace(" ", "") if case_m else None,
             auction_date=auction_date,
             parcel_number=pin,

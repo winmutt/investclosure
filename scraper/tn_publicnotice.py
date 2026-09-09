@@ -27,6 +27,7 @@ from .publicnotice_base import (
     PER_PAGE_SELECT,
     normalize_notice_text,
 )
+from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +134,16 @@ def _tn_parse_acres(block: str):
     return None
 
 
-def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str):
+def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str,
+                      kind: str = "tax_foreclosure"):
     """Split a consolidated TN tax-sale notice into per-parcel listings.
 
     Each parcel row in the delinquent-tax table terminates with a
     ``Total:$<amount>`` marker; we slice the notice into one block per parcel
     and extract address / parcel number / acres from each block. Returns an
     empty list when the notice has no parcel table (caller falls back to a
-    single consolidated record).
+    single consolidated record). ``kind`` tags the parcel rows
+    (``tax_foreclosure`` or ``mortgage_foreclosure``).
     """
     if not text:
         return []
@@ -198,7 +201,7 @@ def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str
             "price": 1,
             "acres": acres,
             "description": desc,
-            "property_type": "tax_foreclosure",
+            "property_type": kind,
             "auction_date": auction_date,
             "parcel_number": parcel_no,
             "raw_source_text": desc,
@@ -353,22 +356,33 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 target_records = [r for r in records if (r.get("county") or "").lower() in COUNTY_SET]
                 print(f"  {len(target_records)} in target counties")
 
-                # Pre-filter: drop mortgage/deed-of-trust (bank) foreclosures and
-                # court *service* publications so we don't burn a Turnstile solve.
+                # Pre-filter: court *service* publications are dropped so we
+                # don't burn a Turnstile solve on them. Mortgage/deed-of-trust
+                # (bank) foreclosures are KEPT for the Mtg tab — only the
+                # authoritative detail-level check below decides tax vs mtg.
                 pre_filtered = []
-                mortgage_skipped = 0
+                mortgage_kept = 0
                 publication_skipped = 0
                 for r in target_records:
-                    if self._is_mortgage_foreclosure(r.get("full_text") or ""):
-                        mortgage_skipped += 1
-                    elif self._is_publication_notice(r.get("full_text") or ""):
+                    grid_text = r.get("full_text") or ""
+                    if self._is_publication_notice(grid_text):
                         publication_skipped += 1
+                        log_raw(
+                            self.SOURCE_NAME,
+                            listing_id=r.get("sp_case") or r.get("pk_id"),
+                            county=r.get("county"), state="TN",
+                            decision="dropped_publication",
+                            reason="court service publication (no parcel/auction)",
+                            raw_text=grid_text,
+                        )
                     else:
+                        if self._is_mortgage_foreclosure(grid_text):
+                            mortgage_kept += 1
                         pre_filtered.append(r)
                 target_records = pre_filtered
-                print(f"  {mortgage_skipped} dropped as mortgage/bank foreclosures; "
+                print(f"  {mortgage_kept} mortgage/bank foreclosures kept for Mtg tab; "
                       f"{publication_skipped} dropped as court publications; "
-                      f"{len(target_records)} tax-candidate notices remain")
+                      f"{len(target_records)} candidate notices remain")
 
                 print(f"  [4/4] Extracting details ({len(target_records)} cases) ...")
                 for i, rec in enumerate(target_records):
@@ -412,15 +426,39 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         if not raw_text:
             return []
 
-        # Authoritative tax-foreclosure check on the full notice text.
-        if not self._is_tax_foreclosure(raw_text):
-            logger.info("Dropping non-tax foreclosure %s (mortgage/bank)", pk_id)
+        # Authoritative classification on the full notice text: genuine
+        # county-trustee tax sales -> Tax tab; mortgage/deed-of-trust (bank)
+        # sales -> Mtg tab; anything else is dropped.
+        if self._is_tax_foreclosure(raw_text):
+            kind = "tax_foreclosure"
+        elif self._is_mortgage_foreclosure(raw_text):
+            kind = "mortgage_foreclosure"
+        else:
+            log_raw(
+                self.SOURCE_NAME,
+                listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="TN",
+                decision="dropped_non_foreclosure",
+                reason="neither tax-sale nor mortgage-foreclosure signal",
+                raw_text=raw_text,
+                url=f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}",
+            )
+            logger.info("Dropping non-foreclosure %s", pk_id)
             return []
 
         # Reject court *service* publications (non-resident / cannot-be-located
         # delinquent-taxpayer lists) even though they mention "delinquent tax" —
         # they name dozens of parties with no single parcel or auction.
         if self._is_publication_notice(raw_text):
+            log_raw(
+                self.SOURCE_NAME,
+                listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="TN",
+                decision="dropped_publication",
+                reason="court service publication (non-resident service list)",
+                raw_text=raw_text,
+                url=f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}",
+            )
             logger.info("Dropping court publication %s (non-resident service list)", pk_id)
             return []
 
@@ -428,13 +466,30 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         county = (record.get("county") or "").lower().strip()
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
 
-        parcels = _tn_parse_parcels(raw_text, county, auction_date, detail_url)
+        parcels = _tn_parse_parcels(raw_text, county, auction_date, detail_url, kind=kind)
         if parcels:
+            log_raw(
+                self.SOURCE_NAME,
+                listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="TN",
+                decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
+                reason=f"{len(parcels)} parcel(s) split from consolidated table",
+                raw_text=raw_text, url=detail_url,
+            )
             return parcels
 
         # Fallback: single consolidated record (no parseable parcel table).
+        # Mortgage trustee sales are single-property notices, so they land here.
         acres = self._extract_acreage(raw_text)
         if acres is not None and acres < config.MIN_ACRES:
+            log_raw(
+                self.SOURCE_NAME,
+                listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="TN",
+                decision="dropped_acres",
+                reason=f"acres {acres} below MIN_ACRES {config.MIN_ACRES}",
+                raw_text=raw_text, url=detail_url,
+            )
             return []
         address = extract_street_address(raw_text)
         prop: PropertyData = {
@@ -451,12 +506,20 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             "price": 1,
             "acres": acres,
             "description": raw_text[:2000],
-            "property_type": "tax_foreclosure",
+            "property_type": kind,
             "image_url": None,
             "auction_date": auction_date,
             "raw_source_text": raw_text,
             "raw_paragraph": raw_text,
         }
+        log_raw(
+            self.SOURCE_NAME,
+            listing_id=record.get("sp_case") or pk_id,
+            county=record.get("county"), state="TN",
+            decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
+            reason="single consolidated record (no parcel table)",
+            raw_text=raw_text, url=detail_url,
+        )
         if address:
             try:
                 from .gis_urls import get_tn_gis_url

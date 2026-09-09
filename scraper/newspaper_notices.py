@@ -27,6 +27,7 @@ from urllib.parse import urljoin
 
 from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
 from .config import config, NC_FORECLOSURE_COUNTIES
+from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,22 @@ _MORTGAGE_SALE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Strong, authoritative tax-sale signals. A notice that ALSO carries
+# mortgage/deed-of-trust language must have one of THESE to count as a
+# genuine tax foreclosure (e.g. a tax-lien sale conducted by a substitute
+# trustee under NCGS Chapter 105) -- a bare "unpaid taxes" surviving-lien
+# aside in a bank sale is not enough.
+_STRONG_TAX_RE = re.compile(
+    r"chapter\s+105|\bgs\s*105\b|ncgs\s+105|"
+    r"\btax\s+foreclosure\b|"
+    r"satisfy\s+unpaid\s+(?:property\s+)?taxes|"
+    r"foreclosure\s+(?:of|for)\s+(?:the\s+)?tax|"
+    r"in\s+rem\s+foreclosure|"
+    r"delinquent\s+property\s+taxes|"
+    r"delinquent\s+tax\s+sale",
+    re.IGNORECASE,
+)
+
 # Probate / creditor / administration notices ("having qualified as Executor",
 # NOTICE TO CREDITORS, NOTICE OF ADMINISTRATION). These are estate proceedings,
 # not property sales.
@@ -143,18 +160,20 @@ def _is_tax_foreclosure_notice(text: str) -> bool:
       - county/municipal public hearing & bid/procurement notices,
       - quiet-title / tax-redemption / excess-fund / service-by-publication
         procedural filings,
-      - mortgage / deed-of-trust (bank) sales (always rejected, even if they
-        mention taxes — deed-of-trust foreclosures are loan defaults, not
-        tax foreclosures).
+      - mortgage / deed-of-trust (bank) sales (rejected unless they carry
+        STRONG tax-sale language such as NCGS Chapter 105 — deed-of-trust
+        foreclosures are loan defaults, not tax foreclosures).
     """
     if not text:
         return False
     low = text.lower()
-    # Always reject deed-of-trust / mortgage foreclosures — these are loan
-    # defaults sold to satisfy a debt, not unpaid property taxes.  Even when
-    # the notice mentions "unpaid taxes" as a surviving lien, the core action
-    # is a bank foreclosure, not a county tax sale.
-    if _MORTGAGE_SALE_RE.search(low):
+    # Reject deed-of-trust / mortgage foreclosures — these are loan defaults
+    # sold to satisfy a debt, not unpaid property taxes.  But a notice with
+    # STRONG tax-sale language (NCGS Chapter 105, "tax foreclosure", "satisfy
+    # unpaid taxes") is a genuine tax sale even when a substitute trustee
+    # conducts it — only a bare "unpaid taxes" surviving-lien aside in a bank
+    # sale still rejects.
+    if _MORTGAGE_SALE_RE.search(low) and not _STRONG_TAX_RE.search(low):
         return False
     if _PROBATE_RE.search(low) and not _TAX_SALE_RE.search(low):
         return False
@@ -165,6 +184,32 @@ def _is_tax_foreclosure_notice(text: str) -> bool:
     if not _TAX_SALE_RE.search(low):
         return False
     return True
+
+
+def _is_mortgage_notice(text: str) -> bool:
+    """True for mortgage/deed-of-trust (bank) sales that are NOT tax sales.
+
+    Mortgage-only notices are kept for the Mtg tab. Notices with STRONG
+    tax-sale language are tax sales (see :func:`_is_tax_foreclosure_notice`)
+    even when a trustee is named, so they are not mortgage notices.
+    """
+    if not text:
+        return False
+    low = text.lower()
+    if _STRONG_TAX_RE.search(low):
+        return False
+    return (_MORTGAGE_SALE_RE.search(low) is not None
+            and _TAX_SALE_RE.search(low) is None)
+
+
+def _classify_newspaper_notice(text: str) -> Optional[str]:
+    """Classify a newspaper notice: ``public_notice`` (tax),
+    ``mortgage_foreclosure`` (bank sale for the Mtg tab), or None (drop)."""
+    if _is_tax_foreclosure_notice(text):
+        return "public_notice"
+    if _is_mortgage_notice(text):
+        return "mortgage_foreclosure"
+    return None
 
 
 def _slug_to_title(slug: str) -> str:
@@ -329,7 +374,14 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                     county = _extract_notice_county(text, slug)
                     if not county or county.lower() not in NC_FORECLOSURE_COUNTIES:
                         continue
-                    if not _is_tax_foreclosure_notice(f"{_slug_to_title(slug)} {text}"):
+                    kind = _classify_newspaper_notice(f"{_slug_to_title(slug)} {text}")
+                    if kind is None:
+                        log_raw("newspaper_notices", listing_id=nid,
+                                county=county, state="NC",
+                                decision="dropped_non_foreclosure",
+                                reason="no tax or mortgage-foreclosure signal",
+                                raw_text=text,
+                                url="https://www.citizen-times.com/public-notices/")
                         continue
                     case = scraper._extract_court_case(text)
                     pin = scraper._extract_pin(text)
@@ -363,10 +415,16 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                         "zip_code": None, "latitude": None, "longitude": None,
                         "price": None, "acres": None,
                         "description": f"[Citizen Times] {' -- '.join(parts)}",
-                        "property_type": "public_notice", "image_url": None,
+                        "property_type": kind, "image_url": None,
                         "parcel_number": pin,
                         "auction_date": auction, "close_date": None,
                     })
+                    log_raw("newspaper_notices", listing_id=nid,
+                            county=county, state="NC",
+                            decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
+                            reason=f"citizen-times api; pin={pin}",
+                            raw_text=text,
+                            url="https://www.citizen-times.com/public-notices/")
                 page += 1
                 time.sleep(0.5)
     except Exception as exc:
@@ -642,8 +700,14 @@ class NewspaperNoticesScraper(BaseScraper):
                 logger.warning("TT %s detail page failed or empty", c["href"][:40])
                 continue
             base_title = detail["title"] if detail["title"] and len(detail["title"]) > 5 else c["title"]
-            if not _is_tax_foreclosure_notice(f"{base_title} {detail.get('raw_text') or ''}"):
-                logger.info("TT %s skipped (not a tax-foreclosure notice)", c["href"][:40])
+            kind = _classify_newspaper_notice(f"{base_title} {detail.get('raw_text') or ''}")
+            if kind is None:
+                log_raw("newspaper_notices", listing_id=c["href"],
+                        county="Transylvania", state="NC",
+                        decision="dropped_non_foreclosure",
+                        reason="no tax or mortgage-foreclosure signal",
+                        raw_text=detail.get("raw_text") or "", url=d_url)
+                logger.info("TT %s skipped (not a tax/mortgage notice)", c["href"][:40])
                 continue
             ad_id = c["href"].split("/")[-1] if "/" in c["href"] else f"tt_skip"
             desc = f"[Transylvania Times] {base_title}"
@@ -663,10 +727,15 @@ class NewspaperNoticesScraper(BaseScraper):
                 "zip_code": None, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
-                "property_type": "public_notice", "image_url": None,
+                "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
                 "auction_date": c["posted"] or None, "close_date": None,
             })
+            log_raw("newspaper_notices", listing_id=f"tt_{ad_id}",
+                    county="Transylvania", state="NC",
+                    decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
+                    reason="transylvania-times detail", raw_text=detail.get("raw_text") or "",
+                    url=d_url)
         logger.info("Transylvania Times: %d relevant notices", len(properties))
         return properties
 
@@ -706,8 +775,14 @@ class NewspaperNoticesScraper(BaseScraper):
             base_title = _slug_to_title(c['slug'])
             if detail.get("title") and len(detail["title"]) > 5:
                 base_title = detail["title"]
-            if not _is_tax_foreclosure_notice(f"{base_title} {detail.get('raw_text') or ''}"):
-                logger.info("WD %s skipped (not a tax-foreclosure notice)", c['slug'])
+            kind = _classify_newspaper_notice(f"{base_title} {detail.get('raw_text') or ''}")
+            if kind is None:
+                log_raw("newspaper_notices", listing_id=f"wd_{c['uuid']}",
+                        county="Watauga", state="NC",
+                        decision="dropped_non_foreclosure",
+                        reason="no tax or mortgage-foreclosure signal",
+                        raw_text=detail.get("raw_text") or "", url=d_url)
+                logger.info("WD %s skipped (not a tax/mortgage notice)", c['slug'])
                 continue
             desc = f"[Watauga Democrat] {base_title}"
             if c["date"]:
@@ -726,10 +801,15 @@ class NewspaperNoticesScraper(BaseScraper):
                 "zip_code": None, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
-                "property_type": "public_notice", "image_url": None,
+                "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
                 "auction_date": c["date"], "close_date": None,
             })
+            log_raw("newspaper_notices", listing_id=f"wd_{c['uuid']}",
+                    county="Watauga", state="NC",
+                    decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
+                    reason="watauga-democrat detail", raw_text=detail.get("raw_text") or "",
+                    url=d_url)
         logger.info("Watauga Democrat: %d relevant notices", len(properties))
         return properties
 
@@ -770,9 +850,15 @@ class NewspaperNoticesScraper(BaseScraper):
             base_title = detail.get("title", "Legal Notice")
             if not base_title or len(base_title) < 4:
                 base_title = "Legal Notice"
-            # Restrict to UNPAID / DELINQUENT PROPERTY TAX notices only.
-            if not self._is_unpaid_tax_notice(f"{base_title} {raw_text}"):
-                logger.info("SH %s skipped (not an unpaid-tax notice)", c['uid'][:20])
+            # Tax notices to the Tax tab, mortgage sales to the Mtg tab.
+            kind = _classify_newspaper_notice(f"{base_title} {raw_text}")
+            if kind is None:
+                log_raw("newspaper_notices", listing_id=f"sh_{c['uid']}",
+                        county="Jackson", state="NC",
+                        decision="dropped_non_foreclosure",
+                        reason="no tax or mortgage-foreclosure signal",
+                        raw_text=raw_text, url=d_url)
+                logger.info("SH %s skipped (not a tax/mortgage notice)", c['uid'][:20])
                 skipped += 1
                 continue
             desc = f"[Sylva Herald] {base_title}"
@@ -792,11 +878,15 @@ class NewspaperNoticesScraper(BaseScraper):
                 "zip_code": None, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
-                "property_type": "public_notice", "image_url": None,
+                "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
                 "auction_date": c["date"], "close_date": None,
             })
-        logger.info("Sylva Herald: %d unpaid-tax notices (skipped %d non-tax)", len(properties), skipped)
+            log_raw("newspaper_notices", listing_id=f"sh_{c['uid']}",
+                    county="Jackson", state="NC",
+                    decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
+                    reason="sylva-herald detail", raw_text=raw_text, url=d_url)
+        logger.info("Sylva Herald: %d relevant notices (skipped %d non-tax/mortgage)", len(properties), skipped)
         return properties
 
     def _scrape_mitchellnews(self) -> list[PropertyData]:
@@ -835,7 +925,13 @@ class NewspaperNoticesScraper(BaseScraper):
             time.sleep(0.5)
             detail = self._visit_detail(url)  # Mitchell has no per-notice URLs
             base_title = detail.get("title", "Legal Notice") or "Legal Notice"
-            if not _is_tax_foreclosure_notice(f"{base_title} {detail.get('raw_text') or ''}"):
+            kind = _classify_newspaper_notice(f"{base_title} {detail.get('raw_text') or ''}")
+            if kind is None:
+                log_raw("newspaper_notices", listing_id=f"mn_{c['uid']}",
+                        county="Mitchell", state="NC",
+                        decision="dropped_non_foreclosure",
+                        reason="no tax or mortgage-foreclosure signal",
+                        raw_text=detail.get("raw_text") or "", url=url)
                 skipped += 1
                 continue
             desc = f"[Mitchell News] {base_title}"
@@ -855,11 +951,16 @@ class NewspaperNoticesScraper(BaseScraper):
                 "zip_code": None, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
-                "property_type": "public_notice", "image_url": None,
+                "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
                 "auction_date": c["date"], "close_date": None,
             })
-        logger.info("Mitchell News: %d tax-foreclosure notices (skipped %d non-tax)", len(properties), skipped)
+            log_raw("newspaper_notices", listing_id=f"mn_{c['uid']}",
+                    county="Mitchell", state="NC",
+                    decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
+                    reason="mitchell-news detail", raw_text=detail.get("raw_text") or "",
+                    url=url)
+        logger.info("Mitchell News: %d relevant notices (skipped %d non-tax/mortgage)", len(properties), skipped)
         return properties
 
     def _scrape_citizen_times(self, lookback_days: Optional[int] = None) -> list[PropertyData]:

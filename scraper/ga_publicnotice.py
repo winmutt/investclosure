@@ -3,10 +3,10 @@
 georgiapublicnotice.com is the same "Public Notice" ASP.NET WebForms platform
 (shared base in :mod:`scraper.publicnotice_base`) as tnpublicnotice.com /
 ncnotices.com. Restricted to the N GA mountain counties: fannin, gilmer,
-lumpkin, rabun, towns, union, white. The search is scoped to the "Tax Sales"
-popular category so only tax foreclosures are returned -- mortgage/bank
-foreclosures, quiet-title / tax-redemption title actions, and post-tax-sale
-proceedings (excess-fund interpleaders, equity of redemption) are filtered out.
+lumpkin, rabun, towns, union, white. Tax-sale foreclosures go to the Tax tab
+and mortgage/deed-of-trust foreclosures to the Mtg tab; quiet-title /
+tax-redemption title actions and post-tax-sale proceedings (excess-fund
+interpleaders, equity of redemption) are filtered out.
 """
 from __future__ import annotations
 import logging
@@ -32,6 +32,7 @@ from .publicnotice_base import (
     _is_recent_publication,
     extract_street_address,
 )
+from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
 
@@ -288,13 +289,15 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
 
     @staticmethod
     def _parse_parcels(text: str, county: str, auction_date: Optional[str],
-                       detail_url: Optional[str]) -> List[PropertyData]:
-        """Split a bundled GA tax-sale notice into one record per parcel.
+                       detail_url: Optional[str],
+                       kind: str = "tax_foreclosure") -> List[PropertyData]:
+        """Split a bundled GA foreclosure notice into one record per parcel.
 
         Each block is its own listing, keyed on ``<county>:<parcel_number>`` so
         the same parcel across duplicate postings collapses but distinct
         parcels do not. The county is the one the notice body itself names
         (falling back to the grid-derived county) -- never the search box.
+        ``kind`` tags the rows (``tax_foreclosure`` or ``mortgage_foreclosure``).
         """
         fallback_county = (county or "").lower().strip()
         matches = list(_PARCEL_SPLIT_RE.finditer(text))
@@ -329,7 +332,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 "price": 1,
                 "acres": acres,
                 "description": desc,
-                "property_type": "tax_foreclosure",
+                "property_type": kind,
                 "image_url": None,
                 "court_case": None,
                 "auction_date": auction_date,
@@ -518,23 +521,59 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         if not raw_text:
             return []
 
-        # Authoritative classification on the full notice text.
+        # Authoritative classification on the full notice text: tax sales go
+        # to the Tax tab, mortgage/deed-of-trust sales to the Mtg tab.
         if self._is_quiet_title(raw_text):
+            log_raw(
+                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="GA",
+                decision="dropped_quiet_title",
+                reason="quiet-title / tax-redemption title action",
+                raw_text=raw_text,
+                url=f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}",
+            )
             logger.info("Dropping quiet-title/tax-redemption %s", pk_id)
             return []
         if self._is_post_sale(raw_text):
+            log_raw(
+                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="GA",
+                decision="dropped_post_sale",
+                reason="post-sale proceeding (excess funds / redemption)",
+                raw_text=raw_text,
+                url=f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}",
+            )
             logger.info("Dropping post-sale proceeding %s", pk_id)
             return []
-        if not (self._is_tax_foreclosure(raw_text) or self._is_mortgage_foreclosure(raw_text)):
+        is_tax = self._is_tax_foreclosure(raw_text)
+        is_mtg = self._is_mortgage_foreclosure(raw_text)
+        if not (is_tax or is_mtg):
+            log_raw(
+                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="GA",
+                decision="dropped_non_foreclosure",
+                reason="neither tax-sale nor mortgage-foreclosure signal",
+                raw_text=raw_text,
+                url=f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}",
+            )
             logger.info("Dropping non-foreclosure %s", pk_id)
             return []
+        kind = "tax_foreclosure" if is_tax else "mortgage_foreclosure"
 
         auction_date = self._extract_sale_date(raw_text)
         county = (record.get("county") or "").lower().strip()
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
-        parcels = self._parse_parcels(raw_text, county, auction_date, detail_url)
+        parcels = self._parse_parcels(raw_text, county, auction_date, detail_url, kind=kind)
         if not parcels:
             logger.warning("No parcels parsed for %s (county=%s)", pk_id, county)
+        else:
+            log_raw(
+                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="GA",
+                decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
+                reason=f"{len(parcels)} parcel(s) split from bundled notice",
+                raw_text=raw_text, url=detail_url,
+            )
         return parcels
 
 

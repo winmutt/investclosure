@@ -2204,15 +2204,20 @@ class TestTNPublicNoticeParcelSplit:
         assert len(props) == 2
         assert props[0]["property_type"] == "tax_foreclosure"
 
-    def test_extract_detail_drops_non_tax(self):
+    def test_extract_detail_keeps_mortgage_for_mtg_tab(self):
+        # Mortgage/deed-of-trust sales are no longer filtered out — they are
+        # kept for the Mtg tab with an explicit mortgage_foreclosure type.
         s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
         s._extract_notice_text = lambda page, sid, rec: (
             "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ..."
         )
         s._is_tax_foreclosure = lambda t: False
         s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
         rec = {"pk_id": "1", "sp_case": None, "county": "Sullivan"}
-        assert s._extract_detail(None, "SID", rec) == []
+        props = s._extract_detail(None, "SID", rec)
+        assert len(props) == 1
+        assert props[0]["property_type"] == "mortgage_foreclosure"
 
 
 class TestTNPublicNoticeParcelSplit:
@@ -2270,12 +2275,17 @@ class TestTNPublicNoticeParcelSplit:
         assert len(props) == 2
         assert props[0]["property_type"] == "tax_foreclosure"
 
-    def test_extract_detail_drops_non_tax(self):
+    def test_extract_detail_keeps_mortgage_for_mtg_tab(self):
+        # Mortgage/deed-of-trust sales are no longer filtered out — they are
+        # kept for the Mtg tab with an explicit mortgage_foreclosure type.
         s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
         s._extract_notice_text = lambda page, sid, rec: (
             "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ..."
         )
         s._is_tax_foreclosure = lambda t: False
         s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
         rec = {"pk_id": "1", "sp_case": None, "county": "Sullivan"}
-        assert s._extract_detail(None, "SID", rec) == []
+        props = s._extract_detail(None, "SID", rec)
+        assert len(props) == 1
+        assert props[0]["property_type"] == "mortgage_foreclosure"
