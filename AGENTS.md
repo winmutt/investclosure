@@ -123,6 +123,12 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 
 ## GIS Integration
 
+Link-depth policy: every GIS button must take you to the property (parcel-deep
+or coordinate-centered). Rows with no parcel/coords get **no** GIS button
+(Google Maps still covers address rows); states with no parcel service
+(SC/AL) never get viewer links. `scraper/backfill_links.py` rebuilds all
+links; `scraper/tn_gis_enrich.py` fills TN TPAD links + acres/owner.
+
 - **NC OneMap statewide service**: `https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1` — single query for all 100 NC counties
 - Primary acreage field: `gisacres` (Double type)
 - Key fields: `parno` (parcel number), `ownname` (owner), `siteaddr` (address), `usecd` (land use code)

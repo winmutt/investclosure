@@ -264,6 +264,17 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
     except Exception as e:
         logger.warning("Auto-enrich failed: %s", e)
 
+    # Auto-enrich TN rows lacking a TPAD link via TNMap assessment search
+    # (address-geocoded; road-only rows can't match and are skipped).
+    try:
+        from scraper.tn_gis_enrich import enrich_db as enrich_tnmap
+        tn_result = enrich_tnmap()
+        if tn_result.get("enriched"):
+            print(f"  TN TNMap: {tn_result['enriched']} enriched, "
+                  f"{tn_result.get('unmatched', 0)} unmatched")
+    except Exception as e:
+        logger.warning("TN enrich failed: %s", e)
+
     # Auto-enrich GA rows lacking acreage from county qPublic reports
     # (camoufox page loads; plain HTTP is Cloudflare-403).
     if scraper_name == "ga_publicnotice":

@@ -563,23 +563,17 @@ def build_gis_url(lng: Optional[float] = None, lat: Optional[float] = None,
         return get_tn_gis_url(county, parcel, lng, lat)
 
     # North Carolina uses the NC OneMap statewide parcel layer through our
-    # same-origin viewer/proxy. Center on parcel coordinates when available.
-    if s == "NC":
-        return get_nconemap_viewer_url(lng, lat, parcel, county)
+    # same-origin viewer/proxy. Only parcel- or coordinate-backed links
+    # "take you to the property" — anything less returns None so callers
+    # render no GIS button instead of a generic map. (Google Maps links
+    # cover address-only rows.)
+    if s in ("NC", ""):
+        if parcel or (lng is not None and lat is not None):
+            return get_nconemap_viewer_url(lng, lat, parcel, county)
+        return None
 
-    # Fallback for other/unspecified states: treat as NC OneMap with
-    # state-aware query so we don't hardcode "NC".
-    if lng is not None and lat is not None:
-        return f"{NC_ONEMAP_VIEWER_URL}&center={lng:.6f},{lat:.6f}&level=16"
-    if address:
-        st = s or "NC"
-        q = " ".join(p for p in [address, county, st] if p and p.strip())
-        return f"{NC_ONEMAP_VIEWER_URL}&find={quote(q)}"
-    if parcel:
-        return NC_ONEMAP_VIEWER_URL
-    if county:
-        st = s or "NC"
-        return f"{NC_ONEMAP_VIEWER_URL}&find={quote(f'{county.strip()} {st}')}"
+    # Any other state (SC/AL/...): no parcel service here — return None
+    # rather than a wrong-state viewer link.
     return None
 
 

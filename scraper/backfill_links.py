@@ -16,6 +16,7 @@ import logging
 import random
 import sqlite3
 import time
+from typing import Optional
 from urllib.parse import quote
 
 from .config import config
@@ -31,9 +32,20 @@ from .nc_gis_lookup import (
 logger = logging.getLogger(__name__)
 
 
+PLACEHOLDER_PARCELS = {"", "multiple", "n/a", "na", "tbd", "unknown", "none"}
+
+def _clean_parcel_ref(parcel: object) -> Optional[str]:
+    """Parcel usable for deep links, or None for blanks/placeholders."""
+    text = str(parcel or "").strip()
+    if not text or text.lower() in PLACEHOLDER_PARCELS:
+        return None
+    return text
+
+
 def _rebuild(lat, lng, parcel_ref, address_raw, city_raw, county_raw, state_raw=None):
-    gis_url = build_gis_url(lng, lat, parcel_ref, address=address_raw,
-                           county=county_raw, state=state_raw)
+    gis_url = build_gis_url(lng, lat, _clean_parcel_ref(parcel_ref),
+                            address=address_raw,
+                            county=county_raw, state=state_raw)
     maps_url = build_google_maps_url(lng, lat, address_raw, city_raw, county_raw, state=state_raw)
     topo_url = build_google_maps_topo_url(lng, lat, address_raw, city_raw, county_raw, state=state_raw)
     return gis_url, maps_url, topo_url
@@ -70,11 +82,11 @@ def backfill_links(source: str = "all") -> dict:
         lng = lng0
         parcel_ref = parcel_raw or None
 
-        # Only run NC OneMap live lookups for NC (and unknown) states.
-        # TN uses TNMap and GA uses qPublic; querying NC OneMap for those
-        # is wasteful and produces wrong links.
-        is_non_nc = (state or "").strip().upper() in ("TN", "GA")
-        if not (lat and lng) and status == "active" and not is_non_nc:
+        # Only run NC OneMap live lookups for NC rows. TN uses TNMap,
+        # GA uses qPublic, and SC/AL have no parcel service — querying NC
+        # OneMap for those is wasteful and produces wrong links.
+        is_nc = (state or "").strip().upper() in ("NC", "")
+        if not (lat and lng) and status == "active" and is_nc:
             # Active rows get a live lookup when coordinates are missing.
             if parcel_raw:
                 pd = _lookup_parcel(parcel_raw, county_raw)

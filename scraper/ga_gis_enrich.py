@@ -61,7 +61,7 @@ def enrich_db(limit: int = 100) -> Dict[str, int]:
     conn = D._ensure_db(config.db_path)
     rows = conn.execute(
         "SELECT id, county, parcel_number FROM properties "
-        "WHERE source='ga_publicnotice' AND acres IS NULL "
+        "WHERE state='GA' AND acres IS NULL "
         "AND parcel_number IS NOT NULL AND TRIM(parcel_number) != '' "
         "LIMIT ?",
         (limit,),

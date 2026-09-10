@@ -165,6 +165,46 @@ class TestNewspaperMortgageClassification:
         assert _classify_newspaper_notice(text) is None
 
 
+class TestGisLinkRouting:
+    def test_sc_al_have_no_parcel_service(self):
+        from scraper.nc_gis_lookup import build_gis_url
+        assert build_gis_url(None, None, "123", "1 Main St", "Greenville",
+                             state="SC") is None
+        assert build_gis_url(None, None, "123", "1 Main St", "Blount",
+                             state="AL") is None
+
+    def test_nc_parcel_and_coords_link_deep(self):
+        from scraper.nc_gis_lookup import build_gis_url
+        assert "7652223815" in (build_gis_url(
+            None, None, "7652223815", None, "Graham", state="NC") or "")
+        assert "center=" in (build_gis_url(
+            -83.1, 35.6, None, None, "Jackson", state="NC") or "")
+
+    def test_nc_bare_rows_get_no_link(self):
+        from scraper.nc_gis_lookup import build_gis_url
+        assert build_gis_url(None, None, None, None, "Jackson",
+                             state="NC") is None
+
+    def test_ga_tn_routing_intact(self):
+        from scraper.nc_gis_lookup import build_gis_url
+        assert "schneidercorp" in (build_gis_url(
+            None, None, "047B048", None, "Rabun", state="GA") or "")
+        assert "tnmap" in (build_gis_url(
+            None, None, None, None, "Hamblen", state="TN") or "")
+
+    def test_clean_parcel_ref(self):
+        from scraper.backfill_links import _clean_parcel_ref
+        assert _clean_parcel_ref("028 030") == "028 030"
+        for junk in ("", "  ", "Multiple", "MULTIPLE", "n/a", "TBD"):
+            assert _clean_parcel_ref(junk) is None
+
+    def test_tn_house_number_gate(self):
+        from scraper.tn_gis_enrich import _has_house_number
+        assert _has_house_number("2912 N Chamberlain Ave") is True
+        assert _has_house_number("Ridgepole Drive") is False
+        assert _has_house_number(None) is False
+
+
 class TestRawlog:
     def test_log_raw_writes_valid_jsonl(self, tmp_path):
         log_raw(
