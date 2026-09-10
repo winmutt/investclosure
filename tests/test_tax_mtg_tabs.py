@@ -95,6 +95,19 @@ class TestMortgageKindTagging:
         assert len(parcels) == 2
         assert all(p["property_type"] == "mortgage_foreclosure" for p in parcels)
 
+    def test_ga_parse_acres_rabun_subdivision_lot_is_none(self):
+        # Rabun Sky Valley lots are described by lot/plat refs with no acreage
+        # in the notice text, and qPublic itself reports Acres 0 for them —
+        # the parser must return None (unknown), not misparse plat numbers.
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        block = ("Map & Parcel: 047B048 Defendant in Fi-Fa: Alvarez, Youmia Sergina "
+                 "Legal Description: All that tract of land being in the State of "
+                 "Georgia, County of Rabun, Being Lot 288, Part 10, of Ridge Pole "
+                 "Area Of Sky Valley Subdivision. As shown in Plat Book 16, "
+                 "Page 169. Being known as Tax Map & Parcel 047B048, Rabun "
+                 "County, Georgia.")
+        assert GAPublicNoticeScraper._parse_acres(block) is None
+
     def test_ga_parse_parcels_mortgage_kind(self):
         from scraper.ga_publicnotice import GAPublicNoticeScraper
         scraper = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)

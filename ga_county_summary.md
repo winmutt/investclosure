@@ -81,7 +81,15 @@
   camoufox: qPublic's own parcel search for 047B048 resolves to
   `PageTypeID=4&PageID=4744&Q=<token>&KeyValue=047B++048`, and the
   no-`Q` double-space link loads the full parcel report (owner, legal,
-  acres). A single-space key (`047B+048`) renders only the report frame
+  acres) via camoufox (plain HTTP gets 403 — reports are browser-only).
+  **Acreage caveat (2026-09-10):** the assessor reports **Acres 0** for Sky
+  Valley subdivision lots (verified via camoufox for all 4 active Rabun
+  parcels: 047B048, 058A265, 058A375, 058A487 — the only acreage string on
+  each report). The tax-sale notice text carries no acreage either (lots
+  described by lot/plat/deed-book refs only), so these rows keep
+  `acres=NULL` (correctly bypassing the <2.0ac archive filter and showing
+  "N/A ac"). This is a source-data gap, not a parser or lookup bug.
+  A single-space key (`047B+048`) renders only the report frame
   with "No results match your search criteria" — the earlier title-only
   check (`Report: MC06 037`) was insufficient, and the two-`+` hrefs
   qPublic's grid emits are NOT a display artifact. Three-segment parcels
