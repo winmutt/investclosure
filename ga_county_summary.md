@@ -76,13 +76,16 @@
 - **qPublic AppID:** 674
 - **LayerID:** 11359
 - **Parcel/Report page:** PageTypeID=4, PageID=4744
-- **KeyValue format:** map + **single internal space** + parcel
-  (e.g. `"MC06 037"` → `KeyValue=MC06+037`; three-segment parcel
-  `"014C 701 101"` → `KeyValue=014C+701+101`). Verified 2026-08-29 by
-  navigating qPublic's own search results and resolving each key directly.
-- **To do:** confirm whether the two-`+`/three-`+` hrefs qPublic's own grid
-  emits (e.g. `MC06++037`) are a display artifact — a single-space key resolves
-  the parcel report (title `Report: MC06 037`).
+- **KeyValue format:** map + **TWO internal spaces** + parcel
+  (e.g. `"047B  048"` → `KeyValue=047B++048`). Verified 2026-09-10 via
+  camoufox: qPublic's own parcel search for 047B048 resolves to
+  `PageTypeID=4&PageID=4744&Q=<token>&KeyValue=047B++048`, and the
+  no-`Q` double-space link loads the full parcel report (owner, legal,
+  acres). A single-space key (`047B+048`) renders only the report frame
+  with "No results match your search criteria" — the earlier title-only
+  check (`Report: MC06 037`) was insufficient, and the two-`+` hrefs
+  qPublic's grid emits are NOT a display artifact. Three-segment parcels
+  (e.g. `"014C 701 101"`) take double spaces between each segment.
 - **Legal notices (newspaper source):** The Clayton Tribune
   (`https://www.theclaytontribune.com/classified/legals`) is the Rabun legal
   paper. Drupal `node--type-classified-ad` taxonomy view, 10 per page, full
@@ -146,6 +149,11 @@
   `scraper/backfill_ga_gis.py`.
 - Gilmer and Towns app IDs carried over from earlier discovery; direct-link
   format confirmed by `get_ga_gis_url` output.
+- **2026-09-10** — Rabun KeyValue corrected to **double internal space**
+  (`space_count=2` in `gis_urls.py`): single-space links render an empty
+  report; double-space no-`Q` links load full parcel data (verified via
+  camoufox for all 4 active Rabun parcels). All GA records re-backed via
+  `python3 -m scraper.backfill_ga_gis`.
 - **2026-08-29** — Rabun qPublic deep link verified: `AppID=674&LayerID=11359&
   PageTypeID=4&PageID=4744` with a single-space `KeyValue` (parcel number as
   mapped on the tax notice). Added to `GA_QPUBLIC_APPS` in `gis_urls.py`.

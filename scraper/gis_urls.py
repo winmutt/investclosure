@@ -119,8 +119,12 @@ GA_QPUBLIC_APPS = {
         {"page_type_id": 1, "page_id": 8773, "space": True,
          "space_at": 3, "space_count": 1}]},
     "rabun":  {"app_id": 674, "layer_id": 11359, "pages": [
+        # Verified 2026-09-10 via camoufox: qPublic's own parcel search for
+        # 047B048 resolves to KeyValue=047B++048 (TWO internal spaces). A
+        # single-space key renders the report frame with "No results match
+        # your search criteria" and no parcel data.
         {"page_type_id": 4, "page_id": 4744, "space": True,
-         "space_count": 1}]},
+         "space_count": 2}]},
 }
 
 

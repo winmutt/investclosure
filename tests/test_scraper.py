@@ -72,7 +72,7 @@ from scraper.nc_gis_lookup import (
     NC1MapService,
     NC_COUNTY_FIPS,
 )
-from scraper.gis_urls import get_gis_viewer_url, GIS_VIEWER_URLS
+from scraper.gis_urls import get_ga_gis_url, get_gis_viewer_url, GIS_VIEWER_URLS
 from scraper import db as scraper_db
 from scraper.config import Config
 
@@ -1373,6 +1373,28 @@ class TestGISViewerURLSRegistry:
             "watauga", "yancey",
         }
         assert expected.issubset(set(GIS_VIEWER_URLS))
+
+
+class TestGAGISViewerURLs:
+    """Test get_ga_gis_url qPublic deep links.
+
+    Rabun requires TWO internal spaces in KeyValue (verified 2026-09-10 via
+    camoufox against qPublic's own parcel search): a single-space key renders
+    an empty report ("No results match your search criteria").
+    """
+
+    def test_rabun_double_space_keyvalue(self):
+        url = get_ga_gis_url("Rabun", "047B048")
+        assert "AppID=674" in url
+        assert "KeyValue=047B++048" in url
+
+    def test_rabun_prespaced_parcel_gets_double_spaces(self):
+        url = get_ga_gis_url("Rabun", "014C 701 101")
+        assert "KeyValue=014C++701++101" in url
+
+    def test_lumpkin_quad_space_unchanged(self):
+        url = get_ga_gis_url("Lumpkin", "028 030")
+        assert "KeyValue=028++++030" in url
 
 
 class TestCountyParcelResolver:
