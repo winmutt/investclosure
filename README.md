@@ -126,6 +126,11 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `kania_law` | kaniabailbond.com | 21 NC mountain | None | NC OneMap POST API |
 | `newspaper_notices` | NC newspapers | Mountain NC | None | NC OneMap POST API |
 | `zls_nc` | zls-nc.com/listings | 21 NC mountain | None | NC OneMap POST API |
+| `rlselaw` | rlselaw.com GA listings | 7 GA mountain | None | qPublic links |
+| `brockandscott` | brockandscott.com search | NC/GA/TN mountain | None | state map links |
+| `foreclosuretennessee` | foreclosuretennessee.com grid | 37 TN mountain | None | TNMap links |
+| `bellcarrington` | bellcarrington.com (Google Sheet) | GA/NC/SC/AL/TN mountain | None | state map links |
+| `logs_nc` | logs.com NC report (PowerBI) | 21 NC mountain | None | NC OneMap links |
 
 ### Selection Criteria
 

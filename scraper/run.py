@@ -94,6 +94,36 @@ try:
 except ImportError as e:
     logger.warning("ga_publicnotice not available: %s", e)
 
+try:
+    from scraper.rlselaw import RLSelawScraper
+    SCRAPER_MODULES["rlselaw"] = RLSelawScraper
+except ImportError as e:
+    logger.warning("rlselaw not available: %s", e)
+
+try:
+    from scraper.brockandscott import BrockScottScraper
+    SCRAPER_MODULES["brockandscott"] = BrockScottScraper
+except ImportError as e:
+    logger.warning("brockandscott not available: %s", e)
+
+try:
+    from scraper.foreclosuretennessee import ForeclosureTennesseeScraper
+    SCRAPER_MODULES["foreclosuretennessee"] = ForeclosureTennesseeScraper
+except ImportError as e:
+    logger.warning("foreclosuretennessee not available: %s", e)
+
+try:
+    from scraper.bellcarrington import BellCarringtonScraper
+    SCRAPER_MODULES["bellcarrington"] = BellCarringtonScraper
+except ImportError as e:
+    logger.warning("bellcarrington not available: %s", e)
+
+try:
+    from scraper.logs_nc import LogsNCScraper
+    SCRAPER_MODULES["logs_nc"] = LogsNCScraper
+except ImportError as e:
+    logger.warning("logs_nc not available: %s", e)
+
 
 # ---------------------------------------------------------------------------
 # Core run logic

@@ -54,6 +54,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | File | Purpose |
 |---|---|
 | `scraper/base.py` | BaseScraper — in-browser Turnstile solving (no 2captcha), acreage parsing, chromium detection |
+| `scraper/trustee_base.py` | TrusteeSaleScraper — shared mortgage-sale parsing/links for the 5 trustee-sale scrapers |
 | `scraper/kania_law.py` | Kania Law scraper — NC tax foreclosure auctions, NC OneMap enrichment |
 | `scraper/buncombe_tax.py` | Buncombe County tax foreclosure scraper — Trumba iCal feed (`tax-foreclosures-all.ics`), NC OneMap enrichment |
 
@@ -83,7 +84,18 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `zls_nc` | zls-nc.com/listings | NC mountain only | None | NC OneMap statewide |
 | `nc_publicnotice` | ncnotices.com | NC (PDF notices) | Turnstile | NC OneMap statewide |
 | `tn_publicnotice` | tnpublicnotice.com | TN (PDF notices) | Turnstile | TNMap enrichment |
-| `ga_publicnotice` | georgiapublicnotice.com | GA (7 N mountain counties) | Turnstile | None |
+| `ga_publicnotice` | georgiapublicnotice.com | GA (7 N mountain counties) | Turnstile | qPublic acreage (`ga_gis_enrich.py`) |
+| `rlselaw` | rlselaw.com GA listings (static table) | 7 GA mountain | None | qPublic links |
+| `brockandscott` | brockandscott.com search (URL params + pager) | NC/GA/TN mountain | None | state map links |
+| `foreclosuretennessee` | foreclosuretennessee.com grid + details | 37 TN mountain | None | TNMap links |
+| `bellcarrington` | bellcarrington.com (Google Sheet CSV) | GA/NC/SC/AL/TN mountain | None | state map links |
+| `logs_nc` | logs.com NC report (PowerBI table visual) | 21 NC mountain | None | NC OneMap links |
+
+The five trustee-sale scrapers (`rlselaw`, `brockandscott`,
+`foreclosuretennessee`, `bellcarrington`, `logs_nc`) share
+`scraper/trustee_base.py` (HTML cleaning, price/date/address parsing,
+county filtering, `mortgage_foreclosure` record builder with map/GIS
+links). All rows are mortgage/deed-of-trust sales for the Mtg tab.
 
 All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Notice" backend (see `scraper/publicnotice_base.py`). They download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (nc_publicnotice) or when PDF exists (tn_publicnotice), it is used as the canonical source; otherwise the on-page notice text falls back. `ga_publicnotice` scrapes Georgia Press Association tax-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF).
 
