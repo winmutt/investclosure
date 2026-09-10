@@ -263,6 +263,10 @@ def camoufox_context(headless: str = "virtual", humanize: bool = False, **camouf
             ...
     """
     from camoufox.sync_api import Camoufox
+    if camoufox_kwargs.get("proxy"):
+        # Spoof timezone/locale/geolocation to the proxy exit so the
+        # fingerprint doesn't contradict the egress IP (camoufox LeakWarning).
+        camoufox_kwargs.setdefault("geoip", True)
     with Camoufox(headless=headless, humanize=humanize, **camoufox_kwargs) as browser:
         page = browser.new_page()
         try:
