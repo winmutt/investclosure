@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS property_links (
 );
 CREATE INDEX IF NOT EXISTS idx_property_links_from ON property_links(from_id);
 CREATE INDEX IF NOT EXISTS idx_property_links_to ON property_links(to_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    actor        TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    property_id  INTEGER NOT NULL,
+    reason       TEXT,
+    prev_status  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_property ON audit_log(property_id);
 """
 
 
@@ -828,6 +839,34 @@ def get_property_links(
     return out
 
 
+def log_audit(
+    conn: sqlite3.Connection,
+    *,
+    actor: str,
+    action: str,
+    property_id: int,
+    reason: Optional[str] = None,
+    prev_status: Optional[str] = None,
+) -> None:
+    """Append one immutable audit event. The caller owns the commit."""
+    conn.execute(
+        "INSERT INTO audit_log (actor, action, property_id, reason, prev_status)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (actor, action, property_id, reason, prev_status),
+    )
+
+
+def get_audit_log(
+    conn: sqlite3.Connection, property_id: int, limit: int = 50
+) -> List[Dict[str, Any]]:
+    """Newest-first audit events for one property (for the detail page)."""
+    rows = conn.execute(
+        "SELECT * FROM audit_log WHERE property_id = ? ORDER BY id DESC LIMIT ?",
+        (property_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def archive_below_acres(
     conn: sqlite3.Connection,
     min_acres: float,
@@ -841,32 +880,46 @@ def archive_below_acres(
         include_sources: List of sources to archive (new, takes precedence)
     """
     source_filter = ""
-    params: list[Any] = ["archived"]
-    params.append(date.today().isoformat())  
-    params.append(min_acres)
-    
+    source_params: list[Any] = []
+
     if include_sources:
         placeholders = ",".join(["?"] * len(include_sources))
         source_filter = f" AND source IN ({placeholders})"
-        params.extend(include_sources)
+        source_params.extend(include_sources)
     elif source:
         source_filter = f" AND source = ?"
-        params.append(source)
+        source_params.append(source)
+
+    where = f"status = 'active' AND acres > 0 AND acres < ?{source_filter}"
+    ids = [
+        r[0]
+        for r in conn.execute(
+            f"SELECT id FROM properties WHERE {where}", [min_acres] + source_params
+        ).fetchall()
+    ]
 
     # Audit tracking: mark as system-archived
     from datetime import datetime
     archived_at = datetime.now().isoformat()
-    
-    conn.execute(
+
+    cur = conn.execute(
         f"""\
         UPDATE properties
         SET status = ?, last_seen = ?, archived_by = 'system', archived_at = ?, archive_reason = 'below_min_acres'
-        WHERE status = 'active' AND acres > 0 AND acres < ?{source_filter}\
+        WHERE {where}\
         """,
-        params + [archived_at],
+        ["archived", date.today().isoformat(), archived_at, min_acres] + source_params,
     )
+    # Capture the UPDATE count first: SELECT changes() afterwards would see
+    # the audit INSERTs below instead.
+    archived = cur.rowcount
+    for pid in ids:
+        log_audit(
+            conn, actor="system", action="archive", property_id=pid,
+            reason="below_min_acres", prev_status="active",
+        )
     conn.commit()
-    return conn.execute("SELECT changes()").fetchone()[0]
+    return archived
 
 
 def archive_property(
@@ -903,14 +956,18 @@ def archive_property(
     archived_at = datetime.now().isoformat()
     
     conn.execute(
-        """UPDATE properties 
-           SET status = 'archived', 
-               archived_by = ?, 
-               archived_at = ?, 
+        """UPDATE properties
+           SET status = 'archived',
+               archived_by = ?,
+               archived_at = ?,
                archive_reason = ?,
                last_seen = ?
            WHERE id = ?""",
         (archived_by, archived_at, reason, date.today().isoformat(), property_id),
+    )
+    log_audit(
+        conn, actor=archived_by, action="archive", property_id=property_id,
+        reason=reason, prev_status="active",
     )
     conn.commit()
     logger.info("Archived property %d by %s: %s", property_id, archived_by, reason)
@@ -951,14 +1008,18 @@ def unarchive_property(
     archived_at = datetime.now().isoformat()
     
     conn.execute(
-        """UPDATE properties 
-           SET status = 'active', 
-               archived_by = NULL, 
-               archived_at = NULL, 
+        """UPDATE properties
+           SET status = 'active',
+               archived_by = NULL,
+               archived_at = NULL,
                archive_reason = ?,
                last_seen = ?
            WHERE id = ?""",
         (f"Restored by {restored_by}: {reason}", date.today().isoformat(), property_id),
+    )
+    log_audit(
+        conn, actor=restored_by, action="unarchive", property_id=property_id,
+        reason=reason, prev_status="archived",
     )
     conn.commit()
     logger.info("Unarchived property %d by %s: %s", property_id, restored_by, reason)

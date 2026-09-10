@@ -183,9 +183,11 @@ def properties():
         params = []
 
     if query:
-        sql += " AND (address LIKE ? OR city LIKE ? OR county LIKE ? OR description LIKE ? OR notes LIKE ?)"
+        sql += (" AND (address LIKE ? OR city LIKE ? OR county LIKE ?"
+                " OR description LIKE ? OR notes LIKE ?"
+                " OR parcel_number LIKE ? OR court_case LIKE ? OR source_listing_id LIKE ?)")
         pattern = f"%{query}%"
-        params.extend([pattern, pattern, pattern, pattern, pattern])
+        params.extend([pattern] * 8)
 
     if county:
         sql += " AND county LIKE ?"
@@ -209,9 +211,11 @@ def properties():
         count_params = []
 
     if query:
-        count_sql += " AND (address LIKE ? OR city LIKE ? OR county LIKE ? OR description LIKE ? OR notes LIKE ?)"
+        count_sql += (" AND (address LIKE ? OR city LIKE ? OR county LIKE ?"
+                      " OR description LIKE ? OR notes LIKE ?"
+                      " OR parcel_number LIKE ? OR court_case LIKE ? OR source_listing_id LIKE ?)")
         pattern = f"%{query}%"
-        count_params.extend([pattern, pattern, pattern, pattern, pattern])
+        count_params.extend([pattern] * 8)
     if county:
         count_sql += " AND county LIKE ?"
         count_params.append(f"%{county}%")
@@ -313,9 +317,11 @@ def api_properties():
     params = []
 
     if query:
-        sql += " AND (address LIKE ? OR city LIKE ? OR county LIKE ? OR description LIKE ?)"
+        sql += (" AND (address LIKE ? OR city LIKE ? OR county LIKE ?"
+                " OR description LIKE ?"
+                " OR parcel_number LIKE ? OR court_case LIKE ? OR source_listing_id LIKE ?)")
         pattern = f"%{query}%"
-        params.extend([pattern, pattern, pattern, pattern])
+        params.extend([pattern] * 7)
 
     if county:
         sql += " AND county LIKE ?"
@@ -439,10 +445,12 @@ def property_detail(property_id):
     if court_case:
         same_case = scraper_db.get_by_court_case(conn, court_case, exclude_id=property_id)
     cross_links = scraper_db.get_property_links(conn, property_id)
+    audit_log = scraper_db.get_audit_log(conn, property_id)
     conn.close()
     return render_template('property.html', prop=_row_to_dict(row),
                            same_case=[_row_to_dict(r) for r in same_case],
-                           cross_links=cross_links)
+                           cross_links=cross_links,
+                           audit_log=audit_log)
 
 
 @app.route('/archive/<int:property_id>', methods=['POST'])
@@ -452,8 +460,10 @@ def archive_property(property_id):
     if not row:
         conn.close()
         abort(404)
-    conn.execute("UPDATE properties SET status = 'archived' WHERE id = ?", (property_id,))
-    conn.commit()
+    scraper_db.archive_property(
+        conn, property_id,
+        reason="dashboard archive button", archived_by="dashboard",
+    )
     conn.close()
     flash(f'Property #{property_id} archived')
     return redirect(url_for('landing'))
@@ -466,8 +476,10 @@ def unarchive_property(property_id):
     if not row:
         conn.close()
         abort(404)
-    conn.execute("UPDATE properties SET status = 'active' WHERE id = ?", (property_id,))
-    conn.commit()
+    scraper_db.unarchive_property(
+        conn, property_id,
+        reason="dashboard unarchive button", restored_by="dashboard",
+    )
     conn.close()
     flash(f'Property #{property_id} unarchived')
     return redirect(url_for('landing'))

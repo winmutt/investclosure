@@ -278,6 +278,16 @@
                     <p>{{ prop.tags }}</p>
                 </div>
                 {% endif %}
+                <div class="prop-detail-section">
+                    <h3>History</h3>
+                    {% if audit_log %}
+                    {% for ev in audit_log %}
+                    <p>{{ ev.created_at }} — <strong>{{ ev.action }}</strong> by {{ ev.actor }}{% if ev.reason %} ({{ ev.reason }}){% endif %}</p>
+                    {% endfor %}
+                    {% else %}
+                    <p style="color:#6b7280;font-size:0.85em">No archive history.</p>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>

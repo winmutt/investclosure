@@ -34,6 +34,7 @@
             </div>
     <div class="list-item-row">
                 <span>{{ prop.county or 'N/A' }} County, {{ prop.state }}</span>
+                {% if prop.parcel_number %}<span>Parcel: {{ prop.parcel_number }}</span>{% endif %}
                 <span>
                     {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres
                     {% if prop.manual_acres_set %}
