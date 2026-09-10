@@ -107,7 +107,7 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 - **SC** (4): `anderson, greenville, oconee, pickens`
 - **TN** (37): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
 
-**GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources), so `ga_publicnotice` records are not GIS-enriched — only NC uses NC OneMap.
+**GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources). `ga_publicnotice` acreage is enriched per-county from qPublic parcel reports via camoufox page loads (`scraper/ga_gis_enrich.py`, auto-run after each GA scrape); plain HTTP gets Cloudflare-403 so reports are browser-only. Rabun Sky Valley lots report Acres 0 at source and keep `acres=NULL`.
 
 ## GIS Integration
 

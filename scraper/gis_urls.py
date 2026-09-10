@@ -84,8 +84,9 @@ GIS_VIEWER_URLS = {
 # PageTypeID=1&PageID=8773&KeyValue=018D%20019).
 #
 # NOTE: qPublic is Cloudflare-WAF-protected and returns HTTP 403 to automated
-# requests, so the scraper cannot *fetch* parcel data from it — only a human
-# browser can open these links. They are used purely as clickable GIS links.
+# plain-HTTP requests — but the camoufox stealth browser loads the report
+# pages fine, so scraper/ga_gis_enrich.py fetches acreage through camoufox
+# page loads. The links below double as clickable GIS links.
 # Per-county qPublic app identifiers (AppID/LayerID) for the GA mountain
 # counties we track. Each county lists one or more "pages"; ``page_type_id``
 # and ``page_id`` identify the parcel-viewing page. The ``space`` flag marks

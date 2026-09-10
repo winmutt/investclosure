@@ -108,6 +108,14 @@ class TestMortgageKindTagging:
                  "County, Georgia.")
         assert GAPublicNoticeScraper._parse_acres(block) is None
 
+    def test_parse_qpublic_acres(self):
+        from scraper.ga_gis_enrich import parse_qpublic_acres
+        assert parse_qpublic_acres("Millage Rate\t29.2 | Acres\t0") == 0.0
+        assert parse_qpublic_acres("Acres\t10.69") == 10.69
+        assert parse_qpublic_acres("Total ACRES 1,236.7 more") == 1236.7
+        assert parse_qpublic_acres("no acreage here") is None
+        assert parse_qpublic_acres("") is None
+
     def test_ga_parse_parcels_mortgage_kind(self):
         from scraper.ga_publicnotice import GAPublicNoticeScraper
         scraper = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)

@@ -10,8 +10,9 @@ each county's qPublic (Schneider Corp) app. We set:
   * ``google_maps_topo_url`` -> same with the terrain basemap.
 
 NOTE: qPublic's application host (schneidercorp.com) returns HTTP 403 to
-automated requests (Cloudflare WAF), so we cannot *fetch* parcel data
-(owner / assessed value) programmatically -- only build clickable links.
+automated plain-HTTP requests (Cloudflare WAF) -- but camoufox page loads
+succeed, so scraper/ga_gis_enrich.py fetches acreage from these same
+report pages (this module builds the clickable links).
 """
 import sqlite3
 

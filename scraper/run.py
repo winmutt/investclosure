@@ -234,6 +234,19 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
     except Exception as e:
         logger.warning("Auto-enrich failed: %s", e)
 
+    # Auto-enrich GA rows lacking acreage from county qPublic reports
+    # (camoufox page loads; plain HTTP is Cloudflare-403).
+    if scraper_name == "ga_publicnotice":
+        try:
+            from scraper.ga_gis_enrich import enrich_db as enrich_ga_acres
+            ga_result = enrich_ga_acres()
+            print(f"  GA qPublic acres: {ga_result.get('updated', 0)} filled, "
+                  f"{ga_result.get('zero_or_missing', 0)} zero/missing, "
+                  f"{ga_result.get('skipped_no_app', 0)} no-app, "
+                  f"{ga_result.get('failed', 0)} failed")
+        except Exception as e:
+            logger.warning("GA acreage enrich failed: %s", e)
+
     # Track success
     _reset_failure_counter(scraper_name)
 
