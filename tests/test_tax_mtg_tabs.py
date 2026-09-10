@@ -204,6 +204,33 @@ class TestGisLinkRouting:
         assert _has_house_number("Ridgepole Drive") is False
         assert _has_house_number(None) is False
 
+    def test_nc_enrich_never_touches_non_nc_rows(self, tmp_path, monkeypatch):
+        import scraper.nc_gis_lookup as N
+        from scraper import db as scraper_db
+        db_path = tmp_path / "gis.db"
+        conn = scraper_db._ensure_db(db_path)
+        scraper_db.insert_property(
+            conn, source="brockandscott", source_listing_id="tn:1",
+            url="http://x", address="2912 N Chamberlain Ave", city=None,
+            county="Hamilton", state="TN", zip_code=None, latitude=None,
+            longitude=None, price_cents=0, acres=None,
+            parcel_number=None, gis_url="https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink=ABC")
+        conn.close()
+        monkeypatch.setattr(N.config, "db_path", db_path)
+
+        def _forbidden(*a, **k):
+            raise AssertionError("OneMap called for non-NC row")
+
+        monkeypatch.setattr(N, "county_specific_lookup", _forbidden)
+        monkeypatch.setattr(N, "_lookup_parcel_multi", _forbidden)
+        monkeypatch.setattr(N, "search_address_in_nc1map", _forbidden)
+        N.enrich_properties()
+        conn = scraper_db._ensure_db(db_path)
+        row = conn.execute(
+            "SELECT gis_url FROM properties WHERE source_listing_id='tn:1'").fetchone()
+        conn.close()
+        assert "TPAD" in row["gis_url"]
+
 
 class TestRawlog:
     def test_log_raw_writes_valid_jsonl(self, tmp_path):

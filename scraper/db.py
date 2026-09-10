@@ -72,7 +72,10 @@ CREATE TABLE IF NOT EXISTS properties (
     extracted_pin TEXT,
     archived_by       TEXT,
     archived_at       TEXT,
-    archive_reason    TEXT
+    archive_reason    TEXT,
+    acres_source      TEXT,
+    gis_county        TEXT,
+    land_use          TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_properties_source ON properties(source);
@@ -164,6 +167,9 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         ("archived_by", "ALTER TABLE properties ADD COLUMN archived_by TEXT"),
         ("archived_at", "ALTER TABLE properties ADD COLUMN archived_at TEXT"),
         ("archive_reason", "ALTER TABLE properties ADD COLUMN archive_reason TEXT"),
+        ("acres_source", "ALTER TABLE properties ADD COLUMN acres_source TEXT"),
+        ("gis_county", "ALTER TABLE properties ADD COLUMN gis_county TEXT"),
+        ("land_use", "ALTER TABLE properties ADD COLUMN land_use TEXT"),
     ]
     for col, sql in col_migrations:
         if col not in existing:

@@ -699,15 +699,18 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
     rec["gis_county"] = actual_county
 
 
-def enrich_properties(source: Optional[str] = None) -> dict:
+def enrich_properties(source: Optional[str] = None,
+                      status: str = "active") -> dict:
     """Enrich properties in DB with GIS data.
-    
+
     Queries NC OneMap for all properties that have a parcel_number but no GIS acres.
     Upserts the enriched data back into the properties table.
-    
+
     Args:
         source: Optional source filter (e.g., "kania_law"). Defaults to all.
-    
+        status: Row status to process (default "active" — archived rows are
+            skipped to avoid burning API calls; use "all" for every row).
+
     Returns:
         dict with counts: enriched, skipped_no_parcel, skipped_already_gis, failed
     """
@@ -747,6 +750,9 @@ def enrich_properties(source: Optional[str] = None) -> dict:
     if source:
         where += " AND source = ?"
         params.append(source)
+    if status and status != "all":
+        where += " AND status = ?"
+        params.append(status)
 
     # Get properties (with a parcel OR an address) that need GIS enrichment
     rows = conn.execute(
@@ -773,6 +779,12 @@ def enrich_properties(source: Optional[str] = None) -> dict:
 
         (row_id, src, county, parcel, address, city, state,
          acres_src, gis_url, gmaps_url) = row
+
+        # NC OneMap only covers North Carolina — never touch other states'
+        # rows (a past run overwrote TN TPAD deep links with generic URLs).
+        if ((state or "").strip().upper() not in ("NC", "")):
+            logger.debug("Skipping non-NC row #%s %s state=%s", row_id, src, state)
+            continue
 
         parcel_raw = (parcel or "").strip()
         address = (address or "").strip()
