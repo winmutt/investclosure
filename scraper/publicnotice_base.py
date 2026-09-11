@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from .base import BaseForeclosureScraper, PropertyData
+from .config import config
 
 logger = logging.getLogger(__name__)
 
@@ -545,7 +546,16 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         if not self.solve_captcha:
             logger.warning("Turnstile present but captcha solving disabled")
             return False
-        if not self._solve_turnstile_in_browser(page, site_key):
+        solved = self._solve_turnstile_in_browser(page, site_key)
+        if not solved and config.TWO_CAPTCHA_API_KEY:
+            # In-browser pass failed (common from datacenter IPs) — fall
+            # back to the paid 2captcha service when a key is configured.
+            logger.info("in-browser solve failed; falling back to 2captcha")
+            token = self._solve_turnstile(page.url, site_key)
+            if token:
+                self._inject_turnstile_token(page, token)
+                solved = True
+        if not solved:
             logger.warning("turnstile solve failed")
             return False
         if self._notice_body_visible(page):

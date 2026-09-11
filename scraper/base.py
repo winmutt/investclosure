@@ -218,6 +218,64 @@ class BaseForeclosureScraper(ABC):
         m = re.search(r"/\(S\((\w+)\)\)/", url)
         return m.group(1) if m else None
 
+    def _solve_turnstile(self, page_url: str, site_key: str) -> Optional[str]:
+        """Solve a Cloudflare Turnstile challenge via 2captcha API (fallback).
+
+        Only used when in-browser solving fails AND a key is configured.
+        Returns the token string, or None on failure/missing key. The token
+        is bound to page_url + site_key, so both must match the live page.
+        """
+        if not config.TWO_CAPTCHA_API_KEY:
+            return None
+        import requests as http_req
+        print("(solving turnstile via 2captcha ...", end=" ", flush=True)
+        try:
+            resp = http_req.post(
+                "https://2captcha.com/in.php", timeout=30,
+                data={
+                    "key": config.TWO_CAPTCHA_API_KEY,
+                    "method": "turnstile",
+                    "sitekey": site_key,
+                    "pageurl": page_url,
+                    "json": 1,
+                },
+            )
+            data = resp.json()
+            if data.get("status") != 1:
+                print(f"fail: {data.get('request', '?')})", end=" ", flush=True)
+                return None
+            rid = data["request"]
+            for _ in range(60):
+                time.sleep(5)
+                resp = http_req.get(
+                    "https://2captcha.com/res.php", timeout=30,
+                    params={
+                        "key": config.TWO_CAPTCHA_API_KEY,
+                        "action": "get",
+                        "id": rid,
+                        "json": 1,
+                    },
+                )
+                data = resp.json()
+                if data.get("status") == 1:
+                    print("solved)", end=" ", flush=True)
+                    return data["request"]
+        except Exception as e:
+            print(f"error: {e})", end=" ", flush=True)
+        print("timeout)", end=" ", flush=True)
+        return None
+
+    def _inject_turnstile_token(self, page, token: str) -> None:
+        """Set the Turnstile hidden field value from the page's own form.
+
+        The widget renders a hidden input named 'cf-turnstile-response'
+        (its id is dynamic: cf-chl-widget-<n>_response), so select by name.
+        """
+        page.evaluate("""(t) => {
+            const el = document.querySelector('input[name="cf-turnstile-response"]');
+            if (el) { el.value = t; el.textContent = t; }
+        }""", token)
+
     @staticmethod
     def _find_chromium() -> Optional[str]:
         """Find chromium executable at runtime."""

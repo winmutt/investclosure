@@ -374,3 +374,51 @@ class TestInBrowserTurnstileSolve:
         page = GatePage()
         assert s._pass_turnstile_gate(page, "key") is True
         assert page.posted is True
+
+    def _gate_page(self):
+        class GatePage(_FakePage):
+            def __init__(self):
+                super().__init__(body_len=100)
+                self.posted = False
+                self.url = "http://x/Details.aspx"
+
+            def evaluate(self, script, *args):
+                if "__doPostBack" in script:
+                    self.posted = True
+                    self._body_len = 2000
+                    return ""
+                return super().evaluate(script, *args)
+
+            def query_selector(self, sel):
+                return object()  # Turnstile widget present
+
+            def wait_for_load_state(self, *args, **kwargs):
+                pass
+
+        return GatePage()
+
+    def test_gate_falls_back_to_2captcha(self, monkeypatch):
+        import scraper.publicnotice_base as PB
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        monkeypatch.setattr(PB.config, "TWO_CAPTCHA_API_KEY", "test-key")
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        s.solve_captcha = True
+        s._solve_turnstile_in_browser = lambda page, key, timeout_s=90: False
+        s._solve_turnstile = lambda url, key: "tok123"
+        page = self._gate_page()
+        assert s._pass_turnstile_gate(page, "key") is True
+        assert page.posted is True
+
+    def test_gate_skips_2captcha_without_key(self, monkeypatch):
+        import scraper.publicnotice_base as PB
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        monkeypatch.setattr(PB.config, "TWO_CAPTCHA_API_KEY", "")
+
+        def _forbidden(url, key):
+            raise AssertionError("2captcha called without a key")
+
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        s.solve_captcha = True
+        s._solve_turnstile_in_browser = lambda page, key, timeout_s=90: False
+        s._solve_turnstile = _forbidden
+        assert s._pass_turnstile_gate(self._gate_page(), "key") is False

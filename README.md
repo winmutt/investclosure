@@ -102,7 +102,8 @@ playwright>=1.40     # Headless Chromium automation
 ### Services
 | Service | Required? | Purpose |
 |---|---|---|
-| Turnstile (in-browser) | Yes | Cloudflare challenges solved by the camoufox page itself — no solving service |
+| Turnstile (in-browser) | Yes | Cloudflare challenges solved by the camoufox page itself |
+| 2captcha.com | No | Fallback when in-browser solving times out (key-gated; unused at zero balance) |
 | HTTP proxy | No | Optional proxy for bypassing IP blocks |
 
 ### Environment Variables
