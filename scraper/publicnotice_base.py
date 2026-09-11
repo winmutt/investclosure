@@ -330,7 +330,9 @@ class PublicNoticeScraper(BaseForeclosureScraper):
             try:
                 page.evaluate("(btnId) => __doPostBack(btnId, '')", btn_id)
             except Exception as e:
-                logger.warning("__doPostBack(next) failed: %s", e)
+                # Truncated: Playwright error dumps include pages of eval
+                # call-log (a tight retry loop once wrote 23MB in 40min).
+                logger.warning("__doPostBack(next) failed: %s", str(e)[:200])
                 return False
         else:
             ok = page.evaluate(

@@ -343,7 +343,8 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 if info:
                     cur, total = info["cur"], info["total"]
                     while cur < total and not stop and page_no < 50:
-                        self._goto_next_page(page, cur + 1)
+                        if not self._goto_next_page(page, cur + 1):
+                            break
                         page_no += 1
                         before = len(all_records)
                         stop = _collect(self._parse_grid_records(page))

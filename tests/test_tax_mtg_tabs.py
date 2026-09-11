@@ -409,6 +409,24 @@ class TestInBrowserTurnstileSolve:
         assert s._pass_turnstile_gate(page, "key") is True
         assert page.posted is True
 
+    def test_goto_next_page_returns_false_on_broken_page(self):
+        # A page without ASP.NET JS (__doPostBack undefined, e.g. challenge
+        # interstitial) must return False — never raise — so grid loops break
+        # instead of spinning forever (23MB log incident, 2026-09-11).
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+
+        class BrokenPage:
+            def evaluate(self, script, *args):
+                if "btnNext" in script:
+                    return "ctl00$X$btnNext"
+                raise RuntimeError("__doPostBack is not defined")
+
+            def wait_for_timeout(self, ms):
+                pass
+
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        assert s._goto_next_page(BrokenPage(), 2) is False
+
     def test_gate_skips_2captcha_without_key(self, monkeypatch):
         import scraper.publicnotice_base as PB
         from scraper.ga_publicnotice import GAPublicNoticeScraper

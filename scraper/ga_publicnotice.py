@@ -391,7 +391,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                         if info:
                             cur, total = info["cur"], info["total"]
                             while cur < total:
-                                self._goto_next_page(page, cur + 1)
+                                if not self._goto_next_page(page, cur + 1):
+                                    break
                                 more = self._parse_grid_records(page)
                                 for r in more:
                                     if r["pk_id"] in seen_pk:
