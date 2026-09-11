@@ -68,7 +68,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
-| `scraper/server.py` | Flask dashboard — port 5001, auto-refresh listing |
+| `scraper/server.py` | Flask dashboard — port 5001, HTTP Basic Auth, Admin page |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
 | `nc_county_summary.md` | Per-county NC property/tax/GIS lookup systems + verified portal URLs |
 | `ga_county_summary.md` | Per-county GA qPublic (Schneider Corp) app IDs, pages, KeyValue spacing |
@@ -154,6 +154,8 @@ tax-sale nuance, **update the relevant summary file** (and, for GA, the
 ## CLI Commands
 
 ```bash
+python3 -m scraper --add-user alice  # Create dashboard login (prompts, hashed)
+python3 -m scraper --set-password winmutt  # Reset a dashboard password
 python3 -m scraper --list            # List available scrapers
 python3 -m scraper                   # Run all scrapers
 python3 -m scraper --scraper kania_law  # Run Kania Law only
@@ -266,6 +268,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 - **2026-09-11**: Turnstile solving moved in-browser (camoufox passive wait + checkbox click); 2captcha code deleted after `ERROR_ZERO_BALANCE` (passes off-peak, e.g. 4am cron: 51 classified notices). `pdfplumber` post-mortem: stale image predated the requirement so all PDFs silently fell back to truncated HTML — live-installed, `extract_pdf_text` now ERRORs when missing.
 - **2026-09-11**: Append-only `audit_log` table (dashboard archive/unarchive now logged; detail pages show History); search matches parcel/case/listing-id. GA acreage from qPublic reports (`scraper/ga_gis_enrich.py`), TN TPAD/owner/acres (`scraper/tn_gis_enrich.py`); link-depth policy (parcel-deep or nothing; SC/AL get no viewer links). Camp Wahsega #341 + Fern Forest #42 unarchived. **MIN_ACRES 2.0 → 1.1** (55 archived rows sit in [1.1, 2.0)). Rabun Sky Valley lots report Acres 0 at source (kept NULL, not a bug).
 - **County-count corrections**: NC mountain set is **20** (Caldwell removed 8/28, docs said 21); TN mountain set is **38** (docs said 37).
+- **Dashboard auth**: HTTP Basic Auth on all routes except `/health` (+ static); `users` table with werkzeug hashes, auto-seeded `winmutt` on first request; Admin page (list/add/change-password) and `--add-user` / `--set-password` CLI.
 
 ## Tests
 

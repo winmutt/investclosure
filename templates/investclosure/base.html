@@ -29,6 +29,9 @@
                 <a href="{{ url_for('new') }}" class="{% if request.endpoint == 'new' %}active{% endif %}">
                     <span class="nav-icon">✨</span> New Listings
                 </a>
+                <a href="{{ url_for('admin') }}" class="{% if request.endpoint == 'admin' %}active{% endif %}">
+                    <span class="nav-icon">🔐</span> Admin
+                </a>
             </nav>
 
             <nav class="sidebar-nav sidebar-nav-secondary">

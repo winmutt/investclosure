@@ -15,6 +15,8 @@ from typing import Optional, List, Dict, Any, Tuple
 
 from .config import config
 
+from werkzeug.security import check_password_hash, generate_password_hash
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -118,6 +120,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
     prev_status  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_property ON audit_log(property_id);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -871,6 +880,67 @@ def get_audit_log(
         (property_id, limit),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def count_users(conn: sqlite3.Connection) -> int:
+    """Number of login users."""
+    return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def list_users(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+    """All login users (never includes password hashes)."""
+    return [dict(r) for r in conn.execute(
+        "SELECT id, username, created_at FROM users ORDER BY username").fetchall()]
+
+
+def create_user(conn: sqlite3.Connection, username: str, password: str) -> int:
+    """Create a login user; returns the new id. Raises ValueError on bad input."""
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("username is required")
+    if not password or len(password) < 4:
+        raise ValueError("password must be at least 4 characters")
+    if conn.execute("SELECT 1 FROM users WHERE username = ?",
+                    (username,)).fetchone():
+        raise ValueError(f"user {username!r} already exists")
+    cur = conn.execute(
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        (username, generate_password_hash(password)),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def verify_user(conn: sqlite3.Connection, username: str, password: str) -> bool:
+    """True when username exists and the password matches."""
+    if not username or not password:
+        return False
+    row = conn.execute(
+        "SELECT password_hash FROM users WHERE username = ?",
+        (username.strip(),)).fetchone()
+    if not row:
+        return False
+    try:
+        return check_password_hash(row["password_hash"], password)
+    except (ValueError, TypeError):
+        return False
+
+
+def set_password(conn: sqlite3.Connection, username: str,
+                 new_password: str) -> bool:
+    """Replace a user's password. False when the user does not exist."""
+    username = (username or "").strip()
+    if not username or not new_password or len(new_password) < 4:
+        raise ValueError("valid username and a 4+ character password required")
+    if not conn.execute("SELECT 1 FROM users WHERE username = ?",
+                        (username,)).fetchone():
+        return False
+    conn.execute(
+        "UPDATE users SET password_hash = ? WHERE username = ?",
+        (generate_password_hash(new_password), username),
+    )
+    conn.commit()
+    return True
 
 
 def archive_below_acres(

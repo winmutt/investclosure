@@ -1445,12 +1445,24 @@ class TestServerFlask:
     """Test Flask app routes and helpers."""
 
     @pytest.fixture()
-    def app(self, tmp_dir):
+    def app(self, tmp_dir, monkeypatch):
+        import base64
         from scraper.server import app
         from scraper.config import config as cfg
         cfg.db_path = tmp_dir / "test.db"
         app.config["TESTING"] = True
         app.config["SECRET_KEY"] = "test-secret"
+        # Dashboard requires HTTP Basic Auth; pre-authenticate every test
+        # client as the bootstrap admin (auto-seeded on first request).
+        token = base64.b64encode(b"winmutt:1234asdf").decode()
+        _orig_client = app.test_client
+
+        def _authed_client(*args, **kwargs):
+            client = _orig_client(*args, **kwargs)
+            client.environ_base["HTTP_AUTHORIZATION"] = f"Basic {token}"
+            return client
+
+        monkeypatch.setattr(app, "test_client", _authed_client)
         return app
 
     @pytest.fixture()

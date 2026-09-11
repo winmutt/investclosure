@@ -54,12 +54,22 @@ class TestAuditLog:
 
 class TestParcelSearch:
     def _client(self, monkeypatch, tmp_path):
+        import base64
         import scraper.server as server
         db_path = tmp_path / "search.db"
 
         def _conn():
             return scraper_db._ensure_db(db_path)
 
+        token = base64.b64encode(b"winmutt:1234asdf").decode()
+        _orig_client = server.app.test_client
+
+        def _authed_client(*args, **kwargs):
+            client = _orig_client(*args, **kwargs)
+            client.environ_base["HTTP_AUTHORIZATION"] = f"Basic {token}"
+            return client
+
+        monkeypatch.setattr(server.app, "test_client", _authed_client)
         conn = _conn()
         _insert(conn)
         _insert(conn, source_listing_id="lumpkin:999", parcel_number="999",

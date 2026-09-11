@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                     jsonify, send_file, flash, abort, Response)
+                     jsonify, send_file, flash, abort, Response, g)
 
 from scraper import db as scraper_db
 from scraper.config import config
@@ -115,6 +115,49 @@ def get_conn():
     """Get a database connection using investclosure config."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     return scraper_db._ensure_db(config.db_path)
+
+
+# ---- HTTP Basic Auth ------------------------------------------------------
+# Initial bootstrap credentials (owner-requested). Change after first login
+# via Admin -> Change password or: python3 -m scraper --set-password winmutt
+DEFAULT_ADMIN_USER = "winmutt"
+DEFAULT_ADMIN_PASSWORD = "1234asdf"
+
+# Endpoints that stay public (health probes, static assets).
+_PUBLIC_ENDPOINTS = {"health", "static"}
+
+
+def _unauthorized():
+    return Response(
+        "Login required", 401,
+        {"WWW-Authenticate": 'Basic realm="InvestClosure"'},
+    )
+
+
+@app.before_request
+def require_auth():
+    """Gate every route behind HTTP Basic Auth (except health/static)."""
+    if request.endpoint in _PUBLIC_ENDPOINTS:
+        return None
+    conn = get_conn()
+    try:
+        if scraper_db.count_users(conn) == 0:
+            scraper_db.create_user(conn, DEFAULT_ADMIN_USER,
+                                   DEFAULT_ADMIN_PASSWORD)
+    finally:
+        conn.close()
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        return _unauthorized()
+    conn = get_conn()
+    try:
+        ok = scraper_db.verify_user(conn, auth.username, auth.password)
+    finally:
+        conn.close()
+    if not ok:
+        return _unauthorized()
+    g.current_user = auth.username
+    return None
 
 
 @app.context_processor
@@ -483,6 +526,52 @@ def unarchive_property(property_id):
     conn.close()
     flash(f'Property #{property_id} unarchived')
     return redirect(url_for('landing'))
+
+
+@app.route('/admin')
+def admin():
+    conn = get_conn()
+    users = scraper_db.list_users(conn)
+    conn.close()
+    return render_template('admin.html', users=users)
+
+
+@app.route('/admin/add-user', methods=['POST'])
+def admin_add_user():
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
+    conn = get_conn()
+    try:
+        scraper_db.create_user(conn, username, password)
+    except ValueError as e:
+        flash(f'Add user failed: {e}')
+    else:
+        flash(f'User {username!r} created')
+    finally:
+        conn.close()
+    return redirect(url_for('admin'))
+
+
+@app.route('/admin/change-password', methods=['POST'])
+def admin_change_password():
+    username = (request.form.get('username') or '').strip()
+    current = request.form.get('current_password') or ''
+    new_password = request.form.get('new_password') or ''
+    conn = get_conn()
+    try:
+        if username == g.get('current_user'):
+            if not scraper_db.verify_user(conn, username, current):
+                flash('Current password is incorrect')
+                return redirect(url_for('admin'))
+        if not scraper_db.set_password(conn, username, new_password):
+            flash(f'No such user: {username!r}')
+        else:
+            flash(f'Password updated for {username!r}')
+    except ValueError as e:
+        flash(f'Change password failed: {e}')
+    finally:
+        conn.close()
+    return redirect(url_for('admin'))
 
 
 @app.route('/export')

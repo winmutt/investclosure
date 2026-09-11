@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}InvestClosure — Admin{% endblock %}
+{% block topbar_title %}Admin{% endblock %}
+{% block topbar_subtitle %}Users & passwords{% endblock %}
+
+{% block content %}
+<div class="prop-detail-section">
+    <h3>Users</h3>
+    {% if users %}
+    <div class="list">
+        {% for u in users %}
+        <div class="list-item">
+            <div class="list-item-body">
+                <div class="list-item-header">{{ u.username }}</div>
+                <div class="list-item-row">
+                    <span>Created: {{ u.created_at }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>No users yet.</p>
+    {% endif %}
+</div>
+
+<div class="prop-detail-section">
+    <h3>Add user</h3>
+    <form method="POST" action="{{ url_for('admin_add_user') }}">
+        <input type="text" name="username" placeholder="Username" class="filter-input" required>
+        <input type="password" name="password" placeholder="Password (4+ chars)" class="filter-input" required>
+        <button type="submit" class="btn">Add user</button>
+    </form>
+</div>
+
+<div class="prop-detail-section">
+    <h3>Change password</h3>
+    <form method="POST" action="{{ url_for('admin_change_password') }}">
+        <input type="text" name="username" placeholder="Username" class="filter-input" required>
+        <input type="password" name="current_password" placeholder="Current password (only when changing your own)" class="filter-input">
+        <input type="password" name="new_password" placeholder="New password (4+ chars)" class="filter-input" required>
+        <button type="submit" class="btn">Change password</button>
+    </form>
+</div>
+{% endblock %}

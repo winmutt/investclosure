@@ -686,6 +686,16 @@ def main():
         help="Link properties that appear in both kania_law and nc_publicnotice "
              "(adds cross-source notes + links for the dashboard)",
     )
+    parser.add_argument(
+        "--add-user",
+        metavar="USERNAME",
+        help="Create a dashboard login user (prompts for password)",
+    )
+    parser.add_argument(
+        "--set-password",
+        metavar="USERNAME",
+        help="Set a dashboard user's password (prompts for password)",
+    )
 
     args = parser.parse_args()
 
@@ -702,6 +712,40 @@ def main():
 
     if args.list:
         cmd_list()
+    elif args.add_user:
+        import getpass
+        from scraper import db as scraper_db
+        password = getpass.getpass(f"Password for {args.add_user}: ")
+        confirm = getpass.getpass("Confirm password: ")
+        if password != confirm:
+            print("Passwords do not match")
+            return
+        conn = _ensure_db()
+        try:
+            scraper_db.create_user(conn, args.add_user, password)
+            print(f"User {args.add_user!r} created")
+        except ValueError as e:
+            print(f"Add user failed: {e}")
+        finally:
+            conn.close()
+    elif args.set_password:
+        import getpass
+        from scraper import db as scraper_db
+        password = getpass.getpass(f"New password for {args.set_password}: ")
+        confirm = getpass.getpass("Confirm password: ")
+        if password != confirm:
+            print("Passwords do not match")
+            return
+        conn = _ensure_db()
+        try:
+            if scraper_db.set_password(conn, args.set_password, password):
+                print(f"Password updated for {args.set_password!r}")
+            else:
+                print(f"No such user: {args.set_password!r}")
+        except ValueError as e:
+            print(f"Set password failed: {e}")
+        finally:
+            conn.close()
     elif args.repair_links:
         from scraper.backfill_links import backfill_links
         result = backfill_links()
