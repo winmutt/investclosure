@@ -9,7 +9,7 @@ enriches with county GIS parcel data, saves to SQLite with dashboard.
 |---|---|---|---|
 | `kania_law` | ✅ | ~8/21 counties | GIS enriched via NC1Map POST API |
 | `newspaper_notices` | ✅ | NC mountain | State-wide newspaper notices |
-| `zls_nc` | ❌ | 21 NC mountain | 0 qualifying mountain records |
+| `zls_nc` | ❌ | 20 NC mountain | 0 qualifying mountain records |
 | `nc_publicnotice` | ❌ | NC mountain | Banned/unreliable |
 
 ### Active Properties (as of 2026-08-03)
@@ -115,7 +115,7 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `INVESTCLOSURE_DB_PATH` | `./data/investclosure.db` | SQLite database |
 | `INVESTCLOSURE_BACKUPS_DIR` | `./data/backups` | DB backups |
 | `INVESTCLOSURE_LOGS_DIR` | `./data/logs` | Log files |
-| `INVESTCLOSURE_MIN_ACRES` | `2.0` | Minimum acreage filter |
+| `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` (optional) |
 
@@ -123,18 +123,18 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 
 | Scraper | Source | Counties | Captcha | GIS Enrichment |
 |---|---|---|---|---|
-| `kania_law` | kaniabailbond.com | 21 NC mountain | None | NC OneMap POST API |
+| `kania_law` | kaniabailbond.com | 20 NC mountain | None | NC OneMap POST API |
 | `newspaper_notices` | NC newspapers | Mountain NC | None | NC OneMap POST API |
-| `zls_nc` | zls-nc.com/listings | 21 NC mountain | None | NC OneMap POST API |
+| `zls_nc` | zls-nc.com/listings | 20 NC mountain | None | NC OneMap POST API |
 | `rlselaw` | rlselaw.com GA listings | 7 GA mountain | None | qPublic links |
 | `brockandscott` | brockandscott.com search | NC/GA/TN mountain | None | state map links |
-| `foreclosuretennessee` | foreclosuretennessee.com grid | 37 TN mountain | None | TNMap links |
+| `foreclosuretennessee` | foreclosuretennessee.com grid | 38 TN mountain | None | TNMap links |
 | `bellcarrington` | bellcarrington.com (Google Sheet) | GA/NC/SC/AL/TN mountain | None | state map links |
-| `logs_nc` | logs.com NC report (PowerBI) | 21 NC mountain | None | NC OneMap links |
+| `logs_nc` | logs.com NC report (PowerBI) | 20 NC mountain | None | NC OneMap links |
 
 ### Selection Criteria
 
-Properties filtered to **21 NC mountain counties** (elevation >1700ft, within 250mi of Atlanta):
+Properties filtered to **20 NC mountain counties** (elevation >1700ft, within 250mi of Atlanta):
 
 `alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
 

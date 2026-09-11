@@ -8,7 +8,7 @@ ncnotices.com is the same "Public Notice" ASP.NET WebForms platform as
 tnpublicnotice.com / georgiapublicnotice.com (shared base in
 :mod:`scraper.publicnotice_base`), but NC is reached through an authenticated
 Smart Search account rather than a public popular-search category. We run a
-pre-configured saved search (the 21 NC mountain counties) and, for each
+pre-configured saved search (the 20 NC mountain counties) and, for each
 result, solve the Cloudflare Turnstile gate and download the notice PDF (the
 on-page HTML is a truncated OCR conversion; the PDF is canonical). Missing
 acreage is enriched from NC OneMap via the parcel number.
@@ -181,7 +181,7 @@ def _classify_nc_notice(notice: str) -> Optional[str]:
 
 
 class NCPublicNoticeScraper(PublicNoticeScraper):
-    """Scrape ncnotices.com tax/foreclosure notices for the 21 NC mountain counties."""
+    """Scrape ncnotices.com tax/foreclosure notices for the 20 NC mountain counties."""
 
     SOURCE_NAME = "nc_publicnotice"
     BASE_URL = NCFORECLOSURES_BASE_URL

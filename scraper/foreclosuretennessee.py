@@ -5,7 +5,7 @@ https://foreclosuretennessee.com is an ASP.NET public-notice platform
 (Home-Public.aspx — Sale Date | Continuance Date | City | Address | Zip |
 County | Firm/Trustee | Listing Link, ~4 pages) plus per-notice detail
 pages (Foreclosure-Listing.aspx?submissionID=N) with trustee, address and
-OCR notice text. Filtered to the 37 TN mountain counties; every row is a
+OCR notice text. Filtered to the 38 TN mountain counties; every row is a
 mortgage/deed-of-trust sale for the Mtg tab.
 """
 from __future__ import annotations

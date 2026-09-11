@@ -19,7 +19,7 @@ iCal feed that contains everything we need:
 
 The feed is fetched with a single HTTP GET (no captcha, no browser), parsed
 without third-party libraries, and normalized into PropertyData. Buncombe is
-one of the 21 NC mountain counties, so no county filtering is needed.
+one of the 20 NC mountain counties, so no county filtering is needed.
 """
 from __future__ import annotations
 

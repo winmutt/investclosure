@@ -4,7 +4,7 @@ https://www.logs.com/nc-upcoming-sales-report.html embeds a PowerBI
 "Upcoming Sales NC" report (default slicer: next 10 days). The table visual
 renders as DOM: County Name | Sale Date | Sale Time | Case Court Numb |
 Full Address | Bid Amnt. Rows are virtualized, so the scraper scrolls the
-visual until no new rows materialize, then filters to the 21 NC mountain
+visual until no new rows materialize, then filters to the 20 NC mountain
 counties. Every row is a mortgage/deed-of-trust sale for the Mtg tab.
 """
 from __future__ import annotations

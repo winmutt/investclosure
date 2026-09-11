@@ -69,7 +69,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
 | `scraper/server.py` | Flask dashboard — port 5001, auto-refresh listing |
-| `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 21 mountain counties |
+| `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
 | `nc_county_summary.md` | Per-county NC property/tax/GIS lookup systems + verified portal URLs |
 | `ga_county_summary.md` | Per-county GA qPublic (Schneider Corp) app IDs, pages, KeyValue spacing |
 | `tn_county_summary.md` | Per-county TN property/tax/GIS systems + tax-foreclosure handling |
@@ -87,9 +87,9 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `ga_publicnotice` | georgiapublicnotice.com | GA (7 N mountain counties) | Turnstile | qPublic acreage (`ga_gis_enrich.py`) |
 | `rlselaw` | rlselaw.com GA listings (static table) | 7 GA mountain | None | qPublic links |
 | `brockandscott` | brockandscott.com search (URL params + pager) | NC/GA/TN mountain | None | state map links |
-| `foreclosuretennessee` | foreclosuretennessee.com grid + details | 37 TN mountain | None | TNMap links |
+| `foreclosuretennessee` | foreclosuretennessee.com grid + details | 38 TN mountain | None | TNMap links |
 | `bellcarrington` | bellcarrington.com (Google Sheet CSV) | GA/NC/SC/AL/TN mountain | None | state map links |
-| `logs_nc` | logs.com NC report (PowerBI table visual) | 21 NC mountain | None | NC OneMap links |
+| `logs_nc` | logs.com NC report (PowerBI table visual) | 20 NC mountain | None | NC OneMap links |
 
 The five trustee-sale scrapers (`rlselaw`, `brockandscott`,
 `foreclosuretennessee`, `bellcarrington`, `logs_nc`) share
@@ -103,7 +103,7 @@ All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Noti
 
 Scope spans **6 states** (elevation >1700ft, within 250mi of Atlanta): **GA, AL, KY, NC, SC, TN**. Full county lists live in `scraper/config.py` (`QUALIFYING_COUNTIES`); the investclosure target sets are `NC_MOUNTAIN_COUNTIES` (21) and `GA_MOUNTAIN_COUNTIES` (7).
 
-### NC — 21 mountain counties (investclosure target set)
+### NC — 20 mountain counties (investclosure target set)
 `alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
 
 **Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).
@@ -117,7 +117,7 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 - **AL** (5): `blount, cherokee, cleburne, dekalb, talladega`
 - **KY** (5): `bell, harlan, knox, perry, whitley`
 - **SC** (4): `anderson, greenville, oconee, pickens`
-- **TN** (37): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
+- **TN** (38): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
 
 **GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources). `ga_publicnotice` acreage is enriched per-county from qPublic parcel reports via camoufox page loads (`scraper/ga_gis_enrich.py`, auto-run after each GA scrape); plain HTTP gets Cloudflare-403 so reports are browser-only. Rabun Sky Valley lots report Acres 0 at source and keep `acres=NULL`.
 
@@ -173,6 +173,10 @@ python3 -m scraper --help                # Show all options
 podman compose up --build
 podman compose up -d          # Run in background
 docker compose up --build      # Docker alternative
+# NOTE: `restart` preserves creation-time env — `.env` changes (thresholds,
+# keys) require recreate: podman stop investclosure && podman rm investclosure
+# && podman-compose up -d. (2026-09-11: MIN_ACRES change needed exactly this;
+# also fixed unparseable `environment: KEY=${VAR}` lines to quoted mapping.)
 
 # Inspect running container
 podman ps          # Check container status
@@ -240,7 +244,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_DB_PATH` | `./data/investclosure.db` | SQLite database path |
 | `INVESTCLOSURE_BACKUPS_DIR` | `./data/backups` | DB backups directory |
 | `INVESTCLOSURE_LOGS_DIR` | `./data/logs` | Log files directory |
-| `INVESTCLOSURE_MIN_ACRES` | `2.0` | Minimum acreage filter |
+| `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
@@ -258,13 +262,17 @@ All paths configurable via env vars — **no hardcoded paths**:
 - **2026-07-26**: Kania Law — ArcGIS LAND_UNITS acreage, 5-acre filter, GIS enrichment
 - **GA in scope**: 7 N GA mountain counties (fannin, gilmer, lumpkin, rabun, towns, union, white) via `ga_publicnotice`; AGENTS.md scope updated to 6 states. `ga_publicnotice` drops non-sale proceedings (quiet-title / tax-redemption, excess-fund interpleaders, foreclosure of equity of redemption) and keeps only upcoming tax-sale foreclosures. **GA tax sales are held on the first Tuesday of every month** (computed from the notice's "first Tuesday in <Month> <Year>"), and **GA has no upset-bid period**. Bundled notices (e.g. White County lists many parcels per notice "by deed/page"; Towns County lists each tax-map parcel in its own block) are split into **separate per-parcel listings** keyed on `<county>:<parcel_number>`; duplicate postings of the same parcel collapse while distinct parcels stay separate.
 - **2026-08-25**: `ga_county_summary.md` created — GA qPublic (Schneider Corp) app IDs / pages / KeyValue spacing per county; Lumpkin (`AppID=991`) and White (`AppID=982`) verified and added to `GA_QPUBLIC_APPS` in `scraper/gis_urls.py`. County knowledge bases now tracked in `nc_county_summary.md`, `ga_county_summary.md`, and `tn_county_summary.md` (see "County knowledge base" under GIS Integration).
+- **2026-09-10/11**: Dashboard collapsed to per-state **Tax + Mtg tabs** (`property_category()`); TN/NC/newspaper scrapers retain mortgage/deed-of-trust sales as `mortgage_foreclosure` instead of dropping them; per-notice JSONL raw-text logs in `scraper/tmp/<source>_raw_<date>.jsonl`. Five trustee-sale scrapers added sharing `scraper/trustee_base.py` (`rlselaw`, `brockandscott`, `foreclosuretennessee`, `bellcarrington`, `logs_nc` — 49 Mtg rows on trial runs).
+- **2026-09-11**: Turnstile solving moved in-browser (camoufox passive wait + checkbox click); 2captcha code deleted after `ERROR_ZERO_BALANCE` (passes off-peak, e.g. 4am cron: 51 classified notices). `pdfplumber` post-mortem: stale image predated the requirement so all PDFs silently fell back to truncated HTML — live-installed, `extract_pdf_text` now ERRORs when missing.
+- **2026-09-11**: Append-only `audit_log` table (dashboard archive/unarchive now logged; detail pages show History); search matches parcel/case/listing-id. GA acreage from qPublic reports (`scraper/ga_gis_enrich.py`), TN TPAD/owner/acres (`scraper/tn_gis_enrich.py`); link-depth policy (parcel-deep or nothing; SC/AL get no viewer links). Camp Wahsega #341 + Fern Forest #42 unarchived. **MIN_ACRES 2.0 → 1.1** (55 archived rows sit in [1.1, 2.0)). Rabun Sky Valley lots report Acres 0 at source (kept NULL, not a bug).
+- **County-count corrections**: NC mountain set is **20** (Caldwell removed 8/28, docs said 21); TN mountain set is **38** (docs said 37).
 
 ## Tests
 
 Integration tests cover DB operations, archive filtering, county filtering, and GIS enrichment:
 
 ```bash
-python3 -m pytest tests/test_scraper.py -v          # Run all tests
+python3 -m pytest tests/ -q                      # Full suite (6 files)
 python3 -m pytest tests/test_scraper.py::TestArchiveBelowAcres -v  # Archive tests only
 ```
 
@@ -274,3 +282,6 @@ python3 -m pytest tests/test_scraper.py::TestArchiveBelowAcres -v  # Archive tes
 - **ZLS NC**: county filtering (mountain vs coastal), GIS enrichment
 - **Kania Law**: scraper initialization, county count verification
 - **Dedup hash**: case-insensitive, with/without coordinates
+- **Tax/Mtg tabs** (`test_tax_mtg_tabs.py`): category mapping, NC/GA/TN kind tagging, newspaper mortgage classifier, JSONL rawlog, in-browser Turnstile solver, GIS link routing, NC cross-state guard
+- **Trustee sales** (`test_trustee_sales.py`): shared clean/price/date/address helpers, per-scraper row parsers with recon fixtures
+- **Audit + search** (`test_audit_search.py`): audit_log history, parcel/case/listing-id search, status filter, detail History section
