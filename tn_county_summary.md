@@ -5,6 +5,21 @@ Target set: `TN_FORECLOSURE_COUNTIES` (38 east-TN mountain counties, config.py:2
 ## Key finding
 Most TN counties conduct delinquent-property-tax sales **once a year** (or per court decree), usually run by the **Chancery Court Clerk & Master** (or the **County Trustee** in a few). These sales are published on the county Clerk & Master / Trustee site (often a PDF "Properties for Sale" list) — **not** on tnpublicnotice.com, and the `tn_publicnotice` scraper only reads page 1 of the statewide "Tax Sales" feed, so it misses most annual county-direct sales. Blount County (Clerk & Master, annual June sale, PDF list) is the canonical example.
 
+## TNMap assessment deep-link behavior (verified 2026-09-10)
+- `https://tnmap.tn.gov/assessment/` (retitled **"TN Property Viewer"`) loads
+  fine in camoufox (HTTP 200, map canvas renders after accepting the
+  disclaimer dialog).
+- **Query params are IGNORED.** `?county=Roane`, `?countycode=...`, `#/?county=`
+  etc. all load the viewer but the county stays on the "Select County..."
+  placeholder — selection state lives only in app memory (no URL/localStorage
+  persistence). A `?county=<name>` link therefore loads the viewer but does
+  NOT select the county or center a property.
+- The only property-deep TN link that actually reaches a parcel is the
+  Comptroller **TPAD GIS link**: `https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink=<TPAD-ID>`
+  (verified: loads "Parcel Details" page). These are filled per-property by
+  the TNMap enrichment (`scraper/tnmap.py`); rows without a gislink can only
+  offer the bare viewer.
+
 ## 1. Anderson County
 - **Website:** https://andersoncountytn.gov/
 - **Property Search:** https://acassessor.maps.arcgis.com/apps/webappviewer/index.html?id=ceca75ab630048669e3b90abb301b09a

@@ -108,7 +108,12 @@ GIS_VIEWER_URLS = {
 #     with an internal space ("YH02 078").
 GA_QPUBLIC_APPS = {
     "gilmer": {"app_id": 672, "layer_id": 11357, "pages": [
-        {"page_type_id": 4, "page_id": 4736, "space": False}]},
+        # Verified 2026-09-10 via camoufox autocomplete flow: the report page
+        # is PageID=4738 (4736 is the search landing and returns "No Global
+        # Search Results" for every KeyValue). Key keeps one internal space
+        # ("3052AR 010"); the canonical browser URL carries a per-parcel "&Q="
+        # token which we omit (Q-less links return the full report).
+        {"page_type_id": 4, "page_id": 4738, "space": False}]},
     "lumpkin": {"app_id": 991, "layer_id": 20168, "pages": [
         {"page_type_id": 1, "page_id": 8779, "space": True,
          "space_at": 3, "space_count": 4}]},

@@ -24,14 +24,19 @@
 
 ---
 
-## 1. Gilmer County (Verified — qPublic app)
+## 1. Gilmer County (Verified — qPublic app, corrected 2026-09-10)
 - **qPublic AppID:** 672
 - **LayerID:** 11357
-- **Parcel page:** PageTypeID=4, PageID=4736
-- **KeyValue format:** parcel as-is, **no internal space**
-  (e.g. `KeyValue=0123456`)
+- **Parcel report page:** PageTypeID=4, **PageID=4738** (the old 4736 is the
+  search landing page and returns "No Global Search Results" for every
+  KeyValue — do not use it in deep links)
+- **KeyValue format:** parcel as-is with its **single internal space**
+  (e.g. `3052AR 010` → `KeyValue=3052AR+010`; autocomplete in the app
+  confirms keys like `3052AR 010`, `3052 001D`)
+- **Q token:** browser-clicked links carry a per-parcel `&Q=<id>`; omitting Q
+  works fine (full report returns: Parcel Number, Class, Class, Acres, Owner).
 - **Direct link example:**
-  `https://qpublic.schneidercorp.com/Application.aspx?AppID=672&LayerID=11357&PageTypeID=4&PageID=4736&KeyValue=<parcel>`
+  `https://qpublic.schneidercorp.com/Application.aspx?AppID=672&LayerID=11357&PageTypeID=4&PageID=4738&KeyValue=3052AR+010`
 - **Regional System:** Schneider Corp qPublic
 
 ## 2. Lumpkin County (Verified — qPublic app, 2026-08-25)
@@ -57,12 +62,22 @@
   - `...?AppID=846&LayerID=15440&PageTypeID=4&PageID=7010&KeyValue=YH02+078`
 - **Regional System:** Schneider Corp qPublic
 
-## 4. White County (Verified — qPublic app, 2026-08-25)
+## 4. White County (Verified — qPublic app, 2026-08-25; caveats 2026-09-10)
 - **qPublic AppID:** 982
 - **LayerID:** 19945
-- **Parcel page:** PageTypeID=1, PageID=8773
+- **Parcel page:** PageTypeID=1, PageID=8773 (map + popup)
+- **Report page:** PageTypeID=4, **PageID=8694** (linked from the popup's
+  "Report" link)
 - **KeyValue format:** parcel as-is, **single internal space**
   (e.g. `"018D 019"` → `KeyValue=018D%20019`)
+- **CAVEAT (2026-09-10 re-test):** the parcel RECORD exists and is found by
+  the app's global search (e.g. `018D 019` → 109 DANIEL DR, Woods Elnora),
+  but qPublic's map shows **"Parcel Feature Not Found … in map data"** for
+  the parcel polygon and the PageID=8694 report returns **"No data available
+  for the following modules"** even when navigated from within the app. This
+  is a county-side data publication gap, not a link-format problem. The
+  deep link still resolves the record ID; do not expect map polygon/report
+  data until the county publishes to qPublic.
 - **Direct link example:**
   `https://qpublic.schneidercorp.com/Application.aspx?AppID=982&LayerID=19945&PageTypeID=1&PageID=8773&KeyValue=<parcel-1-space>`
 - **Regional System:** Schneider Corp qPublic
