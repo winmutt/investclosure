@@ -17,6 +17,7 @@ import html as html_lib
 import io
 import logging
 import re
+import sys
 import time
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -99,7 +100,13 @@ def extract_pdf_text(data: bytes) -> Optional[str]:
     try:
         import pdfplumber
     except ImportError:
-        logger.warning("pdfplumber not installed; cannot parse PDF")
+        # Loud on purpose: a missing pdfplumber silently degrades every
+        # notice to truncated on-page text (see 2026-09-11 incident where a
+        # stale image without pdfplumber truncated all TN rows to 1,000
+        # chars). requirements.txt pins it; rebuild the image if this fires.
+        logger.error("pdfplumber not installed; cannot parse PDF")
+        print("ERROR: pdfplumber missing — notices will be truncated",
+              file=sys.stderr, flush=True)
         return None
     try:
         with pdfplumber.open(io.BytesIO(data)) as pdf:

@@ -470,6 +470,10 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         county = (record.get("county") or "").lower().strip()
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
 
+        # Source visibility: the on-page HTML is truncated to 1,000 chars
+        # ("Web display limited") — full text means the PDF was grabbed.
+        text_src = ("html-fallback" if "Web display limited" in raw_text
+                    else "pdf-source")
         parcels = _tn_parse_parcels(raw_text, county, auction_date, detail_url, kind=kind)
         if parcels:
             log_raw(
@@ -477,7 +481,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 listing_id=record.get("sp_case") or pk_id,
                 county=record.get("county"), state="TN",
                 decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
-                reason=f"{len(parcels)} parcel(s) split from consolidated table",
+                reason=f"{len(parcels)} parcel(s) split [{text_src}]",
                 raw_text=raw_text, url=detail_url,
             )
             return parcels
@@ -521,7 +525,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             listing_id=record.get("sp_case") or pk_id,
             county=record.get("county"), state="TN",
             decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
-            reason="single consolidated record (no parcel table)",
+            reason=f"single consolidated record [{text_src}]",
             raw_text=raw_text, url=detail_url,
         )
         if address:

@@ -127,6 +127,22 @@ class TestMortgageKindTagging:
         )
         assert props[0]["property_type"] == "mortgage_foreclosure"
 
+    def test_extract_detail_logs_text_source(self, monkeypatch):
+        import scraper.tn_publicnotice as TN
+        seen = {}
+        monkeypatch.setattr(TN, "log_raw", lambda *a, **k: seen.update(k))
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: (
+            "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ... "
+            "Web display limited to 1,000 characters")
+        s._is_tax_foreclosure = lambda t: False
+        s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
+        props = s._extract_detail(
+            None, "SID", {"pk_id": "1", "sp_case": None, "county": "Sullivan"})
+        assert len(props) == 1
+        assert "html-fallback" in seen.get("reason", "")
+
     def test_tn_extract_detail_mortgage_fallback_type(self):
         s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
         s._extract_notice_text = lambda page, sid, rec: (
