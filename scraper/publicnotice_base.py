@@ -526,6 +526,42 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         print("timeout)", end=" ", flush=True)
         return False
 
+    @staticmethod
+    def _submit_view_notice(page) -> bool:
+        """Submit the "View Notice" postback, with or without page JS.
+
+        Daytime challenge pages often render WITHOUT the ASP.NET script
+        bundles (``__doPostBack`` undefined) even though the form, the
+        ViewState fields and the solved Turnstile token are all present.
+        Prefer ``__doPostBack`` when available; otherwise set
+        ``__EVENTTARGET``/``__EVENTARGUMENT`` and submit the form natively
+        (equivalent POST).
+        """
+        try:
+            return bool(page.evaluate("""() => {
+              const target = 'ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody1$btnViewNotice';
+              if (typeof __doPostBack !== 'undefined') {
+                __doPostBack(target, ''); return 'postback';
+              }
+              const set = (n, v) => {
+                let el = document.querySelector('input[name="' + n + '"]');
+                if (!el) {
+                  el = document.createElement('input');
+                  el.type = 'hidden'; el.name = n;
+                  (document.forms[0] || document.body).appendChild(el);
+                }
+                el.value = v;
+              };
+              set('__EVENTTARGET', target);
+              set('__EVENTARGUMENT', '');
+              const f = document.querySelector('form');
+              if (!f) return '';
+              f.submit(); return 'native';
+            }"""))
+        except Exception as e:
+            logger.warning("btnViewNotice submit failed: %s", str(e)[:200])
+            return False
+
     def _pass_turnstile_gate(self, page, site_key: str) -> bool:
         """Pass the Turnstile gate (if present) and reveal the notice body.
 
@@ -564,13 +600,7 @@ class PublicNoticeScraper(BaseForeclosureScraper):
             # The widget submitted itself; nothing left to do.
             return True
         page.wait_for_timeout(800)
-        try:
-            page.evaluate(
-                "() => __doPostBack("
-                "'ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody1$btnViewNotice', '')"
-            )
-        except Exception as e:
-            logger.warning("btnViewNotice submit failed: %s", e)
+        if not self._submit_view_notice(page):
             return False
         try:
             page.wait_for_load_state("load", timeout=60000)

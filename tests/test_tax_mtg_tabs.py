@@ -359,7 +359,7 @@ class TestInBrowserTurnstileSolve:
                 if "__doPostBack" in script:
                     self.posted = True
                     self._body_len = 2000
-                    return ""
+                    return "postback"
                 return super().evaluate(script, *args)
 
             def query_selector(self, sel):
@@ -386,7 +386,7 @@ class TestInBrowserTurnstileSolve:
                 if "__doPostBack" in script:
                     self.posted = True
                     self._body_len = 2000
-                    return ""
+                    return "postback"
                 return super().evaluate(script, *args)
 
             def query_selector(self, sel):
@@ -426,6 +426,27 @@ class TestInBrowserTurnstileSolve:
 
         s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
         assert s._goto_next_page(BrokenPage(), 2) is False
+
+    def test_submit_view_notice_paths(self):
+        from scraper.publicnotice_base import PublicNoticeScraper
+        fn = PublicNoticeScraper._submit_view_notice
+
+        class Pg:
+            def __init__(self, ret):
+                self._ret = ret
+
+            def evaluate(self, script, *args):
+                return self._ret
+
+        assert fn(Pg("postback")) is True
+        assert fn(Pg("native")) is True
+        assert fn(Pg("")) is False
+
+        class Raising:
+            def evaluate(self, script, *args):
+                raise RuntimeError("dead page")
+
+        assert fn(Raising()) is False
 
     def test_gate_skips_2captcha_without_key(self, monkeypatch):
         import scraper.publicnotice_base as PB
