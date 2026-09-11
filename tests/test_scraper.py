@@ -2311,3 +2311,46 @@ class TestTNPublicNoticeParcelSplit:
         props = s._extract_detail(None, "SID", rec)
         assert len(props) == 1
         assert props[0]["property_type"] == "mortgage_foreclosure"
+
+
+class TestTNMapPublicOwnerGuard:
+    """TNMap matches must never attach public/institutional parcels."""
+
+    def _scraper(self):
+        from scraper.tnmap import TNMapScraper
+        return TNMapScraper()
+
+    def test_school_board_owner_rejected(self):
+        s = self._scraper()
+        parcels = [{
+            "ADDRESS": "BILBREY ST 216",
+            "OWNER": "OVERTON COUNTY BD OF EDU",
+            "OWNER2": "LIVINGSTON MIDDLE SCHOOL",
+            "GISLINK": "067053E A 01400",
+            "CALCAC": 15.9,
+        }]
+        prop = {"address": "216 Bilbrey Qualls Road", "county": "Overton"}
+        assert s._match_parcel(prop, parcels, {}) is None
+
+    def test_public_owner_in_owner2_rejected(self):
+        s = self._scraper()
+        parcels = [{
+            "ADDRESS": "MAPLE ST 100",
+            "OWNER": "ANYONE INC",
+            "OWNER2": "CITY OF LIVINGSTON",
+            "GISLINK": "X",
+        }]
+        assert s._match_parcel({"address": "216 Main Street"}, parcels, {}) is None
+
+    def test_private_owner_still_matches(self):
+        s = self._scraper()
+        parcels = [{
+            "ADDRESS": "BILBREY QUALLS RD 216",
+            "OWNER": "SMITH JOHN ETUX",
+            "OWNER2": " ",
+            "GISLINK": "067000X A 00100",
+            "CALCAC": 3.2,
+            "DEEDAC": 3.2,
+        }]
+        m = s._match_parcel({"address": "216 Bilbrey Qualls Road"}, parcels, {})
+        assert m and m["tnmap_gislink"] == "067000X A 00100"

@@ -340,6 +340,25 @@ class TNMapScraper:
 
         return foreclosure_properties
 
+    # Public/institutional owners. A private deed-of-trust or tax foreclosure
+    # can never target a school-board/county/state-owned parcel, so a
+    # house-number+street hit on one of these is always an address collision
+    # (e.g. "216 Bilbrey Qualls Rd" matching the school board's Livingston
+    # Middle School campus) — never a real match. Skip such candidates.
+    _PUBLIC_OWNER_RE = re.compile(
+        r"\b(BD OF EDU|BOARD OF EDUCATION|CO BD|COUNTY OF|STATE OF|CITY OF"
+        r"|UNITED STATES|US GOVERNMENT|U S GOVERNMENT|HOUSING AUTHORITY"
+        r"|DEPT OF TRANSPORTATION|TDOT|MIDDLE SCHOOL|ELEMENTARY SCHOOL"
+        r"|HIGH SCHOOL|SCHOOL DISTRICT)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _is_public_owner(cls, *names: Optional[str]) -> bool:
+        return any(
+            n and cls._PUBLIC_OWNER_RE.search(str(n)) for n in names
+        )
+
     def _match_parcel(
         self,
         prop: dict,
@@ -370,6 +389,11 @@ class TNMapScraper:
             if p_num != prop_num:
                 continue
             if not p_street:
+                continue
+            # Skip public/institutional owners (school boards, counties, ...)
+            # — they signal an address collision, not a real match.
+            if self._is_public_owner(parcel.get("OWNER"),
+                                     parcel.get("OWNER2")):
                 continue
             # Require the street name to overlap strongly with the property's.
             if self._streets_match(prop_street, p_street):
