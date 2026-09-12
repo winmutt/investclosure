@@ -121,21 +121,27 @@ class AuctionComScraper(TrusteeSaleScraper):
 
     # -- county grid -------------------------------------------------
 
+    # All page.evaluate/inner_text calls carry explicit timeouts: a wedged
+    # renderer hangs untimed calls forever (killed a full sweep on Union
+    # county, 2026-09-12).
+    EVAL_TIMEOUT = 25000
+
     def _pager_hrefs(self, page) -> List[str]:
         try:
             return page.evaluate("""() => Array.from(document.querySelectorAll('a'))
               .map(a => ({t: (a.innerText || '').trim(), h: a.href || ''}))
               .filter(x => /^(\\d+|Next|›|»)$/.test(x.t) && x.h
                 && !x.h.includes('/details/'))
-              .map(x => x.h)""") or []
+              .map(x => x.h)""", timeout=self.EVAL_TIMEOUT) or []
         except Exception:
             return []
 
-    def _county_assets(self, page, state: str, county: str) -> List[str]:
-        """All asset detail URLs on the county page (all pager pages)."""
+    def _county_assets(self, page, state: str, county: str) -> Tuple[List[str], int]:
+        """(asset detail URLs, native-count) across all pager pages."""
         url = (f"https://www.auction.com/residential/{state}/"
                f"{county_slug(county)}")
         found: List[str] = []
+        native = -1  # unknown until the count line parses; skip only on == 0
         seen_pages: set[str] = set()
         for _ in range(MAX_PAGES_PER_COUNTY):
             try:
@@ -153,24 +159,42 @@ class AuctionComScraper(TrusteeSaleScraper):
             try:
                 hrefs = page.evaluate(
                     "() => Array.from(document.querySelectorAll("
-                    "'a[href*=\"/details/\"]')).map(a => a.href)") or []
-            except Exception:
+                    "'a[href*=\"/details/\"]')).map(a => a.href)",
+                    timeout=self.EVAL_TIMEOUT) or []
+                if native < 0:
+                    count_text = page.inner_text("body", timeout=self.EVAL_TIMEOUT) or ""
+                    native = self._native_count(count_text, county, state)
+            except Exception as e:
+                logger.warning("AuctionCom grid read failed %s %s: %s",
+                               state, county, str(e)[:150])
                 break
             for h in hrefs:
                 if h not in found:
                     found.append(h)
-            nxt = next((h for h in self._pager_hrefs(page)
-                        if h not in seen_pages), None)
+            nxt = next((h for h in self._pager_hrefs(page) if h not in seen_pages), None)
             if not nxt:
                 break
             url = nxt
             time.sleep(2)
-        return found
+        return found, native
+
+    @staticmethod
+    def _native_count(body: str, county: str, state: str) -> int:
+        """'5 Properties in Buncombe County, NC' -> 5 (-1 when unparseable)."""
+        m = re.search(
+            r"([\d,]+)\s+Properties\s+in\s+" + re.escape(county) + r"\s+County,\s*" + state,
+            body or "", re.IGNORECASE)
+        if not m:
+            return -1
+        try:
+            return int(m.group(1).replace(",", ""))
+        except ValueError:
+            return -1
 
     def _scrape_county(self, page, state: str, county: str,
                        known: set[str]) -> List[PropertyData]:
         props: List[PropertyData] = []
-        hrefs = self._county_assets(page, state, county)
+        hrefs, native = self._county_assets(page, state, county)
         if not hrefs:
             return props
         fresh, seen = [], []
@@ -180,6 +204,12 @@ class AuctionComScraper(TrusteeSaleScraper):
                 continue
             (fresh if aid not in known else seen).append((aid, h))
         self._touch_seen([a for a, _ in seen])
+        if native == 0 and fresh:
+            # Page shows only nearby-county spillover; those assets belong
+            # to their home counties' pages (visited separately).
+            logger.info("AuctionCom %s %s: %d nearby-only, skipping details",
+                        state, county, len(fresh))
+            return props
         for aid, href in fresh:
             try:
                 prop = self._scrape_detail(page, state, county, aid, href)
@@ -221,7 +251,12 @@ class AuctionComScraper(TrusteeSaleScraper):
                        aid: str, href: str) -> Optional[PropertyData]:
         page.goto(href, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(6000)
-        body = page.inner_text("body") or ""
+        try:
+            body = page.inner_text("body", timeout=self.EVAL_TIMEOUT) or ""
+        except Exception as e:
+            logger.warning("AuctionCom detail read failed %s: %s",
+                           href, str(e)[:150])
+            return None
         if len(body) < 500:
             return None
         return self._parse_detail(body, href, aid, state, county)

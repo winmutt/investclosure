@@ -180,6 +180,13 @@ class TestAuctionCom:
         assert asset_id("https://www.auction.com/details/30-wilderness-dr-weaverville-nc-2177467") == "2177467"
         assert asset_id("https://x/details/abc") is None
 
+    def test_native_count(self):
+        from scraper.auction_com import AuctionComScraper as S
+        assert S._native_count("5 Properties in Buncombe County, NC", "Buncombe", "NC") == 5
+        assert S._native_count("1,234 Properties in Sevier County, TN", "Sevier", "TN") == 1234
+        assert S._native_count("no count here", "Buncombe", "NC") == -1
+        assert S._native_count("5 Properties in Madison County, NC", "Buncombe", "NC") == -1
+
     def test_bank_owned_maps_to_mtg(self):
         from scraper.server import property_category
         assert property_category({"property_type": "bank_owned"}) == "mtg"
