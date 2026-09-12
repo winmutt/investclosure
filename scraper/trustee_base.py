@@ -47,6 +47,9 @@ def price_to_dollars(text: Any) -> Optional[float]:
     return value if value > 0 else None
 
 
+_MONTHS_FULL = ("January|February|March|April|May|June|July|August|September|"
+                "October|November|December")
+_MONTHS_ABBR = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
 _DATE_RES = [
     # 10/06/2026, 07/29/2026 (trailing time/parenthetical stripped first)
     (re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})"),
@@ -54,12 +57,13 @@ _DATE_RES = [
     # 09/17/26 (2-digit year -> 20xx)
     (re.compile(r"(\d{1,2})/(\d{1,2})/(\d{2})\b"),
      lambda m: (2000 + int(m.group(3)), int(m.group(1)), int(m.group(2)))),
-    # October 7, 2026
+    # October 7, 2026 / Oct 7, 2026 / Sep 14, 2026
     (re.compile(
-        r"(January|February|March|April|May|June|July|August|September|"
-        r"October|November|December)\s+(\d{1,2}),?\s+(\d{4})", re.IGNORECASE),
+        r"(" + _MONTHS_FULL + r"|" + _MONTHS_ABBR + r")\s+(\d{1,2}),?\s+(\d{4})",
+        re.IGNORECASE),
      lambda m: (int(m.group(3)),
-                datetime.strptime(m.group(1)[:3], "%b").month, int(m.group(2)))),
+                datetime.strptime(m.group(1)[:3].title().replace("Sept", "Sep"),
+                                  "%b").month, int(m.group(2)))),
     # 2026-09-01
     (re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})"),
      lambda m: (int(m.group(1)), int(m.group(2)), int(m.group(3)))),
@@ -168,6 +172,7 @@ class TrusteeSaleScraper(BaseScraper):
         court_case: Optional[str] = None,
         sale_date: Optional[str] = None,
         price_dollars: Optional[float] = None,
+        acres: Optional[float] = None,
         description: Optional[str] = None,
         raw_text: Optional[str] = None,
         url: Optional[str] = None,
@@ -202,7 +207,7 @@ class TrusteeSaleScraper(BaseScraper):
             "latitude": None,
             "longitude": None,
             "price": price_dollars,
-            "acres": None,
+            "acres": acres,
             "description": description,
             "property_type": "mortgage_foreclosure",
             "image_url": None,

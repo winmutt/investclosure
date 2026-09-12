@@ -90,12 +90,15 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `foreclosuretennessee` | foreclosuretennessee.com grid + details | 38 TN mountain | None | TNMap links |
 | `bellcarrington` | bellcarrington.com (Google Sheet CSV) | GA/NC/SC/AL/TN mountain | None | state map links |
 | `logs_nc` | logs.com NC report (PowerBI table visual) | 20 NC mountain | None | NC OneMap links |
+| `auction_com` | auction.com county pages + details | NC/GA/TN/SC/AL mountain | None | state map links |
 
 The five trustee-sale scrapers (`rlselaw`, `brockandscott`,
 `foreclosuretennessee`, `bellcarrington`, `logs_nc`) share
 `scraper/trustee_base.py` (HTML cleaning, price/date/address parsing,
 county filtering, `mortgage_foreclosure` record builder with map/GIS
 links). All rows are mortgage/deed-of-trust sales for the Mtg tab.
+`auction_com` (same base + county detail pages) adds bank-owned (REO)
+inventory as `bank_owned`, also Mtg-tabbed.
 
 All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Notice" backend (see `scraper/publicnotice_base.py`). They download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (nc_publicnotice) or when PDF exists (tn_publicnotice), it is used as the canonical source; otherwise the on-page notice text falls back. `ga_publicnotice` scrapes Georgia Press Association tax-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF).
 

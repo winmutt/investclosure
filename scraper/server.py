@@ -62,8 +62,9 @@ def property_category(prop: dict) -> str:
 
     Each state has one Tax tab (tax foreclosures, tax sales, and all other
     public/auction notices) and one Mtg tab for mortgage / deed-of-trust
-    (bank) foreclosures. Mortgage detection checks the explicit
-    ``property_type`` first (``mortgage_foreclosure``, set by the scrapers),
+    (bank) foreclosures plus bank-owned (REO) auction inventory.
+    Mortgage detection checks the explicit ``property_type`` first
+    (``mortgage_foreclosure`` / ``bank_owned``, set by the scrapers),
     falling back to notes/description keyword heuristics for legacy rows
     stored before explicit tagging.
     """
@@ -71,6 +72,7 @@ def property_category(prop: dict) -> str:
     notes = (prop.get("notes") or "").lower()
     desc = (prop.get("description") or "").lower()
     if ("mortgage" in ptype or "mtg" in ptype or "deed of trust" in ptype
+            or "bank_owned" in ptype or "reo" in ptype
             or "mortgage" in notes or "mtg" in notes
             or "deed of trust" in desc):
         return "mtg"

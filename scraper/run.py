@@ -124,6 +124,12 @@ try:
 except ImportError as e:
     logger.warning("logs_nc not available: %s", e)
 
+try:
+    from scraper.auction_com import AuctionComScraper
+    SCRAPER_MODULES["auction_com"] = AuctionComScraper
+except ImportError as e:
+    logger.warning("auction_com not available: %s", e)
+
 
 # ---------------------------------------------------------------------------
 # Core run logic

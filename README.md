@@ -132,6 +132,7 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `foreclosuretennessee` | foreclosuretennessee.com grid | 38 TN mountain | None | TNMap links |
 | `bellcarrington` | bellcarrington.com (Google Sheet) | GA/NC/SC/AL/TN mountain | None | state map links |
 | `logs_nc` | logs.com NC report (PowerBI) | 20 NC mountain | None | NC OneMap links |
+| `auction_com` | auction.com county + detail pages | NC/GA/TN/SC/AL mountain | None | state map links |
 
 ### Selection Criteria
 

@@ -160,6 +160,65 @@ class TestBellCarrington:
         assert props[1]["county"] == "Towns"  # state inherited from section
 
 
+class TestAuctionCom:
+    BODY = ("Buy All Foreclosure Bank Owned | Foreclosure Sale | "
+            "30 Wilderness Dr | Weaverville, NC 28787, Buncombe County | "
+            "897 Views | 2 Beds1.5 Baths960 Sq. Ft. | Coming Soon | Date | "
+            "Monday, Sep 14, 2026 | Auction Start Time | TBD | Location | To Be "
+            "Determined | Property Details | Beds | 2 | Baths | 1.5 | Square "
+            "Footage | 960 | Lot Size (Acres) | 2.98 | Property Type | Single "
+            "Family | Trustee Sale Number | 25-004049-01 | APN | 9754598511000 | "
+            "Special Proceedings ID | 25 SP000828-1 | TBD | Opening Bid | VACANT |")
+
+    def _s(self):
+        from scraper.auction_com import AuctionComScraper
+        return AuctionComScraper.__new__(AuctionComScraper)
+
+    def test_slugs_and_ids(self):
+        from scraper.auction_com import county_slug, asset_id
+        assert county_slug("Buncombe") == "buncombe-county"
+        assert asset_id("https://www.auction.com/details/30-wilderness-dr-weaverville-nc-2177467") == "2177467"
+        assert asset_id("https://x/details/abc") is None
+
+    def test_bank_owned_maps_to_mtg(self):
+        from scraper.server import property_category
+        assert property_category({"property_type": "bank_owned"}) == "mtg"
+        assert property_category({"property_type": "mortgage_foreclosure"}) == "mtg"
+
+    def test_foreclosure_detail_kept(self):
+        prop = self._s()._parse_detail(
+            self.BODY, "https://www.auction.com/details/x-2177467",
+            "2177467", "NC", "Buncombe")
+        assert prop is not None
+        assert prop["property_type"] == "mortgage_foreclosure"
+        assert prop["address"] == "30 Wilderness Dr"
+        assert prop["city"] == "Weaverville"
+        assert prop["parcel_number"] == "9754598511000"
+        assert prop["acres"] == 2.98
+        assert prop["court_case"] == "25SP000828-1"
+        assert prop["auction_date"] == "2026-09-14"
+        assert prop["source_listing_id"] == "2177467"
+
+    def test_newline_body_parses(self):
+        # Live innerText uses newlines, not pipes.
+        prop = self._s()._parse_detail(
+            self.BODY.replace(" | ", "\n"),
+            "https://www.auction.com/details/x-2177467",
+            "2177467", "NC", "Buncombe")
+        assert prop is not None
+        assert prop["address"] == "30 Wilderness Dr"
+        assert prop["acres"] == 2.98
+
+    def test_private_seller_and_wrong_county_skipped(self):
+        s = self._s()
+        assert s._parse_detail(
+            self.BODY.replace("Foreclosure Sale | 30",
+                              "Private Seller | 30"),
+            "http://x", "1", "NC", "Buncombe") is None
+        assert s._parse_detail(
+            self.BODY, "http://x", "1", "NC", "Madison") is None
+
+
 class TestLogsNC:
     def test_mountain_row_kept(self):
         from scraper.logs_nc import LogsNCScraper
