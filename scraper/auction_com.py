@@ -69,6 +69,10 @@ class AuctionComScraper(TrusteeSaleScraper):
         props: List[PropertyData] = []
         try:
             with camoufox_context() as page:
+                # Bound every page call: sync evaluate() takes no timeout
+                # kwarg in this Playwright version, so the default covers
+                # hung renderers instead (killed a sweep on Union, 2026-09-12).
+                page.set_default_timeout(self.DEFAULT_TIMEOUT_MS)
                 known = self._known_assets()
                 for state, counties in STATE_COUNTIES.items():
                     for county in sorted(counties):
@@ -121,10 +125,9 @@ class AuctionComScraper(TrusteeSaleScraper):
 
     # -- county grid -------------------------------------------------
 
-    # All page.evaluate/inner_text calls carry explicit timeouts: a wedged
-    # renderer hangs untimed calls forever (killed a full sweep on Union
-    # county, 2026-09-12).
-    EVAL_TIMEOUT = 25000
+    # Bound for every page call (see scrape): a wedged renderer hangs
+    # untimed calls forever (killed a full sweep on Union county, 2026-09-12).
+    DEFAULT_TIMEOUT_MS = 25000
 
     def _pager_hrefs(self, page) -> List[str]:
         try:
@@ -132,7 +135,7 @@ class AuctionComScraper(TrusteeSaleScraper):
               .map(a => ({t: (a.innerText || '').trim(), h: a.href || ''}))
               .filter(x => /^(\\d+|Next|›|»)$/.test(x.t) && x.h
                 && !x.h.includes('/details/'))
-              .map(x => x.h)""", timeout=self.EVAL_TIMEOUT) or []
+              .map(x => x.h)""") or []
         except Exception:
             return []
 
@@ -159,10 +162,9 @@ class AuctionComScraper(TrusteeSaleScraper):
             try:
                 hrefs = page.evaluate(
                     "() => Array.from(document.querySelectorAll("
-                    "'a[href*=\"/details/\"]')).map(a => a.href)",
-                    timeout=self.EVAL_TIMEOUT) or []
+                    "'a[href*=\"/details/\"]')).map(a => a.href)") or []
                 if native < 0:
-                    count_text = page.inner_text("body", timeout=self.EVAL_TIMEOUT) or ""
+                    count_text = page.inner_text("body") or ""
                     native = self._native_count(count_text, county, state)
             except Exception as e:
                 logger.warning("AuctionCom grid read failed %s %s: %s",
@@ -210,7 +212,11 @@ class AuctionComScraper(TrusteeSaleScraper):
             logger.info("AuctionCom %s %s: %d nearby-only, skipping details",
                         state, county, len(fresh))
             return props
-        for aid, href in fresh:
+        total_fresh = len(fresh)
+        for i, (aid, href) in enumerate(fresh):
+            if (i + 1) % 10 == 0:
+                print(f"    ... {i + 1}/{total_fresh} details ({county})",
+                      flush=True)
             try:
                 prop = self._scrape_detail(page, state, county, aid, href)
             except Exception as e:
@@ -252,7 +258,7 @@ class AuctionComScraper(TrusteeSaleScraper):
         page.goto(href, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(6000)
         try:
-            body = page.inner_text("body", timeout=self.EVAL_TIMEOUT) or ""
+            body = page.inner_text("body") or ""
         except Exception as e:
             logger.warning("AuctionCom detail read failed %s: %s",
                            href, str(e)[:150])

@@ -180,6 +180,40 @@ class TestAuctionCom:
         assert asset_id("https://www.auction.com/details/30-wilderness-dr-weaverville-nc-2177467") == "2177467"
         assert asset_id("https://x/details/abc") is None
 
+    def test_county_assets_uses_strict_page_api(self):
+        # Regression: Playwright sync evaluate() takes NO timeout kwarg —
+        # passing one TypeErrors every grid read (silent full-sweep miss).
+        from scraper.auction_com import AuctionComScraper
+
+        class StrictPage:
+            def goto(self, *a, **k):
+                class R:
+                    pass
+                return R()
+
+            def wait_for_timeout(self, ms):
+                pass
+
+            @property
+            def url(self):
+                return "https://www.auction.com/residential/NC/Buncombe-county"
+
+            def evaluate(self, script):
+                if "/details/" in script:
+                    return ["https://www.auction.com/details/a-1",
+                            "https://www.auction.com/details/b-2"]
+                if "Properties in" in script or "innerText" in script:
+                    return "5 Properties in Buncombe County, NC"
+                return []
+
+            def inner_text(self, sel):
+                return "5 Properties in Buncombe County, NC"
+
+        s = AuctionComScraper.__new__(AuctionComScraper)
+        hrefs, native = s._county_assets(StrictPage(), "NC", "buncombe")
+        assert len(hrefs) == 2
+        assert native == 5
+
     def test_native_count(self):
         from scraper.auction_com import AuctionComScraper as S
         assert S._native_count("5 Properties in Buncombe County, NC", "Buncombe", "NC") == 5
