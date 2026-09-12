@@ -175,7 +175,11 @@ def get_ga_gis_url(county: str, parcel: str = "") -> str:
             kv = quote(kv).replace("%20", "+")
             return (f"{base}&PageTypeID={page['page_type_id']}"
                     f"&PageID={page['page_id']}&KeyValue={kv}")
-        return f"{base}&PageTypeID=2&PageID={page['page_id']}"
+        # No parcel: the legacy PageTypeID=2 search landings are NOT reliably
+        # loadable (White's returns HTTP 403 to every visitor). The bare
+        # App/Layer URL loads the app map + global search box for every
+        # registered county, so use that as the no-parcel landing.
+        return base
     cc = c.title().replace(" ", "")
     if not cc:
         return "https://qpublic.schneidercorp.com/"

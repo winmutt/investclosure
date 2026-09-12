@@ -70,6 +70,15 @@
   "Report" link)
 - **KeyValue format:** parcel as-is, **single internal space**
   (e.g. `"018D 019"` → `KeyValue=018D%20019`)
+- **NO search-page link:** `PageTypeID=2&PageID=8773` returns **HTTP 403** to
+  every visitor (Cloudflare WAF) — never link to it. For rows without a
+  parcel number, `get_ga_gis_url` returns the bare
+  `Application.aspx?AppID=982&LayerID=19945` (loads the app map + global
+  search box fine).
+- **Parcel lookup without a parcel number:** the app's global search box
+  (`#topSearchControl`) resolves addresses → e.g. `1008 RIVER ESTATES RD`
+  → parcel `088 047` (owner GRAY BRANDON). Use this to fill missing
+  parcel_numbers from an address.
 - **CAVEAT (2026-09-10 re-test):** the parcel RECORD exists and is found by
   the app's global search (e.g. `018D 019` → 109 DANIEL DR, Woods Elnora),
   but qPublic's map shows **"Parcel Feature Not Found … in map data"** for
