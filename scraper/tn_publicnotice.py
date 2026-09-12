@@ -90,52 +90,156 @@ _TN_SALE_DATE_RE = re.compile(
     r"November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})",
     re.IGNORECASE,
 )
-_TN_ACRES_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*(?:Acs?|AC)\b", re.IGNORECASE)
+# Day-first variant: "on the 7th day of October, 2026".
+_TN_SALE_DATE_RE2 = re.compile(
+    r"(?:on\s+the\s+)?(\d{1,2})(?:st|nd|rd|th)\s+day\s+of\s+"
+    r"(January|February|March|April|May|June|July|August|September|October|"
+    r"November|December),?\s+(\d{4})",
+    re.IGNORECASE,
+)
+_TN_ACRES_RE = re.compile(r"(\d[\d,]*\.?\d*|\.\d+)\s*(?:acres?|acs?|AC)\b",
+                             re.IGNORECASE)
+# Acreage stated for the granted tract ("containing…", "having an area of…").
+_GRANT_ACRES_RE = re.compile(
+    r"containing|having an area of|with an area of|comprising|"
+    r"consisting of|embracing", re.IGNORECASE)
+# Acreage carved back out (exceptions, reservations, non-encumbered slivers).
+_EXCEPT_ACRES_RE = re.compile(
+    r"except|exclud|does not encumber|reserving|reservation|subject to",
+    re.IGNORECASE)
+# Sale-venue language — an address here is where the auction happens
+# (often the courthouse), NOT the property being sold.
+_VENUE_RES = ("courthouse", "court house", "front door", "main door",
+              "court door", "in front of")
+# Verbs anchoring the actual auction date (vs deed/loan/modification dates).
+_SALE_VERBS = ("offer for sale", "offered for sale", "will sell",
+               "sell at public", "sale date", "date of sale", "auction",
+               "trustee's sale", "substitute trustee", "sale")
+
+
+# Phrases that open the legal description — an address after one of these
+# is the property even when sale-venue language appears nearby (the sale
+# terms flow straight into "...the following described tract: ... known
+# as Warren Lane").
+_DESCRIPTION_BOUNDARY_RE = re.compile(
+    r"following described|described as|to-wit|situate|lying and being|"
+    r"more particularly|tract no\.?", re.IGNORECASE)
+
+
+def _in_venue_context(text: str, pos: int, window: int = 150) -> bool:
+    before = text[max(0, pos - window):pos]
+    if not any(k in before.lower() for k in _VENUE_RES):
+        return False
+    # A legal-description boundary between the venue language and the
+    # address means we've moved on to the property itself.
+    return _DESCRIPTION_BOUNDARY_RE.search(before) is None
 
 
 def _tn_extract_sale_date(text: str):
+    """Auction date: prefer dates near sale verbs over deed/loan dates.
+
+    Deed-of-trust recitals lead with old dates ("Deed of Trust dated June
+    7, 2008"); the auction date sits by sale verbs ("offer for sale ...
+    on the 7th day of October, 2026"). Highest score wins, ties go to the
+    later occurrence (continuances read later).
+    """
     if not text:
         return None
-    m = _TN_SALE_DATE_RE.search(text)
-    if not m:
+    cands = []
+    for m in _TN_SALE_DATE_RE.finditer(text):
+        cands.append((m, m.group(1), m.group(2), m.group(3)))
+    for m in _TN_SALE_DATE_RE2.finditer(text):
+        cands.append((m, m.group(2), m.group(1), m.group(3)))
+    scored = []
+    for m, mon_name, day, year in cands:
+        mon = _MONTHS.get(mon_name.title())
+        if not mon:
+            continue
+        try:
+            iso = datetime.date(int(year), mon, int(day)).isoformat()
+        except Exception:
+            continue
+        ctx = text[max(0, m.start() - 120):m.end() + 120].lower()
+        score = sum(1 for v in _SALE_VERBS if v in ctx)
+        scored.append((score, m.start(), iso))
+    if not scored:
         return None
-    mon = _MONTHS.get(m.group(1).title())
-    if not mon:
-        return None
-    try:
-        return datetime.date(int(m.group(3)), mon, int(m.group(2))).isoformat()
-    except Exception:
-        return None
+    scored.sort(key=lambda t: (t[0], t[1]))
+    return scored[-1][2]
+
+
+# Measurement words mark metes-and-bounds course fragments ("250 feet of
+# Warren Lane", "95.89 feet"), never street addresses.
+_JUNK_ADDR_RE = re.compile(
+    r"\b(feet|foot|miles?|chains?|poles?|rods?|perches?|acres?)\b",
+    re.IGNORECASE)
 
 
 def _tn_extract_address(block: str):
     if not block:
         return None
-    # Prefer the *last* address occurrence in the block: each parcel row ends
-    # with a "Total:$" marker, so the parcel's own street address sits near the
-    # end of its block (the leading preamble, e.g. "2026 IN THE CHANCERY COURT",
-    # would otherwise be matched first).
-    matches = list(_TN_ADDR_RE.finditer(block))
-    if matches:
-        return matches[-1].group(1).strip()[:120]
-    matches = list(_TN_ADDR_NO_NUM_RE.finditer(block))
-    if matches:
-        return matches[-1].group(1).strip()[:120]
+
+    def _usable(m):
+        text = m.group(1)
+        return (not _JUNK_ADDR_RE.search(text)
+                and not _in_venue_context(block, m.start()))
+
+    # The subject property's own name first ("tract ... known as Warren
+    # Lane") — deed fragments elsewhere in the notice ("estate is 200
+    # Warren Lane", metes courses) must not outrank it.
+    known = re.search(r"known as\s+(" + _TN_ADDR_NO_NUM_RE.pattern + r")",
+                      block, re.IGNORECASE)
+    if known:
+        addr = known.group(1).strip().rstrip(",. ")[:120]
+        if addr and not _JUNK_ADDR_RE.search(addr) and not _in_venue_context(
+                block, known.start(1)):
+            return addr
+    # Then the *last* surviving numbered address: each parcel row ends with
+    # a "Total:$" marker, so the parcel's own street address sits near the
+    # end of its block (the leading preamble, e.g. "2026 IN THE CHANCERY
+    # COURT", would otherwise be matched first). Venue matches ("in front
+    # of the ... Courthouse, 8095 Rutledge Pike") name the auction site.
+    for m in reversed(list(_TN_ADDR_RE.finditer(block))):
+        if _usable(m):
+            return m.group(1).strip()[:120]
+    for m in reversed(list(_TN_ADDR_NO_NUM_RE.finditer(block))):
+        if _usable(m):
+            return m.group(1).strip()[:120]
     return None
 
 
 def _tn_parse_acres(block: str):
+    """Granted-tract acreage; skips exception-clause slivers.
+
+    Legal descriptions often state the sold area ("having an area of 0.74
+    acres") AND carve-outs ("does not encumber the premises (.95 acres)").
+    Prefer grant-context mentions; leading-decimal values (".95" -> 0.95)
+    parse correctly; exception-only text yields None.
+    """
     if not block:
         return None
-    m = _TN_ACRES_RE.search(block)
-    if m:
+    cands = []
+    for m in _TN_ACRES_RE.finditer(block):
         try:
             v = float(m.group(1).replace(",", ""))
-            if 0.1 < v < 10000:
-                return v
         except Exception:
-            pass
-    return None
+            continue
+        if not (0.1 < v < 10000):
+            continue
+        ctx = block[max(0, m.start() - 80):m.start()]
+        if _EXCEPT_ACRES_RE.search(ctx):
+            rank = 2
+        elif _GRANT_ACRES_RE.search(ctx):
+            rank = 0
+        else:
+            rank = 1
+        cands.append((rank, m.start(), v))
+    if not cands:
+        return None
+    cands.sort(key=lambda t: (t[0], t[1]))
+    if cands[0][0] == 2:
+        return None
+    return cands[0][2]
 
 
 def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str,

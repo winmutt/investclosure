@@ -127,6 +127,46 @@ class TestMortgageKindTagging:
         )
         assert props[0]["property_type"] == "mortgage_foreclosure"
 
+class TestTNExtractFixes:
+    """Grainger #607 regressions: venue address, deed dates, exception acres."""
+
+    VENUE_TEXT = (
+        "SUBSTITUTE TRUSTEE'S NOTICE OF SALE Whereas, by Deed of Trust dated "
+        "June 7, 2008, of record in Instrument Book 298, at page 1954, "
+        "MITCHELL BARNARD did convey in trust to secure payment of One "
+        "Hundred Thousand Dollars, evidenced by promissory note payable to "
+        "NEWPORT FEDERAL BANK. WHEREAS default has been made, the holder has "
+        "instructed foreclosure. NOW, THEREFORE, I will, on the 7th day of "
+        "October, 2026, offer for sale and sell, in front of the main door "
+        "of the Grainger County Courthouse, 8095 Rutledge Pike, Rutledge, "
+        "the following described tract: TRACT NO. ONE (1): BEING a tract of "
+        "land known as Warren Lane and being more particularly described as "
+        "follows, having an area of 0.74 acres, more or less. The Deed of "
+        "Trust does not encumber the premises (.95 acres more or less)."
+    )
+
+    def test_venue_address_rejected_known_as_wins(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(self.VENUE_TEXT) == "Warren Lane"
+
+    def test_sale_date_beats_deed_date(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        assert _tn_extract_sale_date(self.VENUE_TEXT) == "2026-10-07"
+
+    def test_granted_acres_beat_exception_sliver(self):
+        from scraper.tn_publicnotice import _tn_parse_acres
+        assert _tn_parse_acres(self.VENUE_TEXT) == 0.74
+
+    def test_exception_only_acres_is_none(self):
+        from scraper.tn_publicnotice import _tn_parse_acres
+        assert _tn_parse_acres("does not encumber (.95 acres)") is None
+
+    def test_metes_courses_are_not_addresses(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "thence South 07 East a distance of 309.02 feet to an old iron "
+            "pin, corner to Lot C; with a chord length of 95.89 feet") is None
+
     def test_extract_detail_logs_text_source(self, monkeypatch):
         import scraper.tn_publicnotice as TN
         seen = {}
