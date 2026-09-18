@@ -200,7 +200,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         return extract_street_address(text)
 
     @staticmethod
-    def _extract_ga_address(text: str) -> Optional[str]:
+    def _extract_ga_address(text: str, county: str = "") -> Optional[str]:
         """Extract the first *parcel* address from a GA sheriff's-sale notice.
 
         The notice preamble lists the Tax Commissioner's office / counsel
@@ -208,12 +208,16 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         ``located on`` phrasing that precedes each parcel's street address.
         When only a parcel number is given (Towns County style), fall back to it.
         """
+        from .courthouses import is_courthouse_address
         if not text:
             return None
         body = text.split("File #:", 1)[1] if "File #:" in text else text
         m = _GA_PARCEL_ADDR_RE.search(body)
         if m:
-            return m.group(1).strip()[:120]
+            addr = m.group(1).strip()[:120]
+            if not is_courthouse_address(addr, county, "GA"):
+                return addr
+            return None
         m2 = _GA_PARCEL_NO_RE.search(text)
         if m2:
             return f"Parcel {m2.group(1)}"
@@ -314,9 +318,26 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
 
             addr_m = _GA_PARCEL_ADDR_RE.search(block)
             address = addr_m.group(1).strip() if addr_m else None
+            if address:
+                from .courthouses import is_courthouse_address
+                if is_courthouse_address(address, block_county, "GA"):
+                    address = None
             if not address:
                 address = f"Parcel {parcel_no}"
             acres = GAPublicNoticeScraper._parse_acres(block)
+            # Map links at build time (pure URL builders, no network) so the
+            # Telegram alert sent at insert time already carries Maps + GIS.
+            # GIS is parcel-deep via qPublic; Maps only for real street
+            # addresses (not "Parcel <no>" placeholders).
+            from .gis_urls import get_ga_gis_url
+            from .nc_gis_lookup import build_google_maps_url
+            gis_url = get_ga_gis_url(block_county, parcel_no)
+            google_maps_url = (
+                build_google_maps_url(
+                    None, None, addr_m.group(1).strip(), None,
+                    block_county, state="GA")
+                if addr_m else None
+            )
             desc = block.strip()
             parcel: PropertyData = {
                 "source": "ga_publicnotice",
@@ -339,6 +360,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 "parcel_number": parcel_no,
                 "raw_source_text": desc,
                 "raw_paragraph": desc,
+                "gis_url": gis_url,
+                "google_maps_url": google_maps_url,
             }
             parcels.append(parcel)
         return parcels

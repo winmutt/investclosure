@@ -55,6 +55,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 |---|---|
 | `scraper/base.py` | BaseScraper — in-browser Turnstile solving first, 2captcha fallback (key-gated), acreage parsing, chromium detection |
 | `scraper/trustee_base.py` | TrusteeSaleScraper — shared mortgage-sale parsing/links for the 5 trustee-sale scrapers |
+| `scraper/courthouses.py` | County-courthouse address registry (61 across NC/TN/GA) + matcher — rejects sale-venue addresses |
 | `scraper/kania_law.py` | Kania Law scraper — NC tax foreclosure auctions, NC OneMap enrichment |
 | `scraper/buncombe_tax.py` | Buncombe County tax foreclosure scraper — Trumba iCal feed (`tax-foreclosures-all.ics`), NC OneMap enrichment |
 

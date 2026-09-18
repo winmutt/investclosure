@@ -161,6 +161,28 @@ class TestTNExtractFixes:
         from scraper.tn_publicnotice import _tn_parse_acres
         assert _tn_parse_acres("does not encumber (.95 acres)") is None
 
+    def test_attorney_footer_address_rejected(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "THIS IS AN ATTEMPT TO COLLECT A DEBT. James E. Albertelli, P.A. "
+            "d/b/a ALAW, Trustee 501 Union Street, Suite 600G Nashville, TN "
+            "37219 PH: (615) 265-0835 File No.: 26-003956",
+            "roane") is None
+
+    def test_county_court_fragment_rejected(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "at the Roane County Court 200 East Race Street Kingston",
+            "roane") is None
+
+    def test_registry_catches_bare_venue_address(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        # No courthouse keywords at all — registry alone must reject.
+        assert _tn_extract_address(
+            "Sale at public auction October 8, 2026 at 200 East Race Street, "
+            "Kingston, TN 37763, pursuant to the Deed of Trust",
+            "roane") is None
+
     def test_metes_courses_are_not_addresses(self):
         from scraper.tn_publicnotice import _tn_extract_address
         assert _tn_extract_address(
@@ -195,6 +217,53 @@ class TestTNExtractFixes:
         props = s._extract_detail(None, "SID", rec)
         assert len(props) == 1
         assert props[0]["property_type"] == "mortgage_foreclosure"
+
+    def test_order_of_publication_is_publication(self):
+        # Roane delinquent-tax suit: spaceless PDF text ordering service by
+        # publication on Exhibit-A defendants (answer-or-default + clerk
+        # certificate). Must be dropped, never become a "property".
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        text = ("INTHECHANCERYCOURTFORROANECOUNTY ORDEROFPUBLICATION "
+                "pursuanttoTenn.CodeAnn.67-5-2415 foranorderforserviceofprocess"
+                "bypublicationontheDefendantslisted inExhibitA arerequiredtofile"
+                "ananswer orjudgmentbydefaultmaybeentered CERTIFICATEOFCLERK "
+                "IherebycertifythatIhavehandedorplacedintheUnitedStatesmail")
+        assert s._is_publication_notice(text) is True
+
+    def test_genuine_sale_is_not_publication(self):
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        text = ("NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ... "
+                "offer for sale ... on the 7th day of October, 2026 ... "
+                "Total:$1,234.56")
+        assert s._is_publication_notice(text) is False
+
+    def test_glued_pdf_text_is_not_an_address(self):
+        from scraper.publicnotice_base import extract_street_address
+        assert extract_street_address(
+            "JOHNE.OWINGS,BPR#01337 countyherebycertifythatIhave "
+            "handedorplacedintheUnitedSt") is None
+
+    def test_normal_address_still_extracts(self):
+        from scraper.publicnotice_base import extract_street_address
+        assert extract_street_address(
+            "sale at 708 South Massachusetts Avenue, Oliver Springs") == \
+            "708 South Massachusetts Avenue"
+
+    def test_fallback_without_location_is_kept(self):
+        # Location-free fallback records are retained by design (existing
+        # behavior); the publication gate + address guards above are what
+        # keep certificate fragments out.
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: (
+            "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ..."
+        )
+        s._is_tax_foreclosure = lambda t: False
+        s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
+        rec = {"pk_id": "1", "sp_case": None, "county": "Sullivan"}
+        props = s._extract_detail(None, "SID", rec)
+        assert len(props) == 1
+        assert props[0]["address"] is None
 
 
 class TestNewspaperMortgageClassification:

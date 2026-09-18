@@ -271,11 +271,14 @@ def _extract_notice_county(text: str, slug: str = "") -> Optional[str]:
     return None
 
 
-def _extract_notice_address(text: str) -> Optional[str]:
+def _extract_notice_address(text: str, county: str = "") -> Optional[str]:
     """Extract 'Address of Property: 328 Wooten Cove Rd.' style addresses."""
+    from .courthouses import is_courthouse_address
     m = re.search(r"Address\s+of\s+(?:the\s+)?Property\s*:?\s*([^\n]+)", text, re.IGNORECASE)
     if m:
-        return m.group(1).strip().strip(".,")
+        addr = m.group(1).strip().strip(".,")
+        if addr and not is_courthouse_address(addr, county, "NC"):
+            return addr
     return None
 
 
@@ -386,7 +389,7 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                     case = scraper._extract_court_case(text)
                     pin = scraper._extract_pin(text)
                     deed_plat = scraper._extract_deed_plat(text)
-                    addr = _extract_notice_address(text)
+                    addr = _extract_notice_address(text, county or "")
                     auction = _extract_auction_date(text)
                     if auction is None:
                         auction = src.get("date_start")

@@ -6,38 +6,32 @@ Turnstile challenges are solved in-browser by the camoufox page itself
 
 ncnotices.com is the same "Public Notice" ASP.NET WebForms platform as
 tnpublicnotice.com / georgiapublicnotice.com (shared base in
-:mod:`scraper.publicnotice_base`), but NC is reached through an authenticated
-Smart Search account rather than a public popular-search category. We run a
-pre-configured saved search (the 20 NC mountain counties) and, for each
-result, solve the Cloudflare Turnstile gate and download the notice PDF (the
-on-page HTML is a truncated OCR conversion; the PDF is canonical). Missing
-acreage is enriched from NC OneMap via the parcel number.
+:mod:`scraper.publicnotice_base`). The public "Foreclosure" popular search
+needs no login: we page the GridView (newest first, 7-day lookback), keep
+rows in the 20 NC mountain counties, and for each result solve the
+Cloudflare Turnstile gate and download the notice PDF (the on-page HTML is
+a truncated OCR conversion; the PDF is canonical). Missing acreage is
+enriched from NC OneMap via the parcel number.
 """
 from __future__ import annotations
 import logging
 import random
 import re
 import time
-from typing import Optional
+from typing import List, Optional
 
 from .base import PropertyData
 from .config import (
     config,
     NCFORECLOSURES_BASE_URL,
     NC_MOUNTAIN_COUNTIES,
-    NCNOTICES_EMAIL,
-    NCNOTICES_PASSWORD,
-    NCNOTICES_SAVED_SEARCH_ID,
-    NCNOTICES_SAVED_SEARCH_NAME,
-    NCNOTICES_SEARCH_KEYWORDS,
-    NCNOTICES_SEARCH_TYPE,
     NCNOTICES_TURNSTILE_SITE_KEY,
 )
 from .publicnotice_base import (
     LOOKBACK_DAYS,
+    PER_PAGE_SELECT,
     PublicNoticeScraper,
     _is_recent_publication,
-    trim_notice_body,
 )
 from .rawlog import log_raw
 
@@ -45,12 +39,9 @@ logger = logging.getLogger(__name__)
 
 COUNTY_SET = set(NC_MOUNTAIN_COUNTIES)
 
-# --- selectors (NC Smart-Search login / saved-search workflow) ---------------
-GRID_ID = "ctl00_ContentPlaceHolder1_WSExtendedGrid1_GridView1"
-SAVED_SEARCH_SELECT = 'select[name="ctl00$ContentPlaceHolder1$as1$ddlSavedSearches"]'
-LOGIN_EMAIL = 'input[name="ctl00$ContentPlaceHolder1$AuthenticateIPA1$txtEmailAddress"]'
-LOGIN_PASSWORD = 'input[name="ctl00$ContentPlaceHolder1$AuthenticateIPA1$txtPassword"]'
-LOGIN_BTN = 'input[name="ctl00$ContentPlaceHolder1$AuthenticateIPA1$btnAuth"]'
+# Public popular-search label for foreclosure notices (same platform as TN).
+POPULAR_SEARCH = "Foreclosure"
+
 COUNTY_LABEL_ATTR = "ctl00_ContentPlaceHolder1_as1_lstCounty_"
 
 # --- notice-text parsing (NC-specific) --------------------------------------
@@ -140,11 +131,12 @@ def _extract_county(text: str, all_counties: set[str]) -> Optional[str]:
     return None
 
 
-def _extract_address(text: str) -> Optional[str]:
-    m = _ADDR_RE.search(text)
-    if m:
+def _extract_address(text: str, county: str = "") -> Optional[str]:
+    from .courthouses import is_courthouse_address
+    for m in _ADDR_RE.finditer(text or ""):
         addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
-        return addr or None
+        if addr and not is_courthouse_address(addr, county, "NC"):
+            return addr
     return None
 
 
@@ -187,72 +179,31 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
     BASE_URL = NCFORECLOSURES_BASE_URL
     TURNSTILE_SITE_KEY = NCNOTICES_TURNSTILE_SITE_KEY
 
-    def __init__(self, keywords: str = NCNOTICES_SEARCH_KEYWORDS,
-                 search_type: str = NCNOTICES_SEARCH_TYPE,
-                 max_candidates: int = 600,
-                 saved_search_id: str = NCNOTICES_SAVED_SEARCH_ID,
-                 saved_search_name: str = NCNOTICES_SAVED_SEARCH_NAME):
+    def __init__(self, max_candidates: int = 600):
         super().__init__(search_type="foreclosure", delay=1.5,
                          use_proxy=False, solve_captcha=True)
-        self.keywords = keywords
-        self.search_type = (search_type or "AND").upper()
         self.max_candidates = max_candidates
-        self.saved_search_id = saved_search_id
-        self.saved_search_name = (saved_search_name or "").strip()
         self._all_counties: set[str] = set()
 
     def _get_target_counties(self) -> set[str]:
         return COUNTY_SET
 
-    # ------------------------------------------------------------------
-    # browser helpers
-    # ------------------------------------------------------------------
-
-    def _login(self, page) -> bool:
-        """Log in to ncnotices.com; True when the Smart Search area is reached."""
-        for attempt in (1, 2):
-            try:
-                page.goto(self.BASE_URL + "/authenticate.aspx",
-                          wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(2500)
-                page.fill(LOGIN_EMAIL, NCNOTICES_EMAIL)
-                page.fill(LOGIN_PASSWORD, NCNOTICES_PASSWORD)
-                page.click(LOGIN_BTN)
-                page.wait_for_load_state("networkidle", timeout=60000)
-                page.wait_for_timeout(3000)
-                if "Smartsearch" in page.url:
-                    print(f"  logged in (session {self._extract_session(page.url)})")
-                    return True
-                body = page.evaluate("() => document.body.innerText || ''")
-                logger.warning("login attempt %d did not land on Smartsearch: %s",
-                               attempt, body[:200].replace("\n", " "))
-            except Exception as e:
-                logger.warning("login attempt %d failed: %s", attempt, e)
-            time.sleep(3 * attempt)
-        return False
-
-    def _session_url(self, page, page_name: str) -> str:
-        sid = self._extract_session(page.url)
-        return f"{self.BASE_URL}/(S({sid}))/Smartsearch/{page_name}"
+    def _county_from_grid_text(self, full_text: str) -> Optional[str]:
+        """Pull the publication county from a grid row (``County: <Name>``)."""
+        return _row_county(full_text)
 
     # ------------------------------------------------------------------
-    # keyword search (saved search)
+    # browser interactions (public popular search — no login)
     # ------------------------------------------------------------------
 
-    def _run_keyword_search(self, page) -> bool:
-        """Run the pre-configured saved search (the reliable, proven path).
-
-        ncnotices.com's manual keyword form (Go button + county checkboxes) is
-        driven by server-side UpdatePanel postbacks that Camoufox cannot
-        reliably drive, so we instead select a saved search (configured on the
-        site with the desired 21-county / keyword / match-type criteria).
-        """
-        page.goto(self._session_url(page, "Default.aspx"),
-                  wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_selector(SAVED_SEARCH_SELECT, timeout=30000)
-        page.wait_for_timeout(1500)
-
-        # Capture the site's full county list for validation.
+    def _search_foreclosures(self, page) -> None:
+        """Select the public Foreclosure popular search and widen the grid."""
+        page.select_option(
+            'select[name="ctl00$ContentPlaceHolder1$as1$ddlPopularSearches"]',
+            POPULAR_SEARCH,
+        )
+        page.wait_for_timeout(8000)
+        # Capture the site's full county list for notice-county validation.
         self._all_counties = set(page.evaluate(
             "prefix => Array.from(document.querySelectorAll("
             "'label[for^=\"' + prefix + '\"]'))"
@@ -261,109 +212,21 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
             COUNTY_LABEL_ATTR))
         if not self._all_counties:
             logger.warning("could not read county list from search form")
-
-        opts = page.evaluate(
-            "(sel) => { const e = document.querySelector(sel);"
-            " if (!e) return [];"
-            " return Array.from(e.options)"
-            ".map(o => ({v: o.value, t: (o.textContent || '').trim()})); }",
-            SAVED_SEARCH_SELECT)
-        chosen = None
-        if self.saved_search_id:
-            chosen = next((o for o in opts if o["v"] == self.saved_search_id), None)
-        if not chosen and self.saved_search_name:
-            ln = self.saved_search_name.lower()
-            chosen = next((o for o in opts if ln in o["t"].lower()), None)
-        if not chosen:
-            for kw in ("mountain", "foreclosure"):
-                chosen = next((o for o in opts if kw in o["t"].lower()), None)
-                if chosen:
-                    break
-        if not chosen:
-            logger.error("no usable saved search found; options: %s",
-                         [o["t"] for o in opts])
-            return False
-        print(f"  saved search: '{chosen['t']}' (id {chosen['v']})")
-
-        page.select_option(SAVED_SEARCH_SELECT, chosen["v"])
         try:
-            page.wait_for_load_state("networkidle", timeout=60000)
-        except Exception:
-            pass
-        page.wait_for_timeout(4000)
-        try:
-            page.wait_for_selector(f"#{GRID_ID}", timeout=60000)
-        except Exception:
-            logger.error("search results grid did not appear after saved-search selection")
-            return False
-        return True
+            page.select_option(PER_PAGE_SELECT, "50")
+            page.wait_for_timeout(4000)
+        except Exception as e:
+            logger.warning("Could not raise per-page count: %s", e)
 
-    def _grid_state(self, page) -> dict:
-        return page.evaluate("""(grid) => {
-            const t = {};
-            const total = document.getElementById(grid + '_ctl01_lblTotalPages');
-            const cur = document.getElementById(grid + '_ctl01_lblCurrentPage');
-            t.total = total ? total.textContent.trim() : null;
-            t.current = cur ? cur.textContent.trim() : null;
-            const next = document.getElementById(grid + '_ctl01_btnNext');
-            t.next_disabled = next ? next.disabled : true;
-            const rows = [];
-            document.querySelectorAll('tr').forEach(r => {
-                const hdn = r.querySelector('input[id*="hdnPKValue"]');
-                if (!hdn) return;
-                const btn = r.querySelector('input[id*="btnView"]');
-                const m = btn ? (btn.getAttribute('onclick') || '').match(/ID=(\\d+)/) : null;
-                rows.push({
-                    pk: hdn.value,
-                    id: m ? m[1] : null,
-                    text: (r.textContent || '').replace(/\\s+/g, ' ').trim(),
-                });
-            });
-            t.rows = rows;
-            return t;
-        }""", GRID_ID)
-
-    def _page_count(self, state: dict) -> int:
-        m = re.search(r"(\d+)", state.get("total") or "")
-        return int(m.group(1)) if m else 1
-
-    # ------------------------------------------------------------------
-    # detail extraction
-    # ------------------------------------------------------------------
-
-    def _extract_detail(self, page, cand: dict) -> Optional[dict]:
-        """Open a detail page and return {'text': ..., 'had_pdf': bool} or None."""
-        sid = self._extract_session(page.url)
-        url = f"{self.BASE_URL}/(S({sid}))/Details.aspx?SID={sid}&ID={cand['id']}"
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(2000)
-
-        if not self._pass_turnstile_gate(page, self.TURNSTILE_SITE_KEY):
-            logger.warning("detail content unavailable for %s", cand["id"])
-            return None
-
-        notice = page.evaluate("() => document.body.innerText || ''")
-        pdf_text = self._fetch_pdf_text(page, cand["id"])
-        if pdf_text and len(pdf_text) > 300:
-            return {"text": trim_notice_body(pdf_text), "had_pdf": True, "url": url}
-
-        notice = trim_notice_body(notice)
-        if len(notice) < 200:
-            logger.warning("notice text too short (%d) for %s",
-                           len(notice), cand["id"])
-            return None
-        return {"text": notice, "had_pdf": False, "url": url}
-
-    def _build_property(self, cand: dict, detail: dict) -> Optional[PropertyData]:
-        notice = detail["text"]
+    def _build_property(self, cand: dict, notice: str, url: str) -> Optional[PropertyData]:
         county = _extract_county(notice, self._all_counties)
         if county not in COUNTY_SET:
             log_raw(
                 self.SOURCE_NAME, listing_id=cand.get("id"),
                 county=county, state="NC",
                 decision="dropped_county",
-                reason="property county outside 21-county target set",
-                raw_text=notice, url=detail.get("url"),
+                reason="property county outside 20-county target set",
+                raw_text=notice, url=url,
             )
             return None
 
@@ -374,7 +237,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                 county=county, state="NC",
                 decision="dropped_non_foreclosure",
                 reason="no tax-only or mortgage-only signal (HOA/other lien?)",
-                raw_text=notice, url=detail.get("url"),
+                raw_text=notice, url=url,
             )
             logger.info("Skipping non-foreclosure (HOA/other lien) for %s",
                         cand.get("id"))
@@ -384,19 +247,30 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
         case_m = _CASE_RE.search(notice)
         auction_date = _find_auction_date(notice)
         pin = _extract_pin(notice)
-        address = _extract_address(notice)
+        address = _extract_address(notice, county or "")
+
+        # Map links at build time (pure URL builders, no network) so the
+        # Telegram alert sent at insert time already carries Maps + GIS.
+        # build_gis_url returns None unless a parcel/coordinates back it
+        # (parcel-deep-or-nothing); Maps needs a real street address.
+        from .nc_gis_lookup import build_gis_url, build_google_maps_url
+        gis_url = build_gis_url(None, None, pin, address, county, state="NC")
+        google_maps_url = (
+            build_google_maps_url(None, None, address, None, county, state="NC")
+            if address else None
+        )
 
         log_raw(
             self.SOURCE_NAME, listing_id=cand.get("id"),
             county=county, state="NC",
             decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
-            reason=f"{'pdf' if detail.get('had_pdf') else 'html'} source; pin={pin}",
-            raw_text=notice, url=detail.get("url"),
+            reason=f"public search; pin={pin}",
+            raw_text=notice, url=url,
         )
         return PropertyData(
             source=self.SOURCE_NAME,
             source_listing_id=cand["id"],
-            url=detail["url"],
+            url=url,
             address=address,
             city=None,
             county=county,
@@ -412,6 +286,8 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
             auction_date=auction_date,
             parcel_number=pin,
             raw_source_text=notice,
+            gis_url=gis_url,
+            google_maps_url=google_maps_url,
         )
 
     # ------------------------------------------------------------------
@@ -442,6 +318,17 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                     p["address"] = data["siteadd"]
                 if not p.get("parcel_number") and data.get("parno"):
                     p["parcel_number"] = data["parno"]
+                # Backfill map links when enrichment supplied coords/address
+                # after build time (keeps Telegram-at-insert-time complete).
+                if (p.get("latitude") is not None
+                        and p.get("longitude") is not None):
+                    from .nc_gis_lookup import build_gis_url, build_google_maps_url
+                    p["gis_url"] = p.get("gis_url") or build_gis_url(
+                        p["longitude"], p["latitude"], p.get("parcel_number"),
+                        p.get("address"), p.get("county"), state="NC")
+                    p["google_maps_url"] = p.get("google_maps_url") or build_google_maps_url(
+                        p["longitude"], p["latitude"], p.get("address"), None,
+                        p.get("county"), state="NC")
                 enriched += 1
             time.sleep(0.6)
         print(f"  GIS acreage enrichment: {enriched} of {len(props)} filled")
@@ -451,110 +338,150 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
     # main flow
     # ------------------------------------------------------------------
 
-    def scrape(self) -> list[PropertyData]:
-        print(f"\n  NC PUBLIC NOTICE FORECLOSURES (ncnotices.com keyword search)")
-        print(f"  keywords: '{self.keywords}' ({self.search_type})")
-        print(f"  Target counties: {len(COUNTY_SET)}")
-        if not NCNOTICES_EMAIL or not NCNOTICES_PASSWORD:
-            logger.error("NCNOTICES_EMAIL / NCNOTICES_PASSWORD not set")
-            return []
+    @staticmethod
+    def _notice_id(record: dict) -> Optional[str]:
+        """Numeric notice ID, preserving the pre-refactor listing-id scheme.
 
-        properties: list[PropertyData] = []
-        from camoufox.sync_api import Camoufox
-        with Camoufox(headless="virtual", humanize=False) as browser:
-            page = browser.new_page()
+        The GridView detail buttons link ``Details.aspx?...&ID=<n>`` — the
+        same ID space the saved-search grid used — so reuse it to keep
+        ``source_listing_id`` stable across the login-free migration.
+        """
+        m = re.search(r"[?&]ID=(\d+)", record.get("detail_url") or "")
+        if m:
+            return m.group(1)
+        return record.get("sp_case") or record.get("pk_id")
+
+    def scrape(self) -> List[PropertyData]:
+        """Run the scraper: public Foreclosure search, no login required."""
+        print(f"\n  NC PUBLIC NOTICE FORECLOSURES (ncnotices.com public search)")
+        print(f"  Search: '{POPULAR_SEARCH}' popular search, no login")
+        print(f"  Target counties: {len(COUNTY_SET)}")
+        print(f"  Proxy: {'enabled' if self.use_proxy else 'disabled'}")
+        print(f"  Captcha solving: {'enabled' if self.solve_captcha else 'disabled (search only)'}")
+        print()
+
+        properties: List[PropertyData] = []
+
+        proxy_cfg = {"server": config.PROXY_URL} if self.use_proxy and config.PROXY_URL else None
+
+        from .base import camoufox_context
+        with camoufox_context(proxy=proxy_cfg) as page:
             page.set_viewport_size({"width": 1600, "height": 1000})
             page.set_default_timeout(45000)
 
-            if not self._login(page):
-                return []
-            if not self._run_keyword_search(page):
-                return []
+            try:
+                print("  [1/4] Connecting to ncnotices.com ...", end=" ", flush=True)
+                page.goto(self.BASE_URL + "/", wait_until="domcontentloaded", timeout=60000)
+                session_id = self._extract_session(page.url)
+                if not session_id:
+                    logger.error("Could not extract session ID")
+                    return []
+                print(f"session={session_id}")
 
-            state = self._grid_state(page)
-            print(f"  Results: {state.get('total') or '?'} — "
-                  f"{len(state.get('rows', []))} rows on page 1")
-            print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
+                print("  [2/4] Searching foreclosure notices ...", end=" ", flush=True)
+                self._search_foreclosures(page)
+                print("done")
 
-            candidates: list[dict] = []
-            seen: set[str] = set()
-            page_num = 1
-            while True:
-                for row in state.get("rows", []):
-                    rid = row.get("id") or row.get("pk")
-                    if not rid or rid in seen:
+                # Loud by design: a missing grid means the site layout
+                # changed (outage), not a quiet week — fail instead of
+                # recording "completed, 0 found".
+                has_grid = page.evaluate(
+                    "() => !!document.querySelector('table[id*=\"GridView\"]')")
+                if not has_grid:
+                    raise RuntimeError(
+                        "search results grid did not appear after "
+                        "popular-search selection")
+
+                print("  [3/4] Parsing results ...")
+                print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
+
+                candidates: List[dict] = []
+                seen: set[str] = set()
+
+                def _collect(recs):
+                    stop = False
+                    for r in recs:
+                        nid = self._notice_id(r)
+                        if not nid or nid in seen:
+                            continue
+                        row_text = r.get("full_text") or ""
+                        # Skip rows naming a non-target county outright so we
+                        # don't burn a Turnstile solve on them.
+                        rc = (r.get("county") or "").lower() or None
+                        if rc and rc not in COUNTY_SET:
+                            continue
+                        if not _is_recent_publication(row_text):
+                            continue
+                        seen.add(nid)
+                        candidates.append({"id": nid, "pk_id": r.get("pk_id"),
+                                           "county": r.get("county")})
+                    # Grid sorts newest-first; stop once even the freshest
+                    # (first) row on a page is past the lookback window.
+                    if recs and not _is_recent_publication(
+                            recs[0].get("full_text") or ""):
+                        stop = True
+                    return stop
+
+                stop = _collect(self._parse_grid_records(page))
+                print(f"  Page 1: {len(candidates)} kept (last {LOOKBACK_DAYS} days)")
+
+                info = self._page_info(page)
+                page_no = 1
+                if info:
+                    cur, total = info["cur"], info["total"]
+                    while (cur < total and not stop and len(candidates) < self.max_candidates
+                           and page_no < 50):
+                        if not self._goto_next_page(page, cur + 1):
+                            break
+                        page_no += 1
+                        before = len(candidates)
+                        stop = _collect(self._parse_grid_records(page))
+                        print(f"  Page {page_no}: +{len(candidates) - before} kept "
+                              f"(total {len(candidates)})")
+                        nxt = self._page_info(page)
+                        if not nxt:
+                            break
+                        cur, total = nxt["cur"], nxt["total"]
+
+                candidates = candidates[:self.max_candidates]
+                print(f"  Found {len(candidates)} notices in last {LOOKBACK_DAYS} days")
+
+                print(f"  [4/4] Extracting details ({len(candidates)} cases) ...")
+                for i, cand in enumerate(candidates, 1):
+                    print(f"    [{i}/{len(candidates)}] {cand['id']} - {cand.get('county', '?')}",
+                          end=" ", flush=True)
+                    time.sleep(random.uniform(1.0, 2.0))
+                    detail_url = (f"{self.BASE_URL}/(S({session_id}))/Details.aspx"
+                                  f"?SID={session_id}&ID={cand['id']}")
+                    try:
+                        notice = self._extract_notice_text(
+                            page, session_id, cand["id"])
+                    except Exception as e:
+                        logger.warning("detail error for %s: %s", cand["id"], e)
+                        notice = None
+                    if not notice:
+                        print("(skipped)")
                         continue
-                    row_text = row.get("text", "")
-                    rc = _row_county(row_text)
-                    if rc and rc not in COUNTY_SET:
-                        continue
-                    if not _is_recent_publication(row_text):
-                        continue
-                    seen.add(rid)
-                    candidates.append(row)
-                # Grid sorts newest-first; stop once even the freshest
-                # (first) row on a page is past the lookback window.
-                rows = state.get("rows") or []
-                if rows and not _is_recent_publication(rows[0].get("text", "")):
-                    print(f"  page {page_num}: past {LOOKBACK_DAYS}-day lookback window (stale rows) — stopping paging")
-                    break
-                if not candidates or len(candidates) >= self.max_candidates:
-                    break
-                if state.get("next_disabled"):
-                    break
-                if page_num >= self._page_count(state):
-                    break
-                next_label = state.get("current")
-                page.click(f"#{GRID_ID}_ctl01_btnNext")
-                try:
-                    page.wait_for_load_state("networkidle", timeout=60000)
-                except Exception:
-                    pass
-                for _ in range(30):
-                    page.wait_for_timeout(1000)
-                    state = self._grid_state(page)
-                    if state.get("current") != next_label:
-                        break
-                page_num += 1
-                print(f"  page {page_num}: {len(state.get('rows', []))} rows, "
-                      f"{len(candidates)} collected so far")
-                if not state.get("rows"):
-                    break
+                    prop = self._build_property(cand, notice, detail_url)
+                    if prop:
+                        print(f"-> {prop['county']} "
+                              f"{prop.get('acres') if prop.get('acres') is not None else '?'}ac")
+                        properties.append(prop)
+                    else:
+                        print("(non-target county)")
 
-            candidates = candidates[:self.max_candidates]
-            print(f"  Candidates to process: {len(candidates)}")
-
-            for i, cand in enumerate(candidates, 1):
-                print(f"  [{i}/{len(candidates)}] {cand['id']}", end=" ", flush=True)
-                time.sleep(random.uniform(1.0, 2.0))
-                try:
-                    detail = self._extract_detail(page, cand)
-                except Exception as e:
-                    logger.warning("detail error for %s: %s", cand["id"], e)
-                    detail = None
-                if not detail:
-                    print("(skipped)")
-                    continue
-                prop = self._build_property(cand, detail)
-                if prop:
-                    print(f"-> {prop['county']} "
-                          f"{prop.get('acres') if prop.get('acres') is not None else '?'}ac "
-                          f"{'pdf' if detail['had_pdf'] else 'html'}")
-                    properties.append(prop)
-                else:
-                    print("(non-target county)")
-
-            page.close()
+            finally:
+                pass
 
         return properties
 
     def run(self) -> list[PropertyData]:
-        """Scrape, GIS-enrich acreage, then filter by county + MIN_ACRES."""
-        try:
-            props = self.scrape()
-        except Exception as e:
-            logger.error("Scraper %s failed: %s", self.SOURCE_NAME, e, exc_info=True)
-            return []
+        """Scrape, GIS-enrich acreage, then filter by county + MIN_ACRES.
+
+        Loud by design: failures propagate to run_scraper (status='failed'
+        + error_message) instead of degrading to "completed, 0 found".
+        """
+        props = self.scrape()
         print(f"  Scrape: {len(props)} target-county properties")
 
         props = self._enrich_acres(props)

@@ -32,6 +32,7 @@ from .publicnotice_base import (
     normalize_notice_text,
 )
 from .rawlog import log_raw
+from .courthouses import is_courthouse_address
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +91,10 @@ _TN_SALE_DATE_RE = re.compile(
     r"November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})",
     re.IGNORECASE,
 )
-# Day-first variant: "on the 7th day of October, 2026".
+# Day-first variant: "on the 7th day of October, 2026". The ordinal may
+# be split ("7 th") after space normalization, so allow the gap.
 _TN_SALE_DATE_RE2 = re.compile(
-    r"(?:on\s+the\s+)?(\d{1,2})(?:st|nd|rd|th)\s+day\s+of\s+"
+    r"(?:on\s+the\s+)?(\d{1,2})\s*(?:st|nd|rd|th)?\s+day\s+of\s+"
     r"(January|February|March|April|May|June|July|August|September|October|"
     r"November|December),?\s+(\d{4})",
     re.IGNORECASE,
@@ -108,9 +110,17 @@ _EXCEPT_ACRES_RE = re.compile(
     r"except|exclud|does not encumber|reserving|reservation|subject to",
     re.IGNORECASE)
 # Sale-venue language — an address here is where the auction happens
-# (often the courthouse), NOT the property being sold.
+# (often the courthouse), NOT the property being sold. "Suite" marks
+# office addresses (attorney/trustee offices), never land parcels.
 _VENUE_RES = ("courthouse", "court house", "front door", "main door",
               "court door", "in front of")
+# Attorney/trustee footer blocks (debt-collector mini-miranda, firm contact
+# info, publication details) — addresses here are law offices, not property.
+_FOOTER_RES = ("attempt to collect a debt", "fx:", "fax:", "publication",
+               "for more information", "contact us")
+# County-facility fragments are never private property addresses.
+_COURT_FRAG_RE = re.compile(
+    r"county\s+(court|courthouse|office|building|government)", re.IGNORECASE)
 # Verbs anchoring the actual auction date (vs deed/loan/modification dates).
 _SALE_VERBS = ("offer for sale", "offered for sale", "will sell",
                "sell at public", "sale date", "date of sale", "auction",
@@ -135,6 +145,21 @@ def _in_venue_context(text: str, pos: int, window: int = 150) -> bool:
     return _DESCRIPTION_BOUNDARY_RE.search(before) is None
 
 
+def _reject_match(text: str, pos: int, match_text: str) -> bool:
+    """True when an address candidate is venue/attorney/junk text."""
+    if _JUNK_ADDR_RE.search(match_text):
+        return True
+    if re.match(r"(19|20|21)\d\d\b", match_text.strip()):
+        # Leading 4-digit year glued on ("October 8, 2026 at 200 East ...").
+        return True
+    if _COURT_FRAG_RE.search(match_text):
+        return True
+    if _in_venue_context(text, pos):
+        return True
+    back200 = text[max(0, pos - 200):pos].lower()
+    return any(k in back200 for k in _FOOTER_RES)
+
+
 def _tn_extract_sale_date(text: str):
     """Auction date: prefer dates near sale verbs over deed/loan dates.
 
@@ -145,6 +170,7 @@ def _tn_extract_sale_date(text: str):
     """
     if not text:
         return None
+    text = normalize_notice_text(text)
     cands = []
     for m in _TN_SALE_DATE_RE.finditer(text):
         cands.append((m, m.group(1), m.group(2), m.group(3)))
@@ -169,20 +195,37 @@ def _tn_extract_sale_date(text: str):
 
 
 # Measurement words mark metes-and-bounds course fragments ("250 feet of
-# Warren Lane", "95.89 feet"), never street addresses.
+# Warren Lane", "95.89 feet"), never street addresses. Legal-role words
+# ("Owner", "Parcel Numbers", "Plaintiff") mark table headers/captions.
 _JUNK_ADDR_RE = re.compile(
-    r"\b(feet|foot|miles?|chains?|poles?|rods?|perches?|acres?)\b",
+    r"\b(feet|foot|miles?|chains?|poles?|rods?|perches?|acres?|owner|"
+    r"parcel|plaintiff|defendant|deceased|docket)\b",
     re.IGNORECASE)
 
 
-def _tn_extract_address(block: str):
+_LEAD_CONNECTORS_RE = re.compile(
+    r"^(?:at|of|on|in|near|by|from)\s+", re.IGNORECASE)
+
+
+def _clean_candidate(text: str) -> str:
+    """Strip prepositions glommed onto a match ("at 200 East Race Street")."""
+    prev = None
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    while prev != text:
+        prev = text
+        text = _LEAD_CONNECTORS_RE.sub("", text).strip()
+    return re.sub(r"\s+", " ", text)[:120]
+
+
+def _tn_extract_address(block: str, county: str = ""):
     if not block:
         return None
+    block = normalize_notice_text(block)
 
     def _usable(m):
-        text = m.group(1)
-        return (not _JUNK_ADDR_RE.search(text)
-                and not _in_venue_context(block, m.start()))
+        text = _clean_candidate(m.group(1))
+        return text and (not _reject_match(block, m.start(), text)
+                         and not is_courthouse_address(text, county, "TN"))
 
     # The subject property's own name first ("tract ... known as Warren
     # Lane") — deed fragments elsewhere in the notice ("estate is 200
@@ -190,9 +233,9 @@ def _tn_extract_address(block: str):
     known = re.search(r"known as\s+(" + _TN_ADDR_NO_NUM_RE.pattern + r")",
                       block, re.IGNORECASE)
     if known:
-        addr = known.group(1).strip().rstrip(",. ")[:120]
-        if addr and not _JUNK_ADDR_RE.search(addr) and not _in_venue_context(
-                block, known.start(1)):
+        addr = _clean_candidate(known.group(1).rstrip(",. "))
+        if addr and not _reject_match(block, known.start(1), addr) \
+                and not is_courthouse_address(addr, county, "TN"):
             return addr
     # Then the *last* surviving numbered address: each parcel row ends with
     # a "Total:$" marker, so the parcel's own street address sits near the
@@ -201,10 +244,10 @@ def _tn_extract_address(block: str):
     # of the ... Courthouse, 8095 Rutledge Pike") name the auction site.
     for m in reversed(list(_TN_ADDR_RE.finditer(block))):
         if _usable(m):
-            return m.group(1).strip()[:120]
+            return _clean_candidate(m.group(1))
     for m in reversed(list(_TN_ADDR_NO_NUM_RE.finditer(block))):
         if _usable(m):
-            return m.group(1).strip()[:120]
+            return _clean_candidate(m.group(1))
     return None
 
 
@@ -214,10 +257,11 @@ def _tn_parse_acres(block: str):
     Legal descriptions often state the sold area ("having an area of 0.74
     acres") AND carve-outs ("does not encumber the premises (.95 acres)").
     Prefer grant-context mentions; leading-decimal values (".95" -> 0.95)
-    parse correctly; exception-only text yields None.
+    parse correctly;     exception-only text yields None.
     """
     if not block:
         return None
+    block = normalize_notice_text(block)
     cands = []
     for m in _TN_ACRES_RE.finditer(block):
         try:
@@ -368,21 +412,36 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
     def _is_publication_notice(text: str) -> bool:
         """Skip court *service* publications that are not parcel sales.
 
-        tnpublicnotice.com mixes in "NOTICE OF PUBLICATION" filings used to
-        serve non-resident / cannot-be-located defendants (e.g. consolidated
-        delinquent-taxpayer lists naming dozens of parties). These have no
-        single street address or auction and must not become "properties".
+        tnpublicnotice.com mixes in service-by-publication filings used to
+        serve defendants: "NOTICE OF PUBLICATION" for non-resident /
+        cannot-be-located parties (e.g. consolidated delinquent-taxpayer
+        lists), and "ORDER OF PUBLICATION" in delinquent-tax suits ordering
+        service on Exhibit-A defendant lists (answer-or-default language,
+        clerk certificates of mailing). These name no single parcel and hold
+        no auction, so they must not become "properties".
+
+        Matching is spaceless: PDF-extracted text often arrives with all
+        inter-word spaces stripped ("ORDEROFPUBLICATION"), which the
+        space-dependent check below would otherwise miss.
         """
         if not text:
             return False
-        t = normalize_notice_text(text).upper()
-        if "NOTICE OF PUBLICATION" not in t:
+        t = re.sub(r"\s+", "", normalize_notice_text(text).upper())
+        if not any(
+            k in t
+            for k in (
+                "NOTICEOFPUBLICATION",
+                "ORDEROFPUBLICATION",
+                "SERVICEBYPUBLICATION",
+            )
+        ):
             return False
         return any(
             k in t
             for k in (
-                "NON-RESIDENT", "CANNOT BE LOCATED", "RETURN OF PROCESS",
-                "SERVICE OF PROCESS",
+                "NONRESIDENT", "CANNOTBELOCATED", "RETURNOFPROCESS",
+                "SERVICEOFPROCESS", "ORDERFORSERVICE",
+                "FILEANANSWER", "JUDGMENTBYDEFAULT",
             )
         )
 
@@ -593,6 +652,9 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
 
         # Fallback: single consolidated record (no parseable parcel table).
         # Mortgage trustee sales are single-property notices, so they land here.
+        # TN-specific extraction first (venue + courthouse aware), shared
+        # generic extractor as backup.
+        _tn_fb_address = _tn_extract_address(raw_text, county)
         acres = self._extract_acreage(raw_text)
         if acres is not None and acres < config.MIN_ACRES:
             log_raw(
@@ -604,7 +666,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 raw_text=raw_text, url=detail_url,
             )
             return []
-        address = extract_street_address(raw_text)
+        address = _tn_fb_address or extract_street_address(raw_text)
         prop: PropertyData = {
             "source": self.SOURCE_NAME,
             "source_listing_id": record.get("sp_case") or pk_id,
