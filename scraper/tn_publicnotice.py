@@ -74,16 +74,19 @@ def _parse_notice_date(text: str):
 # ga_publicnotice's bundled-notice handling).
 _TN_TOTAL_RE = re.compile(r"Total:\s*\$[\d,]+\.\d{2}")
 _TN_PARCEL_ID_RE = re.compile(r"(\d{2,3}-[A-Za-z]/[A-Za-z\d]+/\d+\.\d{2})")
+_TN_LIST_HEADER_RE = re.compile(
+    r"Owner\s+Property\s*Address\s+Parcel\s*Numbers?|Parcel\s*Numbers",
+    re.IGNORECASE)
 _TN_ADDR_RE = re.compile(
     r"(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}\s+(?:STREET|ST|AVENUE|"
     r"AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|HIGHWAY|HWY|COURT|CT|CIRCLE|"
-    r"CIR|PARKWAY|PKWY|PIKE|WAY|TRAIL)\.?)",
+    r"CIR|PARKWAY|PKWY|PIKE|WAY|TRAIL)\.?(?:\s+\d{1,5}(?![-/0-9]))?)",
     re.IGNORECASE,
 )
 _TN_ADDR_NO_NUM_RE = re.compile(
     r"([A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,3}\s+(?:STREET|ST|AVENUE|AVE|"
     r"BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|"
-    r"PARKWAY|PKWY|PIKE|WAY|TRAIL)\.?)",
+    r"PARKWAY|PKWY|PIKE|WAY|TRAIL)\.?(?:\s+\d{1,5}(?![-/0-9]))?)",
     re.IGNORECASE,
 )
 _TN_SALE_DATE_RE = re.compile(
@@ -112,12 +115,16 @@ _EXCEPT_ACRES_RE = re.compile(
 # Sale-venue language — an address here is where the auction happens
 # (often the courthouse), NOT the property being sold. "Suite" marks
 # office addresses (attorney/trustee offices), never land parcels.
-_VENUE_RES = ("courthouse", "court house", "front door", "main door",
-              "court door", "in front of")
+_VENUE_RES = ("courthouse", "court house", "county court", "front door",
+              "main door", "court door", "in front of")
 # Attorney/trustee footer blocks (debt-collector mini-miranda, firm contact
 # info, publication details) — addresses here are law offices, not property.
 _FOOTER_RES = ("attempt to collect a debt", "fx:", "fax:", "publication",
                "for more information", "contact us")
+# Header attorney blocks (trustee identification before the legal
+# description) — same problem, narrower window (these phrases sit directly
+# adjacent to firm addresses).
+_HEADER_ATTY_RES = ("substitute trustee", "co-substitute", "registered agent")
 # County-facility fragments are never private property addresses.
 _COURT_FRAG_RE = re.compile(
     r"county\s+(court|courthouse|office|building|government)", re.IGNORECASE)
@@ -157,7 +164,10 @@ def _reject_match(text: str, pos: int, match_text: str) -> bool:
     if _in_venue_context(text, pos):
         return True
     back200 = text[max(0, pos - 200):pos].lower()
-    return any(k in back200 for k in _FOOTER_RES)
+    if any(k in back200 for k in _FOOTER_RES):
+        return True
+    back100 = text[max(0, pos - 100):pos].lower()
+    return any(k in back100 for k in _HEADER_ATTY_RES)
 
 
 def _tn_extract_sale_date(text: str):
@@ -197,9 +207,11 @@ def _tn_extract_sale_date(text: str):
 # Measurement words mark metes-and-bounds course fragments ("250 feet of
 # Warren Lane", "95.89 feet"), never street addresses. Legal-role words
 # ("Owner", "Parcel Numbers", "Plaintiff") mark table headers/captions.
+# ("Estate" alone is NOT junk — "Glenview Estate Road" is a real street;
+# only "estate is/of" deed fragments qualify, handled by known-as order.)
 _JUNK_ADDR_RE = re.compile(
     r"\b(feet|foot|miles?|chains?|poles?|rods?|perches?|acres?|owner|"
-    r"parcel|plaintiff|defendant|deceased|docket)\b",
+    r"parcel|plaintiff|defendant|deceased|docket|estate\s+(is|of))\b",
     re.IGNORECASE)
 
 
@@ -652,6 +664,20 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
 
         # Fallback: single consolidated record (no parseable parcel table).
         # Mortgage trustee sales are single-property notices, so they land here.
+        # Consolidated multi-parcel LISTS (delinquent-tax suits with parcel
+        # tables but no Total:$ split markers) get no row: no single address
+        # is attributable, and any extracted one would mislead.
+        if _TN_LIST_HEADER_RE.search(normalize_notice_text(raw_text)) or len(
+                _TN_PARCEL_ID_RE.findall(raw_text)) >= 5:
+            log_raw(
+                self.SOURCE_NAME,
+                listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="TN",
+                decision="dropped_no_key",
+                reason="multi-parcel list without per-parcel splits",
+                raw_text=raw_text, url=detail_url,
+            )
+            return []
         # TN-specific extraction first (venue + courthouse aware), shared
         # generic extractor as backup.
         _tn_fb_address = _tn_extract_address(raw_text, county)

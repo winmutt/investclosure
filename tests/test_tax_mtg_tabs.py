@@ -183,6 +183,30 @@ class TestTNExtractFixes:
             "Kingston, TN 37763, pursuant to the Deed of Trust",
             "roane") is None
 
+    def test_header_attorney_address_rejected(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "Western Progressive - Tennessee, Inc., Co-Substitute Trustee "
+            "Corporation Service Company, Registered Agent 2908 Poston Ave "
+            "Nashville, TN 37203. AVT Title Services LLC, Co-Substitute "
+            "Trustee 725 Cool Springs Blvd., Suite 140 Franklin, TN 37067. "
+            "SALE INFORMATION: Sales Line: (866) 960-8299.",
+            "williamson") is None
+
+    def test_rural_route_number_kept(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "commonly known as 121 County Road 349, Sweetwater, McMinn "
+            "County, TN 37874. Property Address: 121 County Road 349.",
+            "mcminn") == "121 County Road 349"
+
+    def test_explicit_property_address_pair(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "commonly known as 1213 Hendricks St., Chattanooga, TN 37406. "
+            "Property Address: 1213 Hendricks St., Chattanooga, TN 37406.",
+            "hamilton") == "1213 Hendricks St"
+
     def test_metes_courses_are_not_addresses(self):
         from scraper.tn_publicnotice import _tn_extract_address
         assert _tn_extract_address(
@@ -204,6 +228,18 @@ class TestTNExtractFixes:
             None, "SID", {"pk_id": "1", "sp_case": None, "county": "Sullivan"})
         assert len(props) == 1
         assert "html-fallback" in seen.get("reason", "")
+
+    def test_extract_detail_skips_unattributable_parcel_list(self):
+        # Multi-parcel delinquent-tax suit: no Total:$ splits, no single
+        # address attributable — must skip, not store a wrong address.
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        s._extract_notice_text = lambda page, sid, rec: (
+            "DELINQUENT TAX SALE Owner Property Address Parcel Numbers "
+            "John Doe 123 Main St 02-001-A-001")
+        s._is_publication_notice = lambda t: False
+        s._extract_acreage = lambda t: None
+        rec = {"pk_id": "9", "sp_case": None, "county": "Roane"}
+        assert s._extract_detail(None, "SID", rec) == []
 
     def test_tn_extract_detail_mortgage_fallback_type(self):
         s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
