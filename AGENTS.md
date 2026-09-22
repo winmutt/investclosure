@@ -256,6 +256,32 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-09-22 (GA/NC public-notice under-harvest audit)**: Investigated why
+  `ga_publicnotice`/`nc_publicnotice` pull almost no new actives. Verified they
+  **run clean** (no errors) but net-new is ~0 (NC 20 notices→1 new, GA 52→0 over
+  14 runs). Root causes + fixes:
+  1. **Broken pagination** (the big one): when the ASP.NET JS bundle is absent
+     (daytime/datacenter challenge pages), `__doPostBack` is undefined and
+     `_goto_next_page` returned `False` → grids capped at **page 1** only. Live
+     probe: GA counties report 2–3 pages, `__doPostBack=undefined`; NC log
+     `Page 1: 2 kept` then stuck. Fix: `_native_postback` native `__EVENTTARGET`
+     form-submit fallback in `_goto_next_page` (shared NC/GA/TN). Verified live:
+     NC went 2→**8** notices (reached page 2).
+  2. **GA mortgage over-rejection**: GA bank sales advertise under a **"Security
+     Deed" / "Power of Sale"** (GA's deed-of-trust equivalent), not NC/TN's
+     "deed of trust"/"substitute trustee". `MORTGAGE_FC_PATTERNS` missed GA terms
+     so every bank power-of-sale sale was dropped as "non-foreclosure". Added
+     `GA_MORTGAGE_FC_PATTERNS` + `_is_mortgage_foreclosure` override. Verified
+     from raw JSONL: 7 unique notices recover to the Mtg tab; grand-jury /
+     unclaimed / court-order / sheriff-execution stay dropped.
+  3. **Turnstile in Docker is unsolvable in-browser**: camoufox ships
+     `DEFAULT_SCREEN='1x1x24'` (a bot signal, daijro/camoufox#574/#311). Forcing
+     `CAMOUFOX_VIRTUAL_DISPLAY_SIZE=1920x1080x24` (set in `camoufox_context`)
+     removes the signal but a datacenter-IP hard challenge still issues **no
+     token** (widget renders, never solves). **The 2captcha fallback is the only
+     path that actually passes GA/NC detail pages — 2captcha code was NOT deleted
+     (earlier doc note was wrong); key is live and being used.** Cost/latency
+     ~2 min + a solve per detail. NC sometimes passes in-browser, GA never does.
 - **2026-08-29**: Fixed dashboard duplicates — same parcel re-posted under different notice listing IDs (NC republications, GA listing-key format change) created duplicate active rows. `_upsert_property` now also matches `(source, county, parcel_number)` (preferring active rows); 11 stale duplicate rows archived (143 active remain). Regression tests added.
 - **2026-08-28**: Removed `hutchens_law` scraper (mortgage-only) and Caldwell County from all scrapers; stale DB rows archived. Cron schedule set to **4a & 4p America/New_York** (`--cron-hours 4,16`, env `CRON_HOURS`). All publicnotice scrapers now limit the search grid to notices **published in the last 7 days** (`LOOKBACK_DAYS` in `scraper/publicnotice_base.py`); newspaper Citizen-Times already used a 7-day rolling window.
 - **2026-07-29**: ZLS NC scraper — filtered to NC mountain counties (21 counties), NC OneMap GIS enrichment

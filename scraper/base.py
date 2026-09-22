@@ -149,14 +149,13 @@ class BaseForeclosureScraper(ABC):
         print(f"  Target: {count} counties, >={config.MIN_ACRES:.0f}ac")
         print(f"{'='*60}")
 
-        try:
-            properties = self.scrape()
-            print(f"\n  Total found: {len(properties)}")
-            filtered = self._apply_county_acreage_filter(properties)
-            return filtered
-        except Exception as e:
-            logger.error("Scraper %s failed: %s", self.SOURCE_NAME, e, exc_info=True)
-            return []
+        # Loud by design: any failure propagates to run_scraper, which
+        # records status='failed' + error_message and alerts. A quiet []
+        # here once masked total outages as "completed, 0 found".
+        properties = self.scrape()
+        print(f"\n  Total found: {len(properties)}")
+        filtered = self._apply_county_acreage_filter(properties)
+        return filtered
 
     def _apply_county_acreage_filter(
         self, properties: List[PropertyData], keep_unknown_acres: bool = True
@@ -321,6 +320,13 @@ def camoufox_context(headless: str = "virtual", humanize: bool = False, **camouf
             ...
     """
     from camoufox.sync_api import Camoufox
+    import os
+    # camoufox.virtdisplay ships DEFAULT_SCREEN='1x1x24'; a 1x1 virtual screen
+    # is a well-known bot-detection signal (daijro/camoufox#574/#311 — Turnstile
+    # silently fails in Docker). Force a real resolution. This alone does not
+    # beat a datacenter-IP hard challenge (that needs the 2captcha fallback), but
+    # it removes a gratuitous fingerprint signal and is env-overridable.
+    os.environ.setdefault("CAMOUFOX_VIRTUAL_DISPLAY_SIZE", "1920x1080x24")
     if camoufox_kwargs.get("proxy"):
         # Spoof timezone/locale/geolocation to the proxy exit so the
         # fingerprint doesn't contradict the egress IP (camoufox LeakWarning).
