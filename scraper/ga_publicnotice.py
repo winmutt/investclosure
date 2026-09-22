@@ -31,6 +31,7 @@ from .publicnotice_base import (
     ADDRESS_RE,
     _is_recent_publication,
     extract_street_address,
+    normalize_notice_text,
 )
 from .rawlog import log_raw
 
@@ -103,6 +104,25 @@ _POST_SALE_PATTERNS = [
     r"equity\s+of\s+redemption",
     r"foreclosure\s+of\s+equity",
 ]
+
+# Georgia mortgage/bank foreclosures use "Security Deed" + "Power of Sale"
+# (the GA equivalent of NC/TN's "deed of trust" / "substitute trustee"). The
+# shared MORTGAGE_FC_PATTERNS lacks these GA terms, so without them every
+# bank power-of-sale sale fell through to "non-foreclosure" and was dropped
+# instead of landing on the Mtg tab (verified 2026-09-22 from raw JSONL).
+GA_MORTGAGE_FC_PATTERNS = [
+    r"security deed",
+    r"power of sale",
+    r"sale under (?:the )?(?:notarial )?power",
+    r"notice of sale under power",
+    r"notarial(?:ly)? conveyanced?",
+]
+
+
+def _ga_has_mortgage(low: str) -> bool:
+    """True when *low* (lowercased notice) reads as a GA bank/mortgage sale."""
+    return any(re.search(p, low)
+               for p in MORTGAGE_FC_PATTERNS + GA_MORTGAGE_FC_PATTERNS)
 
 # Civil / file / case action numbers (for de-duplicating same legal case).
 _CASE_NO_RE = re.compile(
@@ -189,11 +209,26 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             return False
         if GAPublicNoticeScraper._is_post_sale(low):
             return False
-        # Always reject deed-of-trust / mortgage foreclosures
-        has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
-        if has_mortgage:
+        # Always reject deed-of-trust / mortgage foreclosures (GA-aware)
+        if _ga_has_mortgage(low):
             return False
         return any(re.search(p, low) for p in TAX_FC_PATTERNS)
+
+    @staticmethod
+    def _is_mortgage_foreclosure(text: str) -> bool:
+        """GA-aware mortgage check: also recognises security-deed / power-of-sale.
+
+        Overrides the shared base so Georgia bank foreclosures (advertised
+        under a "Security Deed" / "Power of Sale", not a "deed of trust")
+        are classified as mortgage sales for the Mtg tab instead of being
+        dropped as non-foreclosure.
+        """
+        if not text:
+            return False
+        low = normalize_notice_text(text).lower()
+        has_mortgage = _ga_has_mortgage(low)
+        has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
+        return has_mortgage and not has_tax
 
     @staticmethod
     def _extract_address(text: str) -> Optional[str]:

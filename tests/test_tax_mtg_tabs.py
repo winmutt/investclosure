@@ -127,6 +127,40 @@ class TestMortgageKindTagging:
         )
         assert props[0]["property_type"] == "mortgage_foreclosure"
 
+
+class TestGAClassifier:
+    """GA security-deed / power-of-sale bank sales must land on the Mtg tab,
+    not be dropped as 'non-foreclosure' (2026-09-22 raw-JSONL post-mortem)."""
+
+    def test_security_deed_power_of_sale_is_mortgage(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper as G
+        notice = (
+            "NOTICE OF SALE UNDER POWER, UNION COUNTY Pursuant to the Power "
+            "of Sale contained in a Security Deed given by Edward Payne to "
+            "Some Mortgage LLC, as lender, will sell the property known as "
+            "123 Main St to satisfy the debt.")
+        assert G._is_mortgage_foreclosure(notice) is True
+        assert G._is_tax_foreclosure(notice) is False
+
+    def test_ga_tax_sale_stays_tax_not_mortgage(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper as G
+        notice = (
+            "DELINQUENT PROPERTY TAX SALE Under and by virtue of certain tax "
+            "Fi. Fa.s issued by the Tax Commissioner/Deputy Tax Commissioner "
+            "for delinquent taxes due and owing, will expose for sale at the "
+            "courthouse door the following property in Rabun County, Georgia.")
+        assert G._is_tax_foreclosure(notice) is True
+        assert G._is_mortgage_foreclosure(notice) is False
+
+    def test_grand_jury_and_unclaimed_stay_dropped(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper as G
+        assert G._is_mortgage_foreclosure(
+            "LUMPKIN COUNTY GRAND JURY PRESENTMENTS TO THE HONORABLE JUDGE") is False
+        assert G._is_mortgage_foreclosure(
+            "NOTICE OF UNCLAIMED PROPERTY VALUE AT MORE THAN $75.00 "
+            "Pursuant to O.C.G.A 17-5-54 any party claiming an interest") is False
+
+
 class TestTNExtractFixes:
     """Grainger #607 regressions: venue address, deed dates, exception acres."""
 
@@ -571,6 +605,40 @@ class TestInBrowserTurnstileSolve:
 
         s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
         assert s._goto_next_page(BrokenPage(), 2) is False
+
+    def test_goto_next_page_uses_native_postback_when_js_missing(self):
+        # Daytime/challenge pages ship without the ASP.NET bundle: __doPostBack
+        # is undefined but the form + ViewState exist. _goto_next_page must fall
+        # back to a native form submit (not bail) so page 2+ is still read.
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+
+        class NoJsPage:
+            def __init__(self):
+                self.native = False
+
+            def evaluate(self, script, *args):
+                if "btnNext" in script:
+                    return "ctl00$X$btnNext"
+                if "__doPostBack" in script:
+                    raise RuntimeError("__doPostBack is not defined")
+                if "__EVENTTARGET" in script:
+                    self.native = True
+                    return True  # form present, submitted
+                return []  # _grid_pks
+
+            def wait_for_load_state(self, *a, **k):
+                pass
+
+            def wait_for_selector(self, *a, **k):
+                pass
+
+            def wait_for_timeout(self, ms):
+                pass
+
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        page = NoJsPage()
+        assert s._goto_next_page(page, 2) is True
+        assert page.native is True
 
     def test_submit_view_notice_paths(self):
         from scraper.publicnotice_base import PublicNoticeScraper

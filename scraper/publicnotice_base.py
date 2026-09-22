@@ -202,6 +202,12 @@ def extract_street_address(text: str) -> Optional[str]:
     addr = re.sub(r"\s+", " ", addr)
     if _COURT_STOPWORDS_RE.search(addr):
         return None
+    # PDF-extracted text sometimes arrives space-stripped, gluing whole
+    # sentences into one token ("countyherebycertifythatIhave...") that can
+    # end in a street suffix ("...UnitedSt"). No real street name contains a
+    # 20+ letter unbroken run (Massachusetts=13), so reject such matches.
+    if re.search(r"[A-Za-z]{20,}", addr):
+        return None
     return addr[:120] if addr else None
 
 
@@ -332,8 +338,11 @@ class PublicNoticeScraper(BaseForeclosureScraper):
             except Exception as e:
                 # Truncated: Playwright error dumps include pages of eval
                 # call-log (a tight retry loop once wrote 23MB in 40min).
-                logger.warning("__doPostBack(next) failed: %s", str(e)[:200])
-                return False
+                logger.debug("__doPostBack(next) failed: %s", str(e)[:200])
+                # Script bundle absent (common daytime/datacenter): submit the
+                # form natively so pager navigation still advances page 2+.
+                if not self._native_postback(page, btn_id):
+                    return False
         else:
             ok = page.evaluate(
                 """(n) => {
@@ -527,22 +536,18 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         return False
 
     @staticmethod
-    def _submit_view_notice(page) -> bool:
-        """Submit the "View Notice" postback, with or without page JS.
+    def _native_postback(page, event_target: str) -> bool:
+        """Submit the ASP.NET form natively, mimicking ``__doPostBack``.
 
         Daytime challenge pages often render WITHOUT the ASP.NET script
         bundles (``__doPostBack`` undefined) even though the form, the
         ViewState fields and the solved Turnstile token are all present.
-        Prefer ``__doPostBack`` when available; otherwise set
-        ``__EVENTTARGET``/``__EVENTARGUMENT`` and submit the form natively
-        (equivalent POST).
+        Setting ``__EVENTTARGET``/``__EVENTARGUMENT`` and submitting the form
+        posts the same server-side event. Used for both the "View Notice"
+        button and pager navigation when the script bundle is missing.
         """
         try:
-            return bool(page.evaluate("""() => {
-              const target = 'ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody1$btnViewNotice';
-              if (typeof __doPostBack !== 'undefined') {
-                __doPostBack(target, ''); return 'postback';
-              }
+            return bool(page.evaluate("""(target) => {
               const set = (n, v) => {
                 let el = document.querySelector('input[name="' + n + '"]');
                 if (!el) {
@@ -555,12 +560,35 @@ class PublicNoticeScraper(BaseForeclosureScraper):
               set('__EVENTTARGET', target);
               set('__EVENTARGUMENT', '');
               const f = document.querySelector('form');
-              if (!f) return '';
-              f.submit(); return 'native';
-            }"""))
+              if (!f) return false;
+              f.submit(); return true;
+            }""", event_target))
         except Exception as e:
-            logger.warning("btnViewNotice submit failed: %s", str(e)[:200])
+            logger.warning("native postback failed (%s): %s", event_target, str(e)[:200])
             return False
+
+    @staticmethod
+    def _submit_view_notice(page) -> bool:
+        """Submit the "View Notice" postback, with or without page JS.
+
+        Daytime challenge pages often render WITHOUT the ASP.NET script
+        bundles (``__doPostBack`` undefined) even though the form, the
+        ViewState fields and the solved Turnstile token are all present.
+        Prefer ``__doPostBack`` when available; otherwise submit the form
+        natively via :meth:`_native_postback` (equivalent POST).
+        """
+        target = "ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody1$btnViewNotice"
+        try:
+            ok = bool(page.evaluate(
+                """(target) => {
+                    if (typeof __doPostBack !== 'undefined') {
+                        __doPostBack(target, ''); return true;
+                    }
+                    return false;
+                }""", target))
+        except Exception:
+            ok = False
+        return ok or PublicNoticeScraper._native_postback(page, target)
 
     def _pass_turnstile_gate(self, page, site_key: str) -> bool:
         """Pass the Turnstile gate (if present) and reveal the notice body.
