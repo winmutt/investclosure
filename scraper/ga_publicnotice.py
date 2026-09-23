@@ -152,9 +152,16 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         self,
         search_type: str = "foreclosure",
         delay: float = 1.5,
-        use_proxy: bool = True,
+        use_proxy: bool = False,
         solve_captcha: bool = True,
     ):
+        # Proxy OFF by default: the container egresses from the same residential
+        # IP the operator browses from, and Cloudflare accepts it — but the
+        # configured proxy is an IONOS *datacenter* exit that (a) is distrusted
+        # and (b) IP-mismatches the 2captcha token, causing rejections. Verified
+        # 2026-09-22: browser + container share ip=45.26.156.11 (residential);
+        # proxy swaps it for 74.208.178.108 (IONOS). Turnstile failures are the
+        # camoufox-in-Docker fingerprint (camoufox#311), NOT the IP.
         super().__init__(search_type=search_type, delay=delay,
                          use_proxy=use_proxy, solve_captcha=solve_captcha)
 
