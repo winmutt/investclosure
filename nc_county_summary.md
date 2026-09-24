@@ -36,3 +36,14 @@
 - **Property / Tax Search:** https://www.burkecounty.org/ (GIS/property subpage not separately verified)
 - **Note:** The previously listed `www.burkecountync.org` domain is dead (redirects to an unrelated site); the correct official domain is `burkecounty.org`.
 - **Regional System:** (unverified)
+
+## 6. Swain County (Verified 2026-09-24)
+- **Website:** https://www.swaincountync.gov
+- **Tag Office (foreclosure listings):** https://www.swaincountync.gov/tag-office/
+  - Elementor toggle titled `FORECLOSURE LISTINGS` (`#elementor-tab-content-4992`); reads "None at this time." when no sale is pending (confirmed live 2026-09-24).
+  - Monitored by the `swain_county` scraper (`scraper/swain_county.py`) — alerts once per distinct toggle text via content-hashed `source_listing_id`.
+- **Tax Assessor (foreclosure info):** https://www.swaincountync.gov/tax-office/
+  - `Notice of Foreclosure Sales` toggle links to a static info doc (`/download/tax-notice-of-foreclosure/`, WordPress Download Manager `?wpdmdl=9278`, file `HOJUN.pdf`) — a 2-page **scanned-image PDF with no extractable text** (48KB, uploaded 2024-08-02), describing the process, not live per-parcel listings. Captured as reference URL only.
+- **Document Center:** https://www.swaincountync.gov/documents/ (Tax Office category holds assessor shapefiles/forms; no live sale list found)
+- **Tax Collections contacts:** TaxOffice@swaincountync.gov, (828) 488-9273 ext 2224/2236; 101 Mitchell Street, Bryson City, NC 28713
+- **Regional System:** NC OneMap statewide parcel service (Swain FIPS 173)
