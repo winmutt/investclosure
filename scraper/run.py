@@ -136,6 +136,30 @@ try:
 except ImportError as e:
     logger.warning("swain_county not available: %s", e)
 
+try:
+    from scraper.ashe_county import AsheCountyScraper
+    SCRAPER_MODULES["ashe_county"] = AsheCountyScraper
+except ImportError as e:
+    logger.warning("ashe_county not available: %s", e)
+
+try:
+    from scraper.haywood_county import HaywoodCountyScraper
+    SCRAPER_MODULES["haywood_county"] = HaywoodCountyScraper
+except ImportError as e:
+    logger.warning("haywood_county not available: %s", e)
+
+try:
+    from scraper.macon_county import MaconCountyScraper
+    SCRAPER_MODULES["macon_county"] = MaconCountyScraper
+except ImportError as e:
+    logger.warning("macon_county not available: %s", e)
+
+try:
+    from scraper.mcdowell_county import McDowellCountyScraper
+    SCRAPER_MODULES["mcdowell_county"] = McDowellCountyScraper
+except ImportError as e:
+    logger.warning("mcdowell_county not available: %s", e)
+
 
 # ---------------------------------------------------------------------------
 # Core run logic

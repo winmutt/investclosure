@@ -58,7 +58,7 @@ GIS_VIEWER_URLS = {
     "ashe":         "https://ashecounty.org",
     "avery":        "https://www.averycountync.gov",
     "buncombe":     "https://community.spatialest.com/nc/buncombe/#/Property-Search/",
-    "burke":       "https://www.burkecounty.org",
+    "burke":       "https://burkenc.org",  # verified 2026-09-25 (burkecounty.org = Chamber site)
     "catawba":      "https://www.catawbacountync.gov",
     "cherokee":     "https://www.cherokeecounty.org",
     "clay":         "https://www.claycountync.gov",

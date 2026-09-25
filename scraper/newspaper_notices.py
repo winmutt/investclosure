@@ -1,10 +1,13 @@
 """Newspaper public notices scraper -- local mountain county newspapers.
 
-Scrapes 4 NC mountain county newspapers for public/legal notices:
+Scrapes NC mountain county newspaper notices plus two Gannett API hubs:
   - Transylvania Times (Brevard, transylvania)  -- AdPerfect platform
   - Watauga Democrat (Boone, watauga)            -- BLOX/CMX platform
+  - Avery Journal-Times (Newland, avery)         -- BLOX/TownNews platform
   - Sylva Herald (Sylva, jackson)                -- BLOX/CMX platform
   - Mitchell News (Spruce Pine, mitchell)        -- BLOX/CMX platform
+  - Citizen Times API (Asheville, gannett)       -- Gannett public-notices API
+  - BlueRidgeNow API (Hendersonville, gannett)   -- Gannett public-notices API
 
 These sites publish classified notices including foreclosures, tax lien sales,
 trustee sales, real estate sales, estate proceedings, and legal filings.
@@ -51,6 +54,18 @@ CITIZEN_TIMES_API_URL = "https://www.citizen-times.com/public-notices/api/search
 CITIZEN_TIMES_STATE_FILE = "citizen_times_state.json"
 CITIZEN_TIMES_BACKFILL_DAYS = 180      # initial 6-month lookback
 CITIZEN_TIMES_REGULAR_DAYS = 7         # regular rolling window
+
+# BlueRidgeNow (Hendersonville Times-News) — same Gannett public-notices
+# platform/API as Citizen-Times, separate state file + site label.
+BLUERIDGE_API_URL = "https://www.blueridgenow.com/public-notices/api/search"
+BLUERIDGE_SITE_URL = "https://www.blueridgenow.com/public-notices"
+BLUERIDGE_STATE_FILE = "blueridge_state.json"
+
+# Avery Journal-Times (TownNews BLOX, same pattern as Watauga Democrat)
+AVERY_JOURNAL_BASE = "https://www.averyjournal.com/classifieds/community/public_notices/"
+
+# Mitchell News legals moved to the Newstopics combined domain.
+MITCHELL_NEWS_URL = "https://www.newstopicnews.com/mitchell/classified/legals"
 
 # ---------------------------------------------------------------------------
 # Tax-foreclosure classification.
@@ -218,31 +233,46 @@ def _slug_to_title(slug: str) -> str:
     return " ".join(slug.replace("-", " ").title().split())
 
 
-def _citizen_times_state_path() -> Path:
+def _gannett_state_path(filename: str) -> Path:
     """Path to the JSON state file tracking the last successful lookback end."""
-    return config.data_dir / CITIZEN_TIMES_STATE_FILE
+    return config.data_dir / filename
 
 
-def _read_citizen_times_state() -> Optional[str]:
+def _read_gannett_state(filename: str) -> Optional[str]:
     """Return the last successful end date (ISO) from state, or None."""
     try:
-        p = _citizen_times_state_path()
+        p = _gannett_state_path(filename)
         if p.exists():
             data = json.loads(p.read_text())
             return data.get("last_end")
     except Exception as exc:
-        logger.warning("citizen-times state read failed: %s", exc)
+        logger.warning("gannett state read failed (%s): %s", filename, exc)
     return None
+
+
+def _write_gannett_state(filename: str, end_date: str) -> None:
+    """Persist the last successful end date so the next run is incremental."""
+    try:
+        p = _gannett_state_path(filename)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"last_end": end_date}, indent=2))
+    except Exception as exc:
+        logger.warning("gannett state write failed (%s): %s", filename, exc)
+
+
+def _citizen_times_state_path() -> Path:
+    """Path to the JSON state file tracking the last successful lookback end."""
+    return _gannett_state_path(CITIZEN_TIMES_STATE_FILE)
+
+
+def _read_citizen_times_state() -> Optional[str]:
+    """Return the last successful end date (ISO) from state, or None."""
+    return _read_gannett_state(CITIZEN_TIMES_STATE_FILE)
 
 
 def _write_citizen_times_state(end_date: str) -> None:
     """Persist the last successful end date so the next run is incremental."""
-    try:
-        p = _citizen_times_state_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps({"last_end": end_date}, indent=2))
-    except Exception as exc:
-        logger.warning("citizen-times state write failed: %s", exc)
+    _write_gannett_state(CITIZEN_TIMES_STATE_FILE, end_date)
 
 
 def _extract_notice_county(text: str, slug: str = "") -> Optional[str]:
@@ -310,24 +340,29 @@ def _extract_auction_date(text: str) -> Optional[str]:
         return None
 
 
-def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData]:
-    """Scrape foreclosure notices from the Citizen Times / Gannett API.
+def _try_gannett_api(api_url: str, site_url: str, state_file: str,
+                     label: str, lookback_days: Optional[int] = None,
+                     backfill_days: int = CITIZEN_TIMES_BACKFILL_DAYS,
+                     regular_days: int = CITIZEN_TIMES_REGULAR_DAYS) -> list[PropertyData]:
+    """Scrape foreclosure notices from a Gannett public-notices search API.
+
+    Shared by Citizen-Times (Buncombe) and BlueRidgeNow (Henderson) — same
+    platform, separate API origins and incremental-state files.
 
     Uses keyword='foreclosure' so probate/creditor notices (like the old
     NOTICE TO CREDITORS records) are excluded. The first run backfills
-    ``CITIZEN_TIMES_BACKFILL_DAYS`` (180); later runs use a rolling
-    ``CITIZEN_TIMES_REGULAR_DAYS`` (7) window starting from the last
-    successful run, persisted to ``citizen_times_state.json``.
+    ``backfill_days``; later runs use a rolling ``regular_days`` window
+    starting from the last successful run, persisted per-site.
     """
-    last_end = _read_citizen_times_state()
+    last_end = _read_gannett_state(state_file)
     if lookback_days is None:
-        lookback_days = CITIZEN_TIMES_REGULAR_DAYS if last_end else CITIZEN_TIMES_BACKFILL_DAYS
+        lookback_days = regular_days if last_end else backfill_days
 
     today = date.today()
     end_date = today.isoformat()
     start_date = (today - timedelta(days=lookback_days)).isoformat()
 
-    logger.info("Citizen Times: fetching 'foreclosure' notices %s .. %s", start_date, end_date)
+    logger.info("%s: fetching 'foreclosure' notices %s .. %s", label, start_date, end_date)
 
     properties: list[PropertyData] = []
     scraper = NewspaperNoticesScraper()
@@ -338,11 +373,11 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
         with camoufox_context() as cpage:
             fetcher = CamoufoxFetcher(cpage)
             # Navigate to the API origin once so the POST is same-origin.
-            cpage.goto("https://www.citizen-times.com/public-notices",
+            cpage.goto(site_url,
                        wait_until="domcontentloaded", timeout=60000)
             cpage.set_extra_http_headers({
                 "Content-Type": "text/plain;charset=UTF-8",
-                "Referer": "https://www.citizen-times.com/public-notices",
+                "Referer": site_url,
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             })
@@ -357,9 +392,9 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                     "endDate": end_date,
                     "page": page,
                 }
-                raw = fetcher.post(CITIZEN_TIMES_API_URL, json.dumps(body))
+                raw = fetcher.post(api_url, json.dumps(body))
                 if not raw:
-                    logger.warning("Citizen Times: empty API response on page %d", page)
+                    logger.warning("%s: empty API response on page %d", label, page)
                     break
                 data = json.loads(raw)
                 hits = (data.get("hits") or {}).get("hits") or []
@@ -384,7 +419,7 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                                 decision="dropped_non_foreclosure",
                                 reason="no tax or mortgage-foreclosure signal",
                                 raw_text=text,
-                                url="https://www.citizen-times.com/public-notices/")
+                                url=site_url + "/")
                         continue
                     case = scraper._extract_court_case(text)
                     pin = scraper._extract_pin(text)
@@ -410,14 +445,14 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                         "deed_book": deed_plat if (deed_plat or "").startswith("Deed:") else None,
                         "raw_source_text": text,
                         "raw_paragraph": text,
-                        "url": "https://www.citizen-times.com/public-notices/",
+                        "url": site_url + "/",
                         "address": addr,
                         "city": None,
                         "county": county.title(),
                         "state": "NC",
                         "zip_code": None, "latitude": None, "longitude": None,
                         "price": None, "acres": None,
-                        "description": f"[Citizen Times] {' -- '.join(parts)}",
+                        "description": f"[{label}] {' -- '.join(parts)}",
                         "property_type": kind, "image_url": None,
                         "parcel_number": pin,
                         "auction_date": auction, "close_date": None,
@@ -425,18 +460,33 @@ def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData
                     log_raw("newspaper_notices", listing_id=nid,
                             county=county, state="NC",
                             decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
-                            reason=f"citizen-times api; pin={pin}",
+                            reason=f"{label} api; pin={pin}",
                             raw_text=text,
-                            url="https://www.citizen-times.com/public-notices/")
+                            url=site_url + "/")
                 page += 1
                 time.sleep(0.5)
     except Exception as exc:
-        logger.error("Citizen Times search failed: %s", exc)
+        logger.error("%s search failed: %s", label, exc)
         return properties
 
-    _write_citizen_times_state(end_date)
-    logger.info("Citizen Times: %d mountain-county foreclosure notices", len(properties))
+    _write_gannett_state(state_file, end_date)
+    logger.info("%s: %d mountain-county foreclosure notices", label, len(properties))
     return properties
+
+
+def _try_citizen_times(lookback_days: Optional[int] = None) -> list[PropertyData]:
+    """Scrape Citizen Times / Gannett NC Public Notices search API (Buncombe)."""
+    return _try_gannett_api(
+        CITIZEN_TIMES_API_URL,
+        "https://www.citizen-times.com/public-notices",
+        CITIZEN_TIMES_STATE_FILE, "Citizen Times", lookback_days)
+
+
+def _try_blueridge(lookback_days: Optional[int] = None) -> list[PropertyData]:
+    """Scrape BlueRidgeNow / Gannett NC Public Notices search API (Henderson)."""
+    return _try_gannett_api(
+        BLUERIDGE_API_URL, BLUERIDGE_SITE_URL,
+        BLUERIDGE_STATE_FILE, "BlueRidgeNow", lookback_days)
 
 
 class NewspaperNoticesScraper(BaseScraper):
@@ -452,9 +502,11 @@ class NewspaperNoticesScraper(BaseScraper):
         for scrape_fn in [
             self._scrape_transylvanian_times,
             self._scrape_watauga_democrat,
+            self._scrape_avery_journal,
             self._scrape_sylvaherald,
             self._scrape_mitchellnews,
             self._scrape_citizen_times,
+            self._scrape_blueridge,
         ]:
             try:
                 props = scrape_fn()
@@ -894,7 +946,7 @@ class NewspaperNoticesScraper(BaseScraper):
 
     def _scrape_mitchellnews(self) -> list[PropertyData]:
         logger.info("Scraping Mitchell News ...")
-        url = "https://www.mitchellnews.com/classified/legals"
+        url = MITCHELL_NEWS_URL
 
         with camoufox_context() as page:
             page.set_viewport_size({"width": 1920, "height": 1080})
@@ -966,6 +1018,89 @@ class NewspaperNoticesScraper(BaseScraper):
         logger.info("Mitchell News: %d relevant notices (skipped %d non-tax/mortgage)", len(properties), skipped)
         return properties
 
+    def _scrape_avery_journal(self) -> list[PropertyData]:
+        """Scrape Avery Journal-Times public notices (TownNews BLOX, Avery County).
+
+        Same platform pattern as the Watauga Democrat: listing cards link to
+        ``<slug>/ad_<uuid>.html`` detail pages.
+        """
+        logger.info("Scraping Avery Journal ...")
+        base = AVERY_JOURNAL_BASE
+
+        with camoufox_context() as page:
+            page.set_viewport_size({"width": 1920, "height": 1080})
+            page.goto(base, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(8000)
+            html = page.content()
+
+            ad_links = re.findall(r'/classifieds/community/public_notices/([^"\'<>]+)/ad_([0-9a-f-]+)\.html', html)
+            all_dates = re.findall(r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s+\d{4}', html)
+            candidates: list[dict] = []
+            seen: set[str] = set()
+            for slug, uuid in ad_links[:25]:
+                if uuid in seen:
+                    continue
+                seen.add(uuid)
+                if not any(pat in slug.lower() for pat in PROPERTY_RELEVANT_SLUGS):
+                    continue
+                idx = len(candidates)
+                date = all_dates[idx % len(all_dates)] if all_dates else None
+                candidates.append({"uuid": uuid, "slug": slug, "date": date})
+
+        # Phase 2
+        properties: list[PropertyData] = []
+        for c in candidates:
+            d_url = f"{base}{c['slug']}/ad_{c['uuid']}.html"
+            time.sleep(2)
+            detail = self._visit_detail(d_url)
+            if detail.get("parcel") is None and not detail.get("title"):
+                logger.warning("AJ %s detail page failed or empty", c['slug'])
+                continue
+            base_title = _slug_to_title(c['slug'])
+            if detail.get("title") and len(detail["title"]) > 5:
+                base_title = detail["title"]
+            kind = _classify_newspaper_notice(f"{base_title} {detail.get('raw_text') or ''}")
+            if kind is None:
+                log_raw("newspaper_notices", listing_id=f"aj_{c['uuid']}",
+                        county="Avery", state="NC",
+                        decision="dropped_non_foreclosure",
+                        reason="no tax or mortgage-foreclosure signal",
+                        raw_text=detail.get("raw_text") or "", url=d_url)
+                logger.info("AJ %s skipped (not a tax/mortgage notice)", c['slug'])
+                continue
+            desc = f"[Avery Journal] {base_title}"
+            if c["date"]:
+                desc += f" -- {c['date']}"
+            properties.append({
+                "source": "newspaper_notices",
+                "court_case": detail.get("court_case"),
+                "extracted_deed_plat": detail.get("deed_plat"),
+                "extracted_pin": detail.get("pin"),
+                "deed_book": detail.get("deed_plat") if (detail.get("deed_plat") or "").startswith("Deed:") else None,
+                "raw_source_text": detail.get("raw_text"),
+                "raw_paragraph": detail.get("raw_text"),
+                "source_listing_id": f"aj_{c['uuid']}",
+                "url": d_url,
+                "address": None, "city": "Newland", "county": "Avery", "state": "NC",
+                "zip_code": None, "latitude": None, "longitude": None,
+                "price": None, "acres": None,
+                "description": desc,
+                "property_type": kind, "image_url": None,
+                "parcel_number": detail["parcel"],
+                "auction_date": c["date"], "close_date": None,
+            })
+            log_raw("newspaper_notices", listing_id=f"aj_{c['uuid']}",
+                    county="Avery", state="NC",
+                    decision="kept_tax" if kind == "public_notice" else "kept_mortgage",
+                    reason="avery-journal detail", raw_text=detail.get("raw_text") or "",
+                    url=d_url)
+        logger.info("Avery Journal: %d relevant notices", len(properties))
+        return properties
+
     def _scrape_citizen_times(self, lookback_days: Optional[int] = None) -> list[PropertyData]:
         """Scrape Citizen Times / Gannett NC Public Notices search API."""
         return _try_citizen_times(lookback_days=lookback_days)
+
+    def _scrape_blueridge(self, lookback_days: Optional[int] = None) -> list[PropertyData]:
+        """Scrape BlueRidgeNow (Hendersonville Times-News) Gannett public notices API."""
+        return _try_blueridge(lookback_days=lookback_days)
