@@ -395,7 +395,13 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         self,
         search_type: str = "foreclosure",
         delay: float = 1.5,
-        use_proxy: bool = True,
+        # Direct egress by default: the configured proxy is an IONOS
+        # *datacenter* exit, which Cloudflare distrusts and answers with
+        # the failure_retry widget variant (in-browser clicks never yield
+        # a token, forcing every detail through paid 2captcha). Same
+        # rationale as the GA/NC proxy-off defaults. Verified live:
+        # direct-egress details solve in-browser in ~30s.
+        use_proxy: bool = False,
         solve_captcha: bool = True,
     ):
         super().__init__(search_type=search_type, delay=delay,

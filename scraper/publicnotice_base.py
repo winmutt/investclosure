@@ -505,7 +505,7 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         return False
 
     def _solve_turnstile_in_browser(self, page, site_key: str,
-                                    timeout_s: int = 90) -> bool:
+                                        timeout_s: int = 60) -> bool:
         """Pass the Turnstile challenge with the live camoufox page itself.
 
         No third-party solving service: the stealth-Firefox session satisfies
@@ -513,11 +513,15 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         rendered) is clicked in-page. Returns True once the widget holds a
         token or the notice body is already visible. (``site_key`` is kept
         for call compatibility; the token is bound by the page itself.)
+
+        The click is retried while polling: the widget iframe only renders
+        ~10-20s after page load (api.js redirect + bundle + challenge
+        HTML), so a single click at t+0 hits nothing and the token then
+        never arrives without further interaction.
         """
         print("(solving turnstile in-browser ...", end=" ", flush=True)
         try:
             deadline = time.time() + timeout_s
-            clicked = False
             while time.time() < deadline:
                 if self._notice_body_visible(page):
                     print("passed)", end=" ", flush=True)
@@ -525,10 +529,8 @@ class PublicNoticeScraper(BaseForeclosureScraper):
                 if self._turnstile_token(page):
                     print("token ready)", end=" ", flush=True)
                     return True
-                if not clicked:
-                    clicked = True
-                    self._click_turnstile_checkbox(page)
-                page.wait_for_timeout(2000)
+                self._click_turnstile_checkbox(page)
+                page.wait_for_timeout(3000)
         except Exception as e:
             print(f"error: {e})", end=" ", flush=True)
             return False

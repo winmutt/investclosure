@@ -256,6 +256,20 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-09-25 (in-browser Turnstile fixed — click ONCE was the bug)**:
+  In-browser solving had failed 534/534 times (every detail fell through to
+  paid 2captcha). Live probes showed the click machinery works fine — the bug
+  was that `_solve_turnstile_in_browser` clicked **once at t+0**, before the
+  widget iframe renders (~10-20s: api.js 302 + bundle + challenge HTML), then
+  waited passively 90s for a token that needs interaction. Fix: retry the
+  click while polling (shared NC/GA/TN base), timeout 90s→60s. Verified live
+  with 2captcha rigged to explode: NC 2 details @9s each, GA gilmer @39s, TN
+  direct-egress @32s. Supersedes the 2026-09-22 note that "2captcha is the
+  only path" — it is now the fallback, not the primary.
+  Companion find: TN routed via the IONOS datacenter proxy gets Cloudflare's
+  `failure_retry` widget (clicks never yield a token), so `tn_publicnotice`
+  default flipped to `use_proxy=False` (same rationale as the GA proxy-off
+  commit); direct-egress TN solves in-browser. Keep 2captcha key configured.
 - **2026-09-22 (GA/NC public-notice under-harvest audit)**: Investigated why
   `ga_publicnotice`/`nc_publicnotice` pull almost no new actives. Verified they
   **run clean** (no errors) but net-new is ~0 (NC 20 notices→1 new, GA 52→0 over
