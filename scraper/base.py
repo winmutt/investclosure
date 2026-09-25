@@ -170,14 +170,16 @@ class BaseForeclosureScraper(ABC):
         filtered = []
         skipped = 0
         for prop in properties:
-            county = (prop.get("county") or "").lower().strip()
+            # County keys use underscores for multi-word names
+            # ("van_buren") while parsed text has spaces ("Van Buren").
+            county = (prop.get("county") or "").lower().strip().replace(" ", "_")
             acres = prop.get("acres")
             if county and county in state_counties:
                 if acres is None and keep_unknown_acres:
-                    prop["county"] = county.title()
+                    prop["county"] = county.replace("_", " ").title()
                     filtered.append(prop)
                 elif acres is not None and acres >= config.MIN_ACRES:
-                    prop["county"] = county.title()
+                    prop["county"] = county.replace("_", " ").title()
                     filtered.append(prop)
                 else:
                     skipped += 1

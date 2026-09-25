@@ -415,11 +415,11 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         if not full_text:
             return None
         for pat in (
-            r"TENNESSEE\s*[,:]?\s*([A-Z][A-Za-z]+)\s+COUNTY",
-            r"([A-Z][A-Za-z]+)\s+COUNTY\s*[,:]?\s*TENNESSEE",
+            r"TENNESSEE\s*[,:]?\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\s+COUNTY",
+            r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\s+COUNTY\s*[,:]?\s*TENNESSEE",
             r"(?:at\s+the\s+\w+\s+(?:door|entrance|breezeway|steps|lobby)[^,]*,"
-            r"\s*)([A-Z][A-Za-z]+)\s+County\s*Courthouse",
-            r"([A-Z][A-Za-z]+)\s+County\s*Courthouse",
+            r"\s*)([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\s+County\s*Courthouse",
+            r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\s+County\s*Courthouse",
         ):
             m = re.search(pat, full_text, re.IGNORECASE)
             if m:
@@ -495,51 +495,95 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 self._search_foreclosures(page)
                 print("done")
 
-                print("  [3/4] Parsing results ...")
+                print("  [3/4] Parsing results, one county search at a time ...")
                 cutoff = datetime.date.today() - datetime.timedelta(days=LOOKBACK_DAYS)
                 print(f"  Recency cutoff: {cutoff.isoformat()} (last {LOOKBACK_DAYS} days)")
 
                 all_records = []
                 seen_pk = set()
 
-                def _collect(recs):
+                def _collect(recs, county: str) -> bool:
+                    """Collect one page; flag the county tainted on leaks.
+
+                    The checkbox filter occasionally leaks foreign-county
+                    rows, so a parsed county other than the searched one
+                    marks the search tainted (see attribution below).
+                    """
+                    nonlocal tainted
                     stop = False
                     for r in recs:
                         pk = r.get("pk_id")
                         if pk in seen_pk:
                             continue
                         seen_pk.add(pk)
+                        rc = (r.get("county") or "").lower().strip().replace(" ", "_") or None
+                        if rc and rc != county:
+                            tainted = True
                         d = _parse_notice_date(r.get("full_text") or "")
                         if d is not None and d < cutoff:
                             stop = True
                             break
-                        all_records.append(r)
+                        county_recs.append(r)
                     return stop
 
-                stop = _collect(self._parse_grid_records(page))
-                print(f"  Page 1: {len(all_records)} kept (last {LOOKBACK_DAYS} days)")
-
-                info = self._page_info(page)
-                page_no = 1
-                if info:
+                def _walk_county_pages(county: str) -> None:
+                    """Page through the current county grid until the
+                    lookback stop or 50 pages."""
+                    stop = _collect(self._parse_grid_records(page), county)
+                    print(f"    [{county}] page 1: {len(county_recs)} kept "
+                          f"(total {len(all_records) + len(county_recs)})")
+                    info = self._page_info(page)
+                    page_no = 1
+                    if not info:
+                        return
                     cur, total = info["cur"], info["total"]
                     while cur < total and not stop and page_no < 50:
                         if not self._goto_next_page(page, cur + 1):
                             break
                         page_no += 1
-                        before = len(all_records)
-                        stop = _collect(self._parse_grid_records(page))
-                        print(f"  Page {page_no}: +{len(all_records) - before} kept "
-                              f"(total {len(all_records)})")
+                        before = len(county_recs)
+                        stop = _collect(self._parse_grid_records(page),
+                                        county)
+                        print(f"    [{county}] page {page_no}: "
+                              f"+{len(county_recs) - before} kept "
+                              f"(total {len(all_records) + len(county_recs)})")
                         nxt = self._page_info(page)
                         if not nxt:
                             break
                         cur, total = nxt["cur"], nxt["total"]
 
+                for county in sorted(COUNTY_SET):
+                    if not self._set_county_filter(page, county):
+                        logger.error("skipping %s: county filter unavailable",
+                                     county)
+                        continue
+                    self._submit_county_search(page)
+                    self._widen_grid(page)
+                    county_recs: list = []
+                    tainted = False
+                    _walk_county_pages(county)
+                    if tainted:
+                        # Filter leaked: unparseable rows can't be trusted
+                        # to this county, so leave them for the target
+                        # filter to drop (previous behavior).
+                        logger.warning(
+                            "%s search leaked foreign rows; %d unparseable "
+                            "row(s) not attributed", county,
+                            sum(1 for r in county_recs
+                                if not (r.get("county") or "").strip()))
+                    else:
+                        # Clean server-side filter: unparseable rows came
+                        # from this county's search — attribute them instead
+                        # of dropping (previously lost entirely).
+                        for r in county_recs:
+                            if not (r.get("county") or "").strip():
+                                r["county"] = county.replace("_", " ").title()
+                    all_records.extend(county_recs)
+
                 records = all_records
                 print(f"  Found {len(records)} notices in last {LOOKBACK_DAYS} days")
 
-                target_records = [r for r in records if (r.get("county") or "").lower() in COUNTY_SET]
+                target_records = [r for r in records if (r.get("county") or "").lower().replace(" ", "_") in COUNTY_SET]
                 print(f"  {len(target_records)} in target counties")
 
                 # Pre-filter: court *service* publications are dropped so we

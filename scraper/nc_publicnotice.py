@@ -392,7 +392,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                         "search results grid did not appear after "
                         "popular-search selection")
 
-                print("  [3/4] Parsing results ...")
+                print("  [3/4] Parsing results, one county search at a time ...")
                 print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
 
                 candidates: List[dict] = []
@@ -405,8 +405,9 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                         if not nid or nid in seen:
                             continue
                         row_text = r.get("full_text") or ""
-                        # Skip rows naming a non-target county outright so we
-                        # don't burn a Turnstile solve on them.
+                        # The grid-text county stays authoritative: the
+                        # checkbox filter is unreliable and other counties'
+                        # rows can leak into a county search.
                         rc = (r.get("county") or "").lower() or None
                         if rc and rc not in COUNTY_SET:
                             continue
@@ -422,26 +423,45 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                         stop = True
                     return stop
 
-                stop = _collect(self._parse_grid_records(page))
-                print(f"  Page 1: {len(candidates)} kept (last {LOOKBACK_DAYS} days)")
-
-                info = self._page_info(page)
-                page_no = 1
-                if info:
+                def _walk_county_pages(county: str) -> None:
+                    """Page through the current county grid until the
+                    lookback stop, the candidate cap, or 50 pages."""
+                    stop = _collect(self._parse_grid_records(page))
+                    print(f"    [{county}] page 1: {len(candidates)} kept "
+                          f"(total {len(candidates)})")
+                    info = self._page_info(page)
+                    page_no = 1
+                    if not info:
+                        return
                     cur, total = info["cur"], info["total"]
-                    while (cur < total and not stop and len(candidates) < self.max_candidates
+                    while (cur < total and not stop
+                           and len(candidates) < self.max_candidates
                            and page_no < 50):
                         if not self._goto_next_page(page, cur + 1):
                             break
                         page_no += 1
                         before = len(candidates)
                         stop = _collect(self._parse_grid_records(page))
-                        print(f"  Page {page_no}: +{len(candidates) - before} kept "
+                        print(f"    [{county}] page {page_no}: "
+                              f"+{len(candidates) - before} kept "
                               f"(total {len(candidates)})")
                         nxt = self._page_info(page)
                         if not nxt:
                             break
                         cur, total = nxt["cur"], nxt["total"]
+
+                for county in sorted(COUNTY_SET):
+                    if len(candidates) >= self.max_candidates:
+                        print(f"  Candidate cap ({self.max_candidates}) "
+                              "reached; stopping county sweep")
+                        break
+                    if not self._set_county_filter(page, county):
+                        logger.error("skipping %s: county filter unavailable",
+                                     county)
+                        continue
+                    self._submit_county_search(page)
+                    self._widen_grid(page)
+                    _walk_county_pages(county)
 
                 candidates = candidates[:self.max_candidates]
                 print(f"  Found {len(candidates)} notices in last {LOOKBACK_DAYS} days")

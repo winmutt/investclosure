@@ -256,6 +256,21 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-09-25 (per-county search for NC/TN, like GA)**:
+  `nc_publicnotice`/`tn_publicnotice` ran one statewide popular search and
+  client-filtered, capping coverage (NC 2–3 candidates/run). Both now loop
+  per-county checkbox searches like `ga_publicnotice`, via shared
+  `_set_county_filter`/`_submit_county_search`/`_widen_grid` helpers in
+  `publicnotice_base.py` (NC/TN Go button is `btnGo`, GA's is `btnGo1`).
+  Grid-text county stays authoritative (the server filter leaks); TN
+  attributes unparseable rows to the searched county only when the search
+  ran clean, else drops them as before. Verified live: NC 20/20 counties →
+  34 candidates → 13 found/9 new; TN 38 counties → 320 records → 95
+  found/87 new, all details in-browser. Drive-by fixes: TN `unico`→`unicoi`
+  typo (was silently dropping Unicoi rows everywhere), two-word county
+  regex ("Van Buren" parsed as "Buren"), underscore/space normalization in
+  the shared county filter, TN count comment 37→38.
+
 - **2026-09-25 (in-browser Turnstile fixed — click ONCE was the bug)**:
   In-browser solving had failed 534/534 times (every detail fell through to
   paid 2captcha). Live probes showed the click machinery works fine — the bug

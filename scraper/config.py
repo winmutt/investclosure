@@ -196,14 +196,14 @@ SC_FORECLOSURE_COUNTIES = [
     "anderson", "greenville", "oconee", "pickens",
 ]
 
-# TN counties (37) — mountain counties only
+# TN counties (38) — mountain counties only
 TN_FORECLOSURE_COUNTIES = [
     "anderson", "bledsoe", "blount", "campbell", "carter", "claiborne",
     "cocke", "coffee", "cumberland", "fentress", "grainger", "greene",
     "grundy", "hamblen", "hamilton", "hancock", "hawkins", "jefferson",
     "johnson", "knox", "marion", "mcminn", "monroe", "morgan", "overton",
     "pickett", "polk", "roane", "scott", "sequatchie", "sevier",
-    "sullivan", "unico", "union", "van_buren", "warren", "washington", "white",
+    "sullivan", "unicoi", "union", "van_buren", "warren", "washington", "white",
 ]
 
 # GA mountain counties (7) — N GA high-country core, averaging well above

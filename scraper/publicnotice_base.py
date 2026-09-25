@@ -371,6 +371,124 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         self._wait_grid_refresh(page, old_pks)
         return True
 
+    def _county_checkbox_state(self, page) -> list[dict]:
+        """Current (label, checked) state of the search form's county boxes."""
+        try:
+            return page.evaluate(
+                """() => Array.from(
+                    document.querySelectorAll('input[id*="lstCounty"]'))
+                    .map(b => {
+                        const l = b.closest('label') || b.parentElement;
+                        return {label: ((l ? l.innerText : '') || '')
+                                        .trim().toLowerCase(),
+                                checked: !!b.checked};
+                    })"""
+            ) or []
+        except Exception:
+            return []
+
+    def _set_county_filter(self, page, county: str) -> bool:
+        """Leave exactly ``county`` checked in the search form's county list.
+
+        One checkbox click at a time (each fires an ASP.NET auto-postback),
+        re-reading state after each. Returns True when the filter matches.
+        When no checkbox matches ``county``, warns and returns False so the
+        caller can fall back to an unfiltered search (client-side county
+        parsing still applies) rather than querying the wrong county.
+
+        Underscores in county keys (e.g. ``van_buren``) match spaced
+        checkbox labels ("Van Buren").
+        """
+        target = (county or "").lower().strip().replace("_", " ")
+        for _ in range(60):  # safety bound on postback toggles
+            state = self._county_checkbox_state(page)
+            if not state:
+                logger.warning("no county checkboxes found for %s", county)
+                return False
+            if not any(s["label"] == target for s in state):
+                logger.warning("county %r not in checkbox list (%d boxes)",
+                               county, len(state))
+                return False
+            todo = None
+            for s in state:
+                if (s["label"] == target) != s["checked"]:
+                    todo = s["label"]
+                    break
+            if todo is None:
+                return True
+            try:
+                page.evaluate(
+                    """(t) => {
+                        const boxes = Array.from(document.querySelectorAll(
+                            'input[id*="lstCounty"]'));
+                        for (const b of boxes) {
+                            const l = b.closest('label') || b.parentElement;
+                            if ((((l ? l.innerText : '') || '').trim()
+                                    .toLowerCase()) === t) { b.click(); return; }
+                        }
+                    }""",
+                    todo,
+                )
+            except Exception as e:
+                logger.debug("county checkbox click failed: %s", str(e)[:200])
+                return False
+            page.wait_for_timeout(2500)
+        logger.warning("county filter did not settle for %s", county)
+        return False
+
+    def _submit_county_search(self, page) -> None:
+        """Submit the filtered ("Go") search and wait for the grid refresh.
+
+        The search button's ID varies by site generation: NC/TN use
+        ``..._as1_btnGo``, GA uses ``..._as1_btnGo1``. Drains pending
+        auto-postbacks first so Go doesn't race the checkbox clicks.
+        """
+        try:
+            page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1000)
+        old_pks = self._grid_pks(page)
+        page.evaluate(
+            """() => {
+                const b = document.getElementById(
+                        'ctl00_ContentPlaceHolder1_as1_btnGo')
+                    || document.getElementById(
+                        'ctl00_ContentPlaceHolder1_as1_btnGo1');
+                if (b) b.click();
+            }"""
+        )
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=30000)
+        except Exception:
+            pass
+        try:
+            page.wait_for_selector('input[id*="hdnPKValue"]',
+                                   state="attached", timeout=20000)
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+        self._wait_grid_refresh(page, old_pks)
+        try:
+            # Rows may legitimately be zero; the table itself must exist
+            # (an empty render lagging behind the PK poll parses as []).
+            page.wait_for_selector('table[id*="GridView"]',
+                                   state="attached", timeout=15000)
+        except Exception:
+            logger.warning("results grid missing after county submit")
+
+    def _widen_grid(self, page, per_page: str = "50") -> None:
+        """Raise the GridView page size (tolerant; county submits reset it).
+
+        County-filtered submits re-render the grid at the site default
+        (10/page), so re-apply after each submit to keep page walks short.
+        """
+        try:
+            page.select_option(PER_PAGE_SELECT, per_page)
+            page.wait_for_timeout(4000)
+        except Exception as e:
+            logger.debug("Could not raise per-page count: %s", str(e)[:200])
+
     def _county_from_grid_text(self, full_text: str) -> Optional[str]:
         """Override in subclass to pull the property county from grid-row text."""
         return None
