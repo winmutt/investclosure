@@ -164,7 +164,7 @@ class TestAuctionCom:
     BODY = ("Buy All Foreclosure Bank Owned | Foreclosure Sale | "
             "30 Wilderness Dr | Weaverville, NC 28787, Buncombe County | "
             "897 Views | 2 Beds1.5 Baths960 Sq. Ft. | Coming Soon | Date | "
-            "Monday, Sep 14, 2026 | Auction Start Time | TBD | Location | To Be "
+            "Monday, Sep 14, 2029 | Auction Start Time | TBD | Location | To Be "
             "Determined | Property Details | Beds | 2 | Baths | 1.5 | Square "
             "Footage | 960 | Lot Size (Acres) | 2.98 | Property Type | Single "
             "Family | Trustee Sale Number | 25-004049-01 | APN | 9754598511000 | "
@@ -237,7 +237,7 @@ class TestAuctionCom:
         assert prop["parcel_number"] == "9754598511000"
         assert prop["acres"] == 2.98
         assert prop["court_case"] == "25SP000828-1"
-        assert prop["auction_date"] == "2026-09-14"
+        assert prop["auction_date"] == "2029-09-14"
         assert prop["source_listing_id"] == "2177467"
 
     def test_newline_body_parses(self):
@@ -258,6 +258,25 @@ class TestAuctionCom:
             "http://x", "1", "NC", "Buncombe") is None
         assert s._parse_detail(
             self.BODY, "http://x", "1", "NC", "Madison") is None
+
+    def test_sub_min_acres_dropped(self):
+        # TrusteeSaleScraper.run() applies no acreage filter, so the
+        # detail parser must drop sub-threshold lots itself (else they are
+        # inserted + Telegram-alerted until a later --archive pass).
+        # Far-future sale date isolates the acres gate from the past-date drop.
+        s = self._s()
+        body = self.BODY.replace("Lot Size (Acres) | 2.98",
+                                 "Lot Size (Acres) | 0.25")
+        assert s._parse_detail(body, "http://x", "1", "NC", "Buncombe") is None
+
+    def test_unknown_acres_kept_for_enrichment(self):
+        # NULL acres are retained (keep_unknown_acres core rule) for GIS fill.
+        s = self._s()
+        body = self.BODY.replace("Lot Size (Acres) | 2.98",
+                                 "Lot Size (Acres) | ")
+        prop = s._parse_detail(body, "http://x", "1", "NC", "Buncombe")
+        assert prop is not None
+        assert prop["acres"] is None
 
 
 class TestLogsNC:

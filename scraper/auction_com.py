@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .base import PropertyData, camoufox_context
 from .config import (
+    config,
     GA_MOUNTAIN_COUNTIES,
     NC_MOUNTAIN_COUNTIES,
     TN_FORECLOSURE_COUNTIES,
@@ -306,6 +307,14 @@ class AuctionComScraper(TrusteeSaleScraper):
             acres = float(f["acres"].replace(",", "")) if f["acres"] else None
         except ValueError:
             acres = None
+        # Acreage gate (unknown acres kept for GIS enrichment, per the
+        # keep_unknown_acres core rule). TrusteeSaleScraper.run() applies no
+        # filter, so without this every sub-threshold lot was inserted and
+        # Telegram-alerted, waiting on a later --archive pass to clean up.
+        if acres is not None and acres < config.MIN_ACRES:
+            logger.info("AuctionCom dropping %s: %.2fac below MIN_ACRES %.2f",
+                        aid, acres, config.MIN_ACRES)
+            return None
         sqft = f["sqft"].replace(",", "") if f["sqft"] else ""
         desc = (f"[Auction.com] {kind.title()} | {street}, {city} {zip_code} | "
                 f"Sale: {f['sale_date'] or 'TBD'} | Bid: {f['bid'] or 'TBD'} | "
