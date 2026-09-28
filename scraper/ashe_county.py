@@ -148,4 +148,5 @@ class AsheCountyScraper(BaseScraper):
         else:
             logger.info("Ashe County: %d parcel rows (PDF updated %s)",
                         len(properties), updated)
+            properties = cs.enrich_and_filter_acres(self.SOURCE_NAME, properties)
         return properties

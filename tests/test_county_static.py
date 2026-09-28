@@ -87,6 +87,54 @@ def test_find_parcels_rejects_zip_and_phone():
     assert cs.find_parcels("Parcel #1984-32-8523-000") == ["1984-32-8523-000"]
 
 
+def test_enrich_and_filter_acres_drops_known_below_min(monkeypatch):
+    from scraper import county_static
+    def fake_fill(props, rate=0.6):
+        props[0]["acres"] = 0.88
+        props[0]["acres_source"] = "gis"
+        return {"enriched": 1, "failed": 0}
+    monkeypatch.setattr("scraper.nc_gis_lookup.fill_acres_in_memory",
+                        fake_fill, raising=False)
+    props = [
+        {"source_listing_id": "a", "county": "McDowell", "state": "NC",
+         "parcel_number": "1739-00-31-2535", "acres": None, "url": "u"},
+        {"source_listing_id": "b", "county": "McDowell", "state": "NC",
+         "parcel_number": "9999", "acres": 4.5, "url": "u"},
+        {"source_listing_id": "c", "county": "McDowell", "state": "NC",
+         "parcel_number": "8888", "acres": None, "url": "u"},
+    ]
+    kept = county_static.enrich_and_filter_acres("x_test", props)
+    ids = [p["source_listing_id"] for p in kept]
+    # "a" got 0.88ac from the fill and was dropped below MIN_ACRES;
+    # "b" (known 4.5) and "c" (still unknown) stay.
+    assert ids == ["b", "c"]
+    assert props[0]["acres"] == 0.88  # fill ran pre-filter (drop reason)
+
+
+def test_trustee_apply_acre_policy(monkeypatch):
+    from scraper.trustee_base import TrusteeSaleScraper
+    monkeypatch.setattr("scraper.nc_gis_lookup.fill_acres_in_memory",
+                        lambda props, rate=0.6: {"enriched": 0, "failed": 0},
+                        raising=False)
+
+    class _S(TrusteeSaleScraper):
+        SOURCE_NAME = "t_test"
+
+        def scrape(self):
+            return []
+
+    props = [
+        {"source_listing_id": "x", "county": "Buncombe", "state": "NC",
+         "acres": 0.5},
+        {"source_listing_id": "y", "county": "Buncombe", "state": "NC",
+         "acres": 2.0},
+        {"source_listing_id": "c", "county": "Buncombe", "state": "NC",
+         "acres": None},
+    ]
+    kept = _S().apply_acre_policy(props)
+    assert [p["source_listing_id"] for p in kept] == ["y", "c"]
+
+
 def test_all_four_registered():
     from scraper.run import SCRAPER_MODULES
     for name in ("ashe_county", "haywood_county", "macon_county", "mcdowell_county"):

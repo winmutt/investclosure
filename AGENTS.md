@@ -256,6 +256,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-09-28 (pre-insert MIN_ACRES gate)**: County pages publish no acreage, so county/trustee rows were inserted + Telegram-alerted with NULL acres and only deduped/archived after a later `--all` pass (the #953 case: 0.88ac filled post-insert, below threshold, active until manually archived). Fix: `nc_gis_lookup.fill_acres_in_memory()` runs the NC OneMap lookup BEFORE insert (raw + de-dashed parcel variants — OneMap stores McDowell-style parcels without separators); `county_static.enrich_and_filter_acres()` (4 county scrapers) and `TrusteeSaleScraper.run()` (all trustee scrapers) drop known-below-MIN_ACRES rows pre-insert; unknown acres still kept for the post-insert enricher. TN/GA enrichment stays DB-side (browser-based, too heavy pre-insert).
 - **2026-09-25 (per-county search for NC/TN, like GA)**:
   `nc_publicnotice`/`tn_publicnotice` ran one statewide popular search and
   client-filtered, capping coverage (NC 2–3 candidates/run). Both now loop

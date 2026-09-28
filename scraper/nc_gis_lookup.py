@@ -1154,3 +1154,68 @@ def reconcile_archive(conn, min_acres: Optional[float] = None) -> dict:
     logger.info("Reconcile: archived=%s unarchived=%s (threshold=%s)",
                 n_archived, n_unarchived, threshold)
     return {"archived": n_archived, "unarchived": n_unarchived}
+
+
+def fill_acres_in_memory(props: "list[dict]", rate: float = 0.6) -> dict:
+    """Fill missing acreage (and coords/address) on in-memory property dicts
+    via the NC OneMap parcel service — the same lookup the post-insert
+    enricher runs, but BEFORE insert so sub-threshold rows never reach the
+    DB or Telegram (the county pages publish no acreage themselves).
+
+    Only rows with state NC (or unset), acres still None, and a
+    parcel_number are looked up. Rows whose acres stay unknown are left
+    alone (keep-unknown policy; the post-insert enricher may retry them).
+    Returns {"enriched": n, "failed": m}.
+    """
+    svc = NC1MapService()
+    enriched = failed = 0
+    for p in props:
+        if p.get("acres") is not None:
+            continue
+        if (p.get("state") or "NC").upper() != "NC":
+            continue
+        parcel = p.get("parcel_number")
+        if not parcel:
+            continue
+        # NC OneMap stores many counties' parcels WITHOUT separators
+        # (McDowell "173900312535"); page-sourced parcels often carry dashes
+        # ("1739-00-31-2535"). Try the raw form, then the de-dashed form.
+        variants = [str(parcel).strip()]
+        if "-" in variants[0]:
+            v = variants[0].replace("-", "")
+            if v not in variants:
+                variants.append(v)
+        data = None
+        for cand in variants:
+            try:
+                data = svc.by_parcel(cand, county=p.get("county"))
+            except Exception as e:
+                logger.warning("in-memory parcel lookup failed %s: %s", cand, e)
+                data = None
+            if data and data.get("acres"):
+                break
+        if data and data.get("acres"):
+            p["acres"] = data["acres"]
+            p["acres_source"] = "gis"
+            if data.get("latitude") and p.get("latitude") is None:
+                p["latitude"] = data["latitude"]
+            if data.get("longitude") and p.get("longitude") is None:
+                p["longitude"] = data["longitude"]
+            if not p.get("address"):
+                addr = data.get("siteadd") or data.get("site_address")
+                if addr:
+                    p["address"] = addr
+            # Rebuild map links that needed the now-filled address/coords.
+            if not p.get("google_maps_url") and p.get("address"):
+                p["google_maps_url"] = build_google_maps_url(
+                    p.get("longitude"), p.get("latitude"), p.get("address"),
+                    None, p.get("county"), state="NC")
+            p["gis_url"] = p.get("gis_url") or build_gis_url(
+                p.get("longitude"), p.get("latitude"),
+                p.get("parcel_number"), p.get("address"),
+                p.get("county"), state="NC")
+            enriched += 1
+        else:
+            failed += 1
+        time.sleep(rate)
+    return {"enriched": enriched, "failed": failed}

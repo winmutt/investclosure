@@ -17,6 +17,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from .base import BaseScraper, PropertyData
+from .config import config
 from .gis_urls import get_ga_gis_url, get_tn_gis_url
 from .nc_gis_lookup import (
     build_gis_url,
@@ -153,7 +154,40 @@ class TrusteeSaleScraper(BaseScraper):
     def __init__(self, delay_range: tuple[float, float] = (0.5, 1.5)):
         super().__init__(delay_range=delay_range, use_selenium=False)
 
-    # -- shared row pipeline -------------------------------------------
+    # -- shared run pipeline ---------------------------------------------
+
+    def run(self) -> list[PropertyData]:
+        """scrape() + pre-insert acreage policy (see apply_acre_policy)."""
+        return self.apply_acre_policy(self.scrape())
+
+    def apply_acre_policy(self, props: list[PropertyData]) -> list[PropertyData]:
+        """Pre-insert acreage gate for trustee rows.
+
+        Fills missing acreage for NC rows in memory via NC OneMap (cheap
+        API call; TN/GA enrichment stays DB-side because it needs a
+        browser). Then drops rows whose known acreage is below MIN_ACRES —
+        TrusteeSaleScraper.run() applied no filter historically, so every
+        sub-threshold lot was inserted + Telegram-alerted until a later
+        --archive pass. Unknown acres stay (keep-unknown core rule).
+        """
+        if not props:
+            return props
+        from .nc_gis_lookup import fill_acres_in_memory
+        res = fill_acres_in_memory(props)
+        kept: list[PropertyData] = []
+        dropped = 0
+        for p in props:
+            acres = p.get("acres")
+            if acres is not None and acres < config.MIN_ACRES:
+                logger.info("%s dropping parcel %s: %.2fac below MIN_ACRES %.2f",
+                            self.SOURCE_NAME, p.get("parcel_number"),
+                            acres, config.MIN_ACRES)
+                dropped += 1
+                continue
+            kept.append(p)
+        print(f"  Acreage pre-filter ({self.SOURCE_NAME}): "
+              f"+{res['enriched']} GIS acres, {dropped} below MIN_ACRES dropped")
+        return kept
 
     def keep_county(self, county: Any) -> Optional[str]:
         """Lowercased county if in the target set, else None."""

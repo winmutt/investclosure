@@ -13,6 +13,7 @@ import re
 from typing import Any, Optional
 
 from .base import PropertyData, camoufox_context
+from .config import config
 from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
@@ -241,3 +242,40 @@ def log_kept_empty(source: str, county: str, reason: str, raw_text: str, url: st
         decision="kept_empty", reason=reason,
         raw_text=(raw_text or "")[:2000], url=url,
     )
+
+
+def enrich_and_filter_acres(source: str, props: list[PropertyData]) -> list[PropertyData]:
+    """Pre-insert acreage pass for county scrapers.
+
+    County pages rarely carry acreage, so rows arrive with acres=None and
+    the MIN_ACRES gate can't act — the post-insert enricher then fills the
+    value and the sub-threshold row sits in the DB (already Telegram-alerted)
+    until an --all auto-archive pass. Fix: run the NC OneMap fill in memory
+    first, then drop rows whose known acreage is below MIN_ACRES (unknown
+    acres stay kept for the post-insert enricher).
+    """
+    from .nc_gis_lookup import fill_acres_in_memory
+    if not props:
+        return props
+    res = fill_acres_in_memory(props)
+    kept: list[PropertyData] = []
+    dropped = 0
+    for p in props:
+        acres = p.get("acres")
+        if acres is not None and acres < config.MIN_ACRES:
+            log_raw(
+                source, listing_id=p.get("source_listing_id"),
+                county=p.get("county"), state="NC",
+                decision="dropped_below_min_acres",
+                reason=f"{acres:.2f}ac < MIN_ACRES {config.MIN_ACRES:g}",
+                raw_text=(p.get("raw_source_text") or "")[:2000],
+                url=p.get("url"),
+            )
+            logger.info("%s dropping parcel %s: %.2fac below MIN_ACRES",
+                        source, p.get("parcel_number"), acres)
+            dropped += 1
+            continue
+        kept.append(p)
+    print(f"  Acreage pre-filter: +{res['enriched']} GIS acres, "
+          f"{dropped} below MIN_ACRES dropped, {len(kept)} kept")
+    return kept

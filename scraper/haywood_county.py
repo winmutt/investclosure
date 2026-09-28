@@ -86,4 +86,5 @@ class HaywoodCountyScraper(BaseScraper):
             )
         else:
             logger.info("Haywood County: %d postings", len(properties))
+            properties = cs.enrich_and_filter_acres(self.SOURCE_NAME, properties)
         return properties

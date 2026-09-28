@@ -76,4 +76,5 @@ class MaconCountyScraper(BaseScraper):
             logger.info("Macon County: no sale content (FAQ only)")
         else:
             logger.info("Macon County: %d parcel rows", len(properties))
+            properties = cs.enrich_and_filter_acres(self.SOURCE_NAME, properties)
         return properties

@@ -87,9 +87,9 @@ class McDowellCountyScraper(BaseScraper):
                 "no parcel rows in sale tables", raw, SALES_URL,
             )
             logger.info("McDowell County: no sale rows")
-        else:
-            logger.info("McDowell County: %d parcel rows", len(properties))
-        return properties
+            return []
+        logger.info("McDowell County: %d parcel rows", len(properties))
+        return cs.enrich_and_filter_acres(self.SOURCE_NAME, properties)
 
     def _parse_row(self, kind: str, headers: list[str], row: list[str]) -> list[PropertyData]:
         cells = {h.lower(): (row[i] if i < len(row) else "") for i, h in enumerate(headers)}
