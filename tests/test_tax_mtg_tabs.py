@@ -300,6 +300,22 @@ class TestTNExtractFixes:
                 "IherebycertifythatIhavehandedorplacedintheUnitedStatesmail")
         assert s._is_publication_notice(text) is True
 
+    def test_notice_by_publication_greeneville_is_publication(self):
+        # Greeneville mass tax-foreclosure summons (property #1070, Sept
+        # 2026): titled "NOTICE BY PUBLICATION" (not "OF"), with
+        # "ORDER FOR NOTICE BY PUBLICATION" / "ORDER FOR PUBLICATION" and
+        # "hearing for a DEFAULT JUDGMENT" / "answer or other defense"
+        # language — phrasing the original marker list missed.
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        text = ("NOTICE BY PUBLICATION IN THE CHANCERY COURT GREENEVILLE "
+                "Pursuant to an ORDER FOR NOTICE BY PUBLICATION entered on "
+                "September 1, 2026 you are commanded to serve an appearance, "
+                "answer or other defense within thirty days Judgment will be "
+                "taken by default EXHIBIT A TO ORDER FOR PUBLICATION "
+                "2023 COUNTY DELINQUENT TAXPAYERS Scott Aldridge "
+                "a hearing for a DEFAULT JUDGMENT shall be held")
+        assert s._is_publication_notice(text) is True
+
     def test_genuine_sale_is_not_publication(self):
         s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
         text = ("NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ... "

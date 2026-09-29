@@ -449,7 +449,9 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             k in t
             for k in (
                 "NOTICEOFPUBLICATION",
+                "NOTICEBYPUBLICATION",
                 "ORDEROFPUBLICATION",
+                "ORDERFORPUBLICATION",
                 "SERVICEBYPUBLICATION",
             )
         ):
@@ -460,6 +462,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 "NONRESIDENT", "CANNOTBELOCATED", "RETURNOFPROCESS",
                 "SERVICEOFPROCESS", "ORDERFORSERVICE",
                 "FILEANANSWER", "JUDGMENTBYDEFAULT",
+                "DEFAULTJUDGMENT", "ANSWEROROTHERDEFENSE",
             )
         )
 
