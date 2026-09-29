@@ -440,11 +440,19 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
 
         Matching is spaceless: PDF-extracted text often arrives with all
         inter-word spaces stripped ("ORDEROFPUBLICATION"), which the
-        space-dependent check below would otherwise miss.
+        space-dependent check below would otherwise miss.  Hyphens and
+        commas are stripped too, so hyphenated roster headers like
+        "Deceased, Non-Resident, Not-To-Be-Found" still match.
+
+        Caption-less Exhibit-A roster chunks (PDF splits drop the court
+        header) are caught via the roster markers EXHIBITA /
+        UNKNOWNHEIRSOF + the "Not-To-Be-Found" / "Deceased, Non-Resident"
+        roster header — genuine trustee/tax sales that merely mention
+        "unknown heirs" lack those header phrases and are kept.
         """
         if not text:
             return False
-        t = re.sub(r"\s+", "", normalize_notice_text(text).upper())
+        t = re.sub(r"[\s,\-]+", "", normalize_notice_text(text).upper())
         if not any(
             k in t
             for k in (
@@ -453,6 +461,8 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 "ORDEROFPUBLICATION",
                 "ORDERFORPUBLICATION",
                 "SERVICEBYPUBLICATION",
+                "EXHIBITA",
+                "UNKNOWNHEIRSOF",
             )
         ):
             return False
@@ -463,6 +473,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 "SERVICEOFPROCESS", "ORDERFORSERVICE",
                 "FILEANANSWER", "JUDGMENTBYDEFAULT",
                 "DEFAULTJUDGMENT", "ANSWEROROTHERDEFENSE",
+                "NOTTOBEFOUND", "DECEASEDNONRESIDENT",
             )
         )
 

@@ -316,6 +316,31 @@ class TestTNExtractFixes:
                 "a hearing for a DEFAULT JUDGMENT shall be held")
         assert s._is_publication_notice(text) is True
 
+    def test_exhibit_a_roster_chunk_is_publication(self):
+        # Roane 2021 delinquent-taxpayer roster (#1043/#1044): PDF split
+        # left chunks without any court caption — just the Exhibit-A header
+        # and taxpayer rows.  Caught via EXHIBITA + the hyphenated
+        # "Deceased,Non-Resident,Not-To-Be-Found" header.
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        text = ("ExhibitA\n2021RoaneCountyDelinquentTax\n"
+                "Deceased,Non-Resident,Not-To-Be-Found\nRealProperty\n"
+                "Name Dist/Map/Gr/CtrlMap/Parcel/PI/SI#\n"
+                "Abston,WendyTrustee 5/55L/E/55L/4.02/0\n"
+                "Barnes,WandaF 3/47P/A/47O/8/0\n"
+                "UnknownheirsofWandaFBarnes\n")
+        assert s._is_publication_notice(text) is True
+
+    def test_trustee_sale_with_unknown_heirs_is_kept(self):
+        # Genuine trustee sales name "unknown heirs" among defendants but
+        # lack the roster-header phrases — must NOT be dropped.
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        text = ("SUBSTITUTE TRUSTEE'S NOTICE OF SALE Sale at public auction "
+                "will be on October 22, 2026 at the Hamilton County "
+                "Courthouse pursuant to the Deed of Trust to secure debt "
+                "from John Doe and unknown heirs of Jane Doe ... Total "
+                "$150,000.00")
+        assert s._is_publication_notice(text) is False
+
     def test_genuine_sale_is_not_publication(self):
         s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
         text = ("NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ... "
