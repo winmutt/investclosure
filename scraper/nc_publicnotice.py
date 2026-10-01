@@ -69,6 +69,16 @@ _NC_HEADER_RE = re.compile(
 _ADDR_RE = re.compile(
     r"(?:street\s+)?address\s*:\s*(.{5,80}?(?:NC|,\s*\d{5}|\d{5}))", re.IGNORECASE
 )
+# NC notices routinely give the parcel's street address only in a
+# "commonly known as / also known as" clause after the metes-and-bounds
+# legal description (e.g. "Said property commonly known as 250 Peppermill
+# Lane, Sylva, NC 28779."). Requires a house number + NC state token so
+# street-alias clauses ("also known as Bristol Avenue") are not captured.
+_KNOWN_AS_RE = re.compile(
+    r"(?:commonly|also)\s+known\s+as\s*:?\s*"
+    r"(\d[\w\s.,\-#']{4,80}?[,\s]\s*N(?:orth)?\s*C(?:arolina)?\.?(?:,?\s*\d{5})?)",
+    re.IGNORECASE,
+)
 _COUNTY_STOPWORDS = {
     "registry", "register", "clerk", "superior", "court", "deed",
     "judicial", "superiorcourt", "chancery", "orphan",
@@ -131,12 +141,22 @@ def _extract_county(text: str, all_counties: set[str]) -> Optional[str]:
     return None
 
 
+def extract_known_as_address(text: str) -> Optional[str]:
+    """Return the "commonly/also known as" street address from notice text."""
+    for m in _KNOWN_AS_RE.finditer(text or ""):
+        addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
+        if addr:
+            return addr
+    return None
+
+
 def _extract_address(text: str, county: str = "") -> Optional[str]:
     from .courthouses import is_courthouse_address
-    for m in _ADDR_RE.finditer(text or ""):
-        addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
-        if addr and not is_courthouse_address(addr, county, "NC"):
-            return addr
+    for regex in (_KNOWN_AS_RE, _ADDR_RE):
+        for m in regex.finditer(text or ""):
+            addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
+            if addr and not is_courthouse_address(addr, county, "NC"):
+                return addr
     return None
 
 

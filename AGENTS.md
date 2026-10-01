@@ -230,6 +230,10 @@ podman exec investclosure python3 -m scraper --status  # Run inside container
 
 **Key notes**:
 - `scraper/` volume-mounted — edits take effect immediately, no rebuild needed
+- **Restart the container after code edits** (`podman restart investclosure`):
+  the `--cron` scheduler imports all scrapers once at startup and runs them
+  in-process, so scheduled runs silently keep using pre-edit code until the
+  container restarts (2026-09-30: a week of cron runs used pre-fix code).
 - `data/` volume-mounted — persists across container restarts/rebuilds
 - Always `rm -rf /app/scraper/__pycache__` after editing `.py` files inside the container
 - Temporary files go in `scraper/tmp/` (not host `/tmp`)
@@ -256,6 +260,23 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-10-01 (NC "commonly known as" addresses)**: NC notices publish the
+  street address only in a "commonly/also known as <addr>" clause after the
+  metes-and-bounds legal description — the NC parser ignored it (address
+  stayed NULL, no Maps link). Fix: `_KNOWN_AS_RE` +
+  `extract_known_as_address()` in `scraper/nc_publicnotice.py`
+  (`_extract_address` now tries the CKA clause before the generic
+  "Address:" line); requires house number + NC state token so road aliases
+  ("also known as Bristol Avenue") and person aliases ("formerly known as")
+  stay rejected; colon form "COMMONLY KNOWN AS:" supported. Backfilled
+  existing rows via `python3 -m scraper.backfill_cka` (re-extracts from
+  `raw_source_text`; OneMap `siteadd` fallback for parcel-only rows;
+  house-number-verified street query `siteadd LIKE '<num> <street>%'` —
+  abbreviated street type — so CKA rows get parcel-deep GIS links without
+  the wrong-parcel risk of generic address search): 36 addresses, 11 GIS
+  links filled; live run then completed clean (13 found / 0 new, dupes
+  kept their backfilled addresses). Remaining no-address actives: 968
+  (metes-only tax notice, no CKA/PIN) and 975 (OneMap siteadd empty).
 - **2026-09-28 (pre-insert MIN_ACRES gate)**: County pages publish no acreage, so county/trustee rows were inserted + Telegram-alerted with NULL acres and only deduped/archived after a later `--all` pass (the #953 case: 0.88ac filled post-insert, below threshold, active until manually archived). Fix: `nc_gis_lookup.fill_acres_in_memory()` runs the NC OneMap lookup BEFORE insert (raw + de-dashed parcel variants — OneMap stores McDowell-style parcels without separators); `county_static.enrich_and_filter_acres()` (4 county scrapers) and `TrusteeSaleScraper.run()` (all trustee scrapers) drop known-below-MIN_ACRES rows pre-insert; unknown acres still kept for the post-insert enricher. TN/GA enrichment stays DB-side (browser-based, too heavy pre-insert).
 - **2026-09-25 (per-county search for NC/TN, like GA)**:
   `nc_publicnotice`/`tn_publicnotice` ran one statewide popular search and

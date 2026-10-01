@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from scraper.server import property_category
 from scraper.tn_publicnotice import TNPublicNoticeScraper, _tn_parse_parcels
-from scraper.nc_publicnotice import _classify_nc_notice
+from scraper.nc_publicnotice import _classify_nc_notice, _extract_address
 from scraper.newspaper_notices import (
     _classify_newspaper_notice,
     _is_mortgage_notice,
@@ -715,3 +715,47 @@ class TestInBrowserTurnstileSolve:
         s._solve_turnstile_in_browser = lambda page, key, timeout_s=90: False
         s._solve_turnstile = _forbidden
         assert s._pass_turnstile_gate(self._gate_page(), "key") is False
+
+
+class TestNCKnownAsAddress:
+    """NC notices hide the street address in a 'commonly/also known as'
+    clause after the legal description; the parser must capture it."""
+
+    def test_commonly_known_as_captured(self):
+        from scraper.nc_publicnotice import extract_known_as_address
+        text = ("Said property commonly known as 250 Peppermill Lane, "
+                "Sylva, NC 28779. A Certified Check ONLY (no personal "
+                "checks) of five percent.")
+        assert extract_known_as_address(text) == \
+            "250 Peppermill Lane, Sylva, NC 28779"
+
+    def test_colon_form_captured(self):
+        from scraper.nc_publicnotice import extract_known_as_address
+        text = ("COMMONLY KNOWN AS: 206 AVERY DR, MARSHALL, NC 28753 "
+                "Trustee may, in the Trustee's sole discretion, delay")
+        assert extract_known_as_address(text) == \
+            "206 AVERY DR, MARSHALL, NC 28753"
+
+    def test_also_known_as_no_comma_before_zip(self):
+        from scraper.nc_publicnotice import extract_known_as_address
+        text = "Said property is also known as 114 Gilpin Lane, Newland NC 28657; Parcel ID: 1825"
+        assert extract_known_as_address(text) == "114 Gilpin Lane, Newland NC 28657"
+
+    def test_street_alias_not_captured(self):
+        from scraper.nc_publicnotice import extract_known_as_address
+        text = ("line of North Carolina Secondary Road 1388, also known as "
+                "Bristol Avenue, thence with centerline")
+        assert extract_known_as_address(text) is None
+
+    def test_person_alias_not_captured(self):
+        from scraper.nc_publicnotice import extract_known_as_address
+        text = "Danna Danyel Gregory (formerly known as Danna Danyel Agundiz)."
+        assert extract_known_as_address(text) is None
+
+    def test_extract_address_prefers_known_as_over_address_line(self):
+        from scraper.nc_publicnotice import _extract_address
+        text = ("Address: P.O. Drawer 1234, Asheville, NC 28801. "
+                "Said property commonly known as 14 Brook Forest Drive, "
+                "Arden, NC 28704.")
+        assert _extract_address(text, "Buncombe") == \
+            "14 Brook Forest Drive, Arden, NC 28704"
