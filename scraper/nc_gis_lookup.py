@@ -858,6 +858,21 @@ def enrich_properties(source: Optional[str] = None,
             enriched += 1
             logger.info("Enriched #%s %s %s parcel=%s -> %sac",
                         row_id, src, county, parcel_raw[:20], update_fields["acres"])
+            # A row inserted with unknown acreage can resolve BELOW the
+            # threshold here (#1107); archive immediately so it never lingers
+            # active awaiting a full-suite archive pass. Manual overrides
+            # are left alone.
+            manual = conn.execute(
+                "SELECT manual_acres_set FROM properties WHERE id = ?",
+                (row_id,),
+            ).fetchone()
+            if (update_fields["acres"] < config.MIN_ACRES
+                    and not ((manual[0] if manual else "") or "").strip()):
+                from .db import archive_property
+                archive_property(conn, row_id, reason="below_min_acres",
+                                 archived_by="system")
+                logger.info("Archived #%s: %sac < MIN_ACRES %s",
+                            row_id, update_fields["acres"], config.MIN_ACRES)
         else:
             url_updated += 1
             logger.info("Linked #%s %s %s (addr) gmaps+gis set", row_id, src, county)

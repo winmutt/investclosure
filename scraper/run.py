@@ -440,9 +440,25 @@ def cmd_run(scraper_name: str) -> dict:
     try:
         result = run_scraper(conn, scraper_name, scraper_class)
         print(f"\n  {scraper_name}: found={result['found']}, new={result['new']}, dups={result.get('duplicates', 0)}")
-        return result
     finally:
         conn.close()
+
+    # Reconcile after every scraper run: the post-insert GIS enricher can
+    # fill an unknown-acres row to BELOW MIN_ACRES (the #1107 case) and
+    # previously only cmd_run_all archived, so those rows stayed active
+    # until a full suite run.
+    try:
+        conn = _ensure_db()
+        archived = archive_below_acres(conn, min_acres=config.MIN_ACRES,
+                                       include_sources=list(SCRAPER_MODULES.keys()))
+        conn.close()
+        if archived:
+            print(f"  Auto-archived: {archived} properties "
+                  f"(< {config.MIN_ACRES:g}ac)")
+    except Exception as e:
+        logger.warning("Auto-archive failed: %s", e)
+
+    return result
 
 
 def cmd_run_all() -> list[dict]:
