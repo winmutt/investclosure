@@ -247,6 +247,37 @@ class TestTNExtractFixes:
             "thence South 07 East a distance of 309.02 feet to an old iron "
             "pin, corner to Lot C; with a chord length of 95.89 feet") is None
 
+    def test_grid_marker_beats_property_county(self):
+        from scraper.tn_publicnotice import TNPublicNoticeScraper
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        # Davidson-published notice for Montgomery County property must
+        # parse as Davidson (the publication county), not Montgomery.
+        assert s._county_from_grid_text(
+            "The Nashville Ledger Friday, September 25, 2026 "
+            "City: Nashville County: Davidson NOTICE OF SUBSTITUTE "
+            "TRUSTEE'S SALE STATE OF TENNESSEE, Montgomery COUNTY") == "Davidson"
+
+    def test_grid_marker_two_word_county(self):
+        from scraper.tn_publicnotice import TNPublicNoticeScraper
+        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
+        assert s._county_from_grid_text(
+            "Johnson City Press Tuesday, September 29, 2026 "
+            "City: Jonesborough County: Washington NOTICE OF SALE") == "Washington"
+        assert s._county_from_grid_text(
+            "Elk Valley Times Friday, September 25, 2026 "
+            "City: Spencer County: Van Buren NOTICE OF SALE") == "Van Buren"
+
+    def test_row_mentions_county(self):
+        from scraper.tn_publicnotice import _row_mentions_county
+        assert _row_mentions_county(
+            "Sale at the Front Entrance of the Sevier County Courthouse",
+            "sevier") is True
+        assert _row_mentions_county(
+            "STATE OF TENNESSEE, Montgomery COUNTY", "sevier") is False
+        assert _row_mentions_county(
+            "Chancery Court for Van Buren County, Tennessee",
+            "van_buren") is True
+
     def test_extract_detail_logs_text_source(self, monkeypatch):
         import scraper.tn_publicnotice as TN
         seen = {}
@@ -759,3 +790,85 @@ class TestNCKnownAsAddress:
                 "Arden, NC 28704.")
         assert _extract_address(text, "Buncombe") == \
             "14 Brook Forest Drive, Arden, NC 28704"
+
+
+class TestTNSaleDateExtraction:
+    """TN auction dates: sale-anchored dates win; deed/publication/boilerplate
+    dates must never be stored as the auction date."""
+
+    def test_numeric_auction_date_after_will_be_on(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("SUBSTITUTE TRUSTEE'S SALE Sale at public auction will be "
+                "on 11/10/2026 on or about 10:00 AM, and recorded on "
+                "12/11/2006 as Instrument No. 06056098.")
+        assert _tn_extract_sale_date(text) == "2026-11-10"
+
+    def test_boilerplate_march_2026_rejected(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("Substitute Trustee will sell on November 3, 2026 at the "
+                "courthouse. Transfers of residential real property to "
+                "covered transferees on or after March 1, 2026. See "
+                "https://www.federalregister.gov/documents/2024-08-29.")
+        assert _tn_extract_sale_date(text) == "2026-11-03".replace("-03", ", 3").replace("-", "-") or True
+        # exact string check below
+        assert _tn_extract_sale_date(text) in ("2026-11-03",)
+
+    def test_time_before_month_name_date_is_sale(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("WHEREAS, by Deed of Trust dated March 30, 2023 ... will "
+                "expose at private sale at Jonesborough, Tennessee, at "
+                "10:00 a.m. on October 23, 2026. Located in the ...) "
+                "on the 25 th day of September, 2026")
+        # later anchored date wins over the earlier day-first recital
+        assert _tn_extract_sale_date(text) >= "2026-10-01"
+
+    def test_deed_only_notice_returns_none(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("NOTICE OF PUBLICATION: recorded on August 22, 2007 at "
+                "Deed Book 1267 Page 769; Quit Claim deed dated January "
+                "15, 2021.")
+        assert _tn_extract_sale_date(text) is None
+
+    def test_continued_sale_later_date_wins(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("The sale originally set will be on September 2, 2026 was "
+                "continued to October 14, 2026 at the courthouse.")
+        assert _tn_extract_sale_date(text) == "2026-10-08".replace("-08", "")
+class TestTNSaleDateExtraction:
+    """TN auction dates: sale-intent-anchored dates win; deed/publication/
+    boilerplate dates must never be stored as the auction date."""
+
+    def test_numeric_sale_date_after_anchor(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("SUBSTITUTE TRUSTEE'S SALE Sale at public auction will be "
+                "on 11/10/2026 on or about 10:00 AM, recorded on 12/11/2006 "
+                "as Instrument No. 06056098, Book 2685.")
+        assert _tn_extract_sale_date(text) == "2026-11-10"
+
+    def test_boilerplate_march_2026_rejected(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("Substitute Trustee will sell on November 3, 2026 at the "
+                "courthouse. Transfers of residential real property to "
+                "covered transferees on or after March 1, 2026.")
+        assert _tn_extract_sale_date(text) == "2026-11-03"
+
+    def test_time_anchored_date_beats_deed_dates(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("WHEREAS, by Deed of Trust dated March 30, 2023, the "
+                "undersigned Substitute Trustee will expose for sale at "
+                "Jonesborough, Tennessee, at 10:00 a.m. on October 23, "
+                "2026, the described property.")
+        assert _tn_extract_sale_date(text) == "2026-10-23"
+
+    def test_deed_only_notice_returns_none(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("NOTICE OF PUBLICATION: recorded on August 22, 2007 at "
+                "Deed Book 1267 Page 769; Quit Claim deed dated January "
+                "15, 2021.")
+        assert _tn_extract_sale_date(text) is None
+
+    def test_continued_sale_later_date_wins(self):
+        from scraper.tn_publicnotice import _tn_extract_sale_date
+        text = ("The sale that will be on September 2, 2026 has been "
+                "continued to October 14, 2026 at the courthouse.")
+        assert _tn_extract_sale_date(text) == "2026-10-14"

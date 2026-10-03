@@ -52,6 +52,22 @@ _DATE_RE = re.compile(
 )
 
 
+def _row_mentions_county(text: str, county: str) -> bool:
+    """True when *text* names ``county`` as a "<Name> County" mention.
+
+    Used to tell legitimate cross-county rows (Knox-published notice for
+    a Sevier County Courthouse sale) from true filter leaks: the former
+    mention the searched county as a property/venue county.
+    """
+    if not text or not county:
+        return False
+    name = county.replace("_", " ").strip()
+    if not name:
+        return False
+    return re.search(r"\b%s\s+County\b" % re.escape(name),
+                     text, re.IGNORECASE) is not None
+
+
 def _parse_notice_date(text: str):
     """Extract the leading publication date (e.g. 'Tuesday, August 25, 2026')."""
     if not text:
@@ -102,6 +118,10 @@ _TN_SALE_DATE_RE2 = re.compile(
     r"November|December),?\s+(\d{4})",
     re.IGNORECASE,
 )
+# Numeric sale dates ("auction will be on 11/10/2026") — only accepted
+# immediately after a sale anchor, since recording dates use the same
+# format ("recorded on 12/11/2006").
+_TN_SALE_DATE_NUMERIC_RE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 _TN_ACRES_RE = re.compile(r"(\d[\d,]*\.?\d*|\.\d+)\s*(?:acres?|acs?|AC)\b",
                              re.IGNORECASE)
 # Acreage stated for the granted tract ("containing…", "having an area of…").
@@ -132,6 +152,39 @@ _COURT_FRAG_RE = re.compile(
 _SALE_VERBS = ("offer for sale", "offered for sale", "will sell",
                "sell at public", "sale date", "date of sale", "auction",
                "trustee's sale", "substitute trustee", "sale")
+
+# Anchors that positively identify the AUCTION date: sale-intent phrases
+# immediately before the date ("will be on 11/10/2026", "will be held",
+# "at 10:00 a.m. on October 23, 2026", weekday before the date).
+_STRONG_SALE_ANCHORS = (
+    "will be on", "will be held", "will sell", "will sell on", "will, on",
+    "will offer", "offer for sale", "offered for sale", "sale will",
+    "auction will", "continued to", "resold", "re-sold",
+    "now be held", "re sale", "resale", "sale date", "sale will be",
+    "proceed to sell", "sell the below", "sell the below-mentioned",
+    "will proceed",
+)
+_TIME_BEFORE_RE = re.compile(r"at\s+\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?)?",
+                            re.IGNORECASE)
+_WEEKDAY_RE = re.compile(r"(mon|tues|thurs|wednes|fri|satur|sun)day[ ,]",
+                         re.IGNORECASE)
+# Anchors that mark a NON-sale date: deed/loan recitals ("Deed of Trust
+# dated March 30, 2023", "recorded on 12/11/2006"), publication stamps,
+# and the CFPB anti-loan-stealing boilerplate ("on or after March 1, 2026")
+# that many TN trustee notices print verbatim.
+_DEED_ANCHORS = (
+    "dated", "record", "book", "page", "roll", "image", "instrument",
+    "executed", "warrant", "amend", "modified", "assignment", "effective",
+    "on or after", "publish", "of record", "birth",
+)
+# Strong anchors may sit a little farther back than the deed anchors.
+_STRONG_WINDOW = 60
+_DEED_WINDOW = 45
+# Month-name dates without a sale anchor are only trusted inside this
+# window around today (sale notices advertise sales a few days-ahead to
+# ~2 years out; a 1997 date in a 2026 notice is a deed).
+_SALE_PLAUSIBLE_MIN_DAYS = 180   # days before today
+_SALE_FUTURE_MAX_YEARS = 2
 
 
 # Phrases that open the legal description — an address after one of these
@@ -171,37 +224,74 @@ def _reject_match(text: str, pos: int, match_text: str) -> bool:
 
 
 def _tn_extract_sale_date(text: str):
-    """Auction date: prefer dates near sale verbs over deed/loan dates.
+    """Auction date: prefer dates anchored by sale intent, reject deed dates.
 
     Deed-of-trust recitals lead with old dates ("Deed of Trust dated June
-    7, 2008"); the auction date sits by sale verbs ("offer for sale ...
-    on the 7th day of October, 2026"). Highest score wins, ties go to the
-    later occurrence (continuances read later).
+    7, 2008") and the federal anti-evisitation boilerplate prints a fixed
+    "March 1, 2026"; the real auction date sits next to sale intent
+    ("Sale at public auction will be on 11/10/2026", "at 10:00 a.m. on
+    October 23, 2026", "on the 7th day of October, 2026"). A candidate is
+    rejected when a deed/publication anchor precedes it ("dated",
+    "recorded", "Publish:", "on or after"), and unanchored month-name
+    dates outside a plausible sale window are dropped. Ties go to the
+    later date (continuances read later).
     """
     if not text:
         return None
     text = normalize_notice_text(text)
+    today = datetime.date.today()
+    min_iso = (today - datetime.timedelta(days=_SALE_PLAUSIBLE_MIN_DAYS)).isoformat()
+    max_iso = today.replace(year=today.year + _SALE_FUTURE_MAX_YEARS).isoformat()
+
     cands = []
     for m in _TN_SALE_DATE_RE.finditer(text):
-        cands.append((m, m.group(1), m.group(2), m.group(3)))
+        cands.append((m, m.group(1), m.group(2), m.group(3), False, False))
     for m in _TN_SALE_DATE_RE2.finditer(text):
-        cands.append((m, m.group(2), m.group(1), m.group(3)))
+        # "on the 7th day of October, 2026" — day-first phrasing is itself
+        # a sale-date convention in these notices.
+        cands.append((m, m.group(2), m.group(1), m.group(3), True, False))
+    for m in _TN_SALE_DATE_NUMERIC_RE.finditer(text):
+        cands.append((m, None, m.group(2), m.group(3), False, True))
+
     scored = []
-    for m, mon_name, day, year in cands:
-        mon = _MONTHS.get(mon_name.title())
+    for m, mon_name, day, year, day_first, numeric in cands:
+        mon = int(m.group(1)) if numeric else _MONTHS.get(
+            str(mon_name).title())
         if not mon:
             continue
         try:
             iso = datetime.date(int(year), mon, int(day)).isoformat()
-        except Exception:
+        except (TypeError, ValueError):
             continue
-        ctx = text[max(0, m.start() - 120):m.end() + 120].lower()
-        score = sum(1 for v in _SALE_VERBS if v in ctx)
-        scored.append((score, m.start(), iso))
+        if not (min_iso <= iso <= max_iso):
+            # Notices publish sales a few days-ahead to ~2 years out;
+            # anything else is a deed (1997) or a quoted prior sale (2021).
+            continue
+        before = text[max(0, m.start() - _STRONG_WINDOW):m.start()].lower()
+        strong = (any(a in before for a in _STRONG_SALE_ANCHORS)
+                  or _WEEKDAY_RE.search(before[-25:]) is not None
+                  or _TIME_BEFORE_RE.search(before) is not None
+                  or day_first)
+        # Deed/publication anchors only reject UNanchored candidates; a
+        # date right after "will be on" is the sale even if the sentence
+        # also cites a book/page.
+        if not strong and any(a in before[-_DEED_WINDOW:]
+                              for a in _DEED_ANCHORS):
+            continue
+        if numeric and not strong:
+            # numeric dates (recording/instrument numbers) only count
+            # right after a sale anchor
+            continue
+        # Sale-intent anchored dates beat unanchored ones outright; among
+        # equally-anchored dates the later one wins (continuances read
+        # later). Weak verb counts are NOT summed into the key — an
+        # unanchored boilerplate date sitting amid sale vocabulary must
+        # never outvote an anchored one.
+        scored.append((bool(strong), iso))
     if not scored:
         return None
     scored.sort(key=lambda t: (t[0], t[1]))
-    return scored[-1][2]
+    return scored[-1][1]
 
 
 # Measurement words mark metes-and-bounds course fragments ("250 feet of
@@ -411,9 +501,23 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         return COUNTY_SET
 
     def _county_from_grid_text(self, full_text: str) -> Optional[str]:
-        """Pull the TN property county from a grid-row's text."""
+        """Pull the TN publication county from a grid-row's text.
+
+        Grid rows lead with an explicit marker
+        ("<Paper> <Date> City: <city> County: <name> ...") — prefer it
+        over property-county mentions deeper in the text (e.g. a
+        Davidson-published notice for Montgomery County property must
+        parse as Davidson, not Montgomery). The marker sits inside the
+        first ~150 chars, so only search the row head.
+        """
         if not full_text:
             return None
+        m = re.search(
+            r"County:\s*([A-Z][A-Za-z]+(?:\s+[A-Z][a-z]+"
+            r"(?=\s+[A-Z]{2,}|\s*[^A-Za-z\s]|$))?)",
+            full_text[:200])
+        if m:
+            return m.group(1).strip()
         for pat in (
             r"TENNESSEE\s*[,:]?\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\s+COUNTY",
             r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\s+COUNTY\s*[,:]?\s*TENNESSEE",
@@ -519,9 +623,11 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 def _collect(recs, county: str) -> bool:
                     """Collect one page; flag the county tainted on leaks.
 
-                    The checkbox filter occasionally leaks foreign-county
-                    rows, so a parsed county other than the searched one
-                    marks the search tainted (see attribution below).
+                    A row counts as foreign only when NEITHER its
+                    publication county NOR any property/venue county
+                    mention matches the searched county (a Knox-published
+                    notice for a Sevier County Courthouse sale legitimately
+                    belongs to a Sevier search).
                     """
                     nonlocal tainted
                     stop = False
@@ -530,8 +636,10 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                         if pk in seen_pk:
                             continue
                         seen_pk.add(pk)
+                        text = r.get("full_text") or ""
                         rc = (r.get("county") or "").lower().strip().replace(" ", "_") or None
-                        if rc and rc != county:
+                        if (rc and rc != county
+                                and not _row_mentions_county(text, county)):
                             tainted = True
                         d = _parse_notice_date(r.get("full_text") or "")
                         if d is not None and d < cutoff:
