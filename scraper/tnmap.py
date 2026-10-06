@@ -268,6 +268,9 @@ class TNMapScraper:
                         continue  # No house number -> cannot match reliably
 
                     parcels = self._query_parcels_by_address(page, county_id, num, street)
+                    # Repo rate limit: max 2 external req/s — rapid-fire
+                    # queries get throttled by ArcGIS and match nothing.
+                    time.sleep(0.5)
                     enriched = self._match_parcel(prop, parcels, counties_from_config)
                     if enriched:
                         matched_count += 1
