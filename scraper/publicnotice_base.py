@@ -269,6 +269,17 @@ class PublicNoticeScraper(BaseForeclosureScraper):
     BASE_URL = ""
     TURNSTILE_SITE_KEY = ""
 
+    def __init__(self, *args, lookback_days: int = LOOKBACK_DAYS, **kwargs):
+        """Publication window in days (default 7). Wider windows recover
+        older notices (e.g. after an outage); scheduled runs keep 7."""
+        super().__init__(*args, **kwargs)
+        self.lookback_days = lookback_days
+
+    def _window_days(self) -> int:
+        """Effective publication window (getattr-guarded: tests build
+        scrapers via __new__, bypassing __init__)."""
+        return getattr(self, "lookback_days", LOOKBACK_DAYS)
+
     # GridView unique-id for the Next button (used by __doPostBack).
     NEXT_BTN_UNIQUE_ID = "ctl00$ContentPlaceHolder1$WSExtendedGridNP1$btnNext"
 

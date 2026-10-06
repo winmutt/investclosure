@@ -269,9 +269,11 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
     BASE_URL = NCFORECLOSURES_BASE_URL
     TURNSTILE_SITE_KEY = NCNOTICES_TURNSTILE_SITE_KEY
 
-    def __init__(self, max_candidates: int = 600):
+    def __init__(self, max_candidates: int = 600,
+                 lookback_days: int = LOOKBACK_DAYS):
         super().__init__(search_type="foreclosure", delay=1.5,
-                         use_proxy=False, solve_captcha=True)
+                         use_proxy=False, solve_captcha=True,
+                         lookback_days=lookback_days)
         self.max_candidates = max_candidates
         self._all_counties: set[str] = set()
 
@@ -456,7 +458,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                         "popular-search selection")
 
                 print("  [3/4] Parsing results, one county search at a time ...")
-                print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
+                print(f"  Keep only notices published in the last {self._window_days()} days")
 
                 candidates: List[dict] = []
                 seen: set[str] = set()
@@ -474,7 +476,8 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                         rc = (r.get("county") or "").lower() or None
                         if rc and rc not in COUNTY_SET:
                             continue
-                        if not _is_recent_publication(row_text):
+                        if not _is_recent_publication(row_text,
+                                                     days=self._window_days()):
                             continue
                         seen.add(nid)
                         candidates.append({"id": nid, "pk_id": r.get("pk_id"),
@@ -482,7 +485,8 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                     # Grid sorts newest-first; stop once even the freshest
                     # (first) row on a page is past the lookback window.
                     if recs and not _is_recent_publication(
-                            recs[0].get("full_text") or ""):
+                            recs[0].get("full_text") or "",
+                            days=self._window_days()):
                         stop = True
                     return stop
 
@@ -527,7 +531,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
                     _walk_county_pages(county)
 
                 candidates = candidates[:self.max_candidates]
-                print(f"  Found {len(candidates)} notices in last {LOOKBACK_DAYS} days")
+                print(f"  Found {len(candidates)} notices in last {self._window_days()} days")
 
                 print(f"  [4/4] Extracting details ({len(candidates)} cases) ...")
                 for i, cand in enumerate(candidates, 1):

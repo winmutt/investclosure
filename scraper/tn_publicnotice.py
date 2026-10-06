@@ -569,9 +569,11 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         # direct-egress details solve in-browser in ~30s.
         use_proxy: bool = False,
         solve_captcha: bool = True,
+        lookback_days: int = LOOKBACK_DAYS,
     ):
         super().__init__(search_type=search_type, delay=delay,
-                         use_proxy=use_proxy, solve_captcha=solve_captcha)
+                         use_proxy=use_proxy, solve_captcha=solve_captcha,
+                         lookback_days=lookback_days)
 
     def _get_target_counties(self) -> set[str]:
         return COUNTY_SET
@@ -690,8 +692,8 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 print("done")
 
                 print("  [3/4] Parsing results, one county search at a time ...")
-                cutoff = datetime.date.today() - datetime.timedelta(days=LOOKBACK_DAYS)
-                print(f"  Recency cutoff: {cutoff.isoformat()} (last {LOOKBACK_DAYS} days)")
+                cutoff = datetime.date.today() - datetime.timedelta(days=self._window_days())
+                print(f"  Recency cutoff: {cutoff.isoformat()} (last {self._window_days()} days)")
 
                 all_records = []
                 seen_pk = set()
@@ -779,7 +781,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                     all_records.extend(county_recs)
 
                 records = all_records
-                print(f"  Found {len(records)} notices in last {LOOKBACK_DAYS} days")
+                print(f"  Found {len(records)} notices in last {self._window_days()} days")
 
                 target_records = [r for r in records if (r.get("county") or "").lower().replace(" ", "_") in COUNTY_SET]
                 print(f"  {len(target_records)} in target counties")
@@ -1009,11 +1011,13 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
 def scrape_with_enrichment(
     solve_captcha: bool = True,
     enrich: bool = True,
+    lookback_days: int = LOOKBACK_DAYS,
 ) -> List[PropertyData]:
     """Run TN foreclosure scraper with optional TNMap enrichment."""
     from .tnmap import enrich_with_tnmap
 
-    scraper = TNPublicNoticeScraper(solve_captcha=solve_captcha)
+    scraper = TNPublicNoticeScraper(solve_captcha=solve_captcha,
+                                    lookback_days=lookback_days)
     properties = scraper.run()
 
     if enrich and properties:

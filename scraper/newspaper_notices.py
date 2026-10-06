@@ -524,19 +524,29 @@ class NewspaperNoticesScraper(BaseScraper):
 
     SOURCE_NAME = "newspaper_notices"
 
-    def __init__(self, delay_range: tuple[float, float] = (2.0, 4.0)):
+    def __init__(self, delay_range: tuple[float, float] = (2.0, 4.0),
+                 lookback_days: Optional[int] = None):
         super().__init__(delay_range=delay_range, use_selenium=False)
+        # Gannett API window override (default None = state-file logic:
+        # 180-day backfill on first run, 7-day rolling after).
+        self.lookback_days = lookback_days
 
     def scrape(self) -> list[PropertyData]:
         all_properties: list[PropertyData] = []
+        gannett_kwargs = ({"lookback_days": self.lookback_days}
+                          if self.lookback_days is not None else {})
+        _ct = lambda: self._scrape_citizen_times(**gannett_kwargs)
+        _ct.__name__ = "_scrape_citizen_times"
+        _br = lambda: self._scrape_blueridge(**gannett_kwargs)
+        _br.__name__ = "_scrape_blueridge"
         for scrape_fn in [
             self._scrape_transylvanian_times,
             self._scrape_watauga_democrat,
             self._scrape_avery_journal,
             self._scrape_sylvaherald,
             self._scrape_mitchellnews,
-            self._scrape_citizen_times,
-            self._scrape_blueridge,
+            _ct,
+            _br,
         ]:
             try:
                 props = scrape_fn()

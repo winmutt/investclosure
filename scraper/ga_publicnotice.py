@@ -154,6 +154,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         delay: float = 1.5,
         use_proxy: bool = False,
         solve_captcha: bool = True,
+        lookback_days: int = LOOKBACK_DAYS,
     ):
         # Proxy OFF by default: the container egresses from the same residential
         # IP the operator browses from, and Cloudflare accepts it — but the
@@ -163,7 +164,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         # proxy swaps it for 74.208.178.108 (IONOS). Turnstile failures are the
         # camoufox-in-Docker fingerprint (camoufox#311), NOT the IP.
         super().__init__(search_type=search_type, delay=delay,
-                         use_proxy=use_proxy, solve_captcha=solve_captcha)
+                         use_proxy=use_proxy, solve_captcha=solve_captcha,
+                         lookback_days=lookback_days)
 
     def _get_target_counties(self) -> set[str]:
         return COUNTY_SET
@@ -438,7 +440,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
 
                 categories = [c.strip() for c in GAFORECLOSURES_CATEGORIES.split(",") if c.strip()]
                 print(f"  [2/4] Searching GA mountain-county sales across {len(categories)} categories: {categories}")
-                print(f"  Keep only notices published in the last {LOOKBACK_DAYS} days")
+                print(f"  Keep only notices published in the last {self._window_days()} days")
                 all_records = []
                 global_seen_pk = set()
                 for category in categories:
@@ -467,7 +469,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                                 # Grid sorts newest-first; stop once the first
                                 # row on a page is past the lookback window.
                                 if more and not _is_recent_publication(
-                                        more[0].get("full_text") or ""):
+                                        more[0].get("full_text") or "",
+                                        days=self._window_days()):
                                     break
                                 nxt = self._page_info(page)
                                 if not nxt:
@@ -475,7 +478,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                                 cur, total = nxt["cur"], nxt["total"]
                         # Drop records published before the lookback window.
                         recs = [r for r in recs
-                                if _is_recent_publication(r.get("full_text") or "")]
+                                if _is_recent_publication(r.get("full_text") or "",
+                                                          days=self._window_days())]
                         # Collapse notices seen under an earlier county's
                         # (unreliable) checkbox selection; the grid-text county
                         # is authoritative, so the true county governs the

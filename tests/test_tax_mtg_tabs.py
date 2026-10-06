@@ -470,8 +470,25 @@ class TestGisLinkRouting:
         from scraper.nc_gis_lookup import build_gis_url
         assert "schneidercorp" in (build_gis_url(
             None, None, "047B048", None, "Rabun", state="GA") or "")
+        # TN parcel-backed rows go to TNMap (never NC OneMap)...
         assert "tnmap" in (build_gis_url(
-            None, None, None, None, "Hamblen", state="TN") or "")
+            None, None, "028-030", None, "Hamblen", state="TN") or "")
+        # ...but county-only TN rows get no GIS button (link-depth policy).
+        assert build_gis_url(
+            None, None, None, None, "Blount", state="TN") is None
+
+    def test_maps_needs_address_or_coords(self):
+        from scraper.nc_gis_lookup import build_google_maps_url
+        assert build_google_maps_url(
+            None, None, None, None, "Clay", state="NC") is None
+        assert build_google_maps_url(
+            None, None, None, "Nashville", "Davidson",
+            state="TN") is None
+        assert "Woodsong" in (build_google_maps_url(
+            None, None, "454 Woodsong Dr", None, "McDowell",
+            state="NC") or "")
+        assert "35.600000" in (build_google_maps_url(
+            -83.1, 35.6, None, None, None) or "")
 
     def test_clean_parcel_ref(self):
         from scraper.backfill_links import _clean_parcel_ref

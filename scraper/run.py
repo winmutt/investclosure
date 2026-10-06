@@ -165,7 +165,8 @@ except ImportError as e:
 # Core run logic
 # ---------------------------------------------------------------------------
 
-def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> dict:
+def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
+                lookback_days: int = 7) -> dict:
     """Run a single scraper, save results to DB, return stats."""
     logger.info("%s SCRAPER", scraper_name.upper())
     run_id = _start_logging(conn, scraper_name)
@@ -177,13 +178,20 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
             return {"scraper": scraper_name, "found": 0, "new": 0, "error": "SCRAPER_DISABLED"}
 
         if scraper_name == "tn_publicnotice":
-            properties = scrape_with_enrichment(solve_captcha=True, enrich=True)
+            properties = scrape_with_enrichment(solve_captcha=True, enrich=True,
+                                               lookback_days=lookback_days)
         elif scraper_name == "ga_publicnotice":
-            scraper = scraper_class()
+            scraper = scraper_class(lookback_days=lookback_days)
             properties = scraper.run()
         elif scraper_name == "nc_publicnotice":
-            scraper = scraper_class()
+            scraper = scraper_class(lookback_days=lookback_days)
             properties = scraper.run()
+        elif scraper_name == "newspaper_notices":
+            try:
+                scraper = scraper_class(lookback_days=lookback_days)
+            except TypeError:
+                scraper = scraper_class()
+            properties = scraper.run() if hasattr(scraper, 'run') else []
         else:
             scraper = scraper_class()
             properties = scraper.run() if hasattr(scraper, 'run') else []
@@ -298,7 +306,14 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class) -> d
                   f"skipped(no parcel): {enrich_result.get('skipped_no_parcel', 0)}, "
                   f"failed: {enrich_result.get('failed', 0)}")
     except Exception as e:
-        logger.warning("Auto-enrich failed: %s", e)
+        logger.error("Auto-enrich failed: %s", e, exc_info=True)
+        try:
+            _telegram.send_health_alert(
+                "❌ AUTO-ENRICH FAILED",
+                f"enrich_properties({scraper_name}) crashed: {e}\n"
+                "Rows may keep NULL acres/links until fixed.")
+        except Exception:
+            pass
 
     # Auto-enrich TN rows lacking a TPAD link via TNMap assessment search
     # (address-geocoded; road-only rows can't match and are skipped).
@@ -428,7 +443,7 @@ def cmd_list() -> None:
     print(f"\nTotal: {len(SCRAPER_MODULES)} scrapers")
 
 
-def cmd_run(scraper_name: str) -> dict:
+def cmd_run(scraper_name: str, lookback_days: int = 7) -> dict:
     """Run a single scraper."""
     scraper_class = SCRAPER_MODULES.get(scraper_name)
     if not scraper_class:
@@ -438,7 +453,8 @@ def cmd_run(scraper_name: str) -> dict:
 
     conn = _ensure_db()
     try:
-        result = run_scraper(conn, scraper_name, scraper_class)
+        result = run_scraper(conn, scraper_name, scraper_class,
+                             lookback_days=lookback_days)
         print(f"\n  {scraper_name}: found={result['found']}, new={result['new']}, dups={result.get('duplicates', 0)}")
     finally:
         conn.close()
@@ -461,7 +477,7 @@ def cmd_run(scraper_name: str) -> dict:
     return result
 
 
-def cmd_run_all() -> list[dict]:
+def cmd_run_all(lookback_days: int = 7) -> list[dict]:
     """Run all scrapers and auto-archive small-acreage properties."""
     results = []
     total_found = 0
@@ -469,7 +485,7 @@ def cmd_run_all() -> list[dict]:
 
     for name, cls in SCRAPER_MODULES.items():
         print(f"\n{'='*60}")
-        result = cmd_run(name)
+        result = cmd_run(name, lookback_days=lookback_days)
         if result:
             results.append(result)
             total_found += result.get("found", 0)
@@ -745,6 +761,14 @@ def main():
              "(adds cross-source notes + links for the dashboard)",
     )
     parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=7,
+        help="Publication window in days for notice scrapers "
+             "(nc/tn/ga_publicnotice, newspaper Gannett feeds). Default 7; "
+             "use a larger value to recover older notices after an outage.",
+    )
+    parser.add_argument(
         "--add-user",
         metavar="USERNAME",
         help="Create a dashboard login user (prompts for password)",
@@ -859,9 +883,9 @@ def main():
         ) or (4, 16)
         cmd_cron(args.interval, hours=hours)
     elif args.scraper:
-        cmd_run(args.scraper)
+        cmd_run(args.scraper, lookback_days=args.lookback_days)
     elif args.all or not any([args.list, args.status, args.new, args.archive, args.cron, args.scraper]):
-        cmd_run_all()
+        cmd_run_all(lookback_days=args.lookback_days)
     else:
         parser.print_help()
 
