@@ -1025,8 +1025,8 @@ def archive_property(
         logger.warning("Property %d not found", property_id)
         return False
     
-    if row["status"] != "active":
-        logger.info("Property %d already %s", property_id, row["status"])
+    if row[1] != "active":
+        logger.info("Property %d already %s", property_id, row[1])
         return False
     
     archived_at = datetime.now().isoformat()
@@ -1077,8 +1077,8 @@ def unarchive_property(
         logger.warning("Property %d not found", property_id)
         return False
     
-    if row["status"] != "archived":
-        logger.info("Property %d is %s, not archived", property_id, row["status"])
+    if row[1] != "archived":
+        logger.info("Property %d is %s, not archived", property_id, row[1])
         return False
     
     archived_at = datetime.now().isoformat()

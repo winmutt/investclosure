@@ -260,6 +260,23 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-10-06 (GIS viewer parcel location + McDowell PIN format)**:
+  `/property/976` opened its GIS map at statewide zoom 7 with no parcel —
+  (1) `static/gis_viewer.html` never queried the layer by parcel, only dropped
+  a marker when a `center` param existed, so parcel-only NC links never located
+  the parcel; and (2) McDowell notices print tax parcels `NNNN-NN-NNNN`
+  (`0668-15-3806`) while OneMap stores 4-4-4 12-digit PINs (`066800153806`), so
+  every lookup variant (raw/de-dashed) missed and the row kept NULL coords.
+  Fix: `gis_viewer.html` now queries the parcel through `/gis/proxy` (parno OR
+  altparno over raw/dash-stripped/middle-segment-zero-padded variants), zooms
+  (`view.goTo`) and highlights the polygon, falling back to the old center pin
+  or a not-found message; `_parcel_variants()` gained the padded variant and
+  `NC1MapService.by_parcel()` now iterates `_parcel_variants` (was raw-only).
+  Re-ran `backfill_links`: #976 resolved to `066800153806` (454 Woodsong Dr,
+  4.39ac) + coords; #1286/#1288/#1289 coords/links filled. Verified live via
+  camoufox (both new and legacy link forms show "Parcel 066800153806 — SUTTON
+  AUSTIN VANCE"). McDowell key-format caveat documented in
+  `nc_county_summary.md` §16.
 - **2026-10-01 (NC "commonly known as" addresses)**: NC notices publish the
   street address only in a "commonly/also known as <addr>" clause after the
   metes-and-bounds legal description — the NC parser ignored it (address

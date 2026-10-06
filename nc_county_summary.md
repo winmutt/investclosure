@@ -150,6 +150,7 @@ All 20 NC mountain counties probed live via the scraper's camoufox (stealth Fire
 - **Legal notices:** McDowell News (https://mcdowellnews.com/ads/, live hub, no foreclosure content on hub, no Turnstile). NOT ncnotices.com.
 - **Turnstile:** No.
 - **Scraper:** DONE — `scraper/mcdowell_county.py` (parses all three tables, splits bundled parcels; live run 2026-09-25 yielded 2 parcel rows, 1 new + 1 cross-source dup, GIS-enriched).
+- **OneMap parcel-key format (verified 2026-10-06):** notices print tax parcels as `NNNN-NN-NNNN` (e.g. `0668-15-3806` = 454 Woodsong Dr, Old Fort) but NC OneMap stores 4-4-4 grouped 12-digit PINs (`066800153806` = map `0668` + zero-padded `0015` + `3806`). Exact and dash-stripped queries miss it — pad the middle segment to 4 digits (handled by the padded variant in `_parcel_variants`/`by_parcel`). `recareano` is not a parcel key here (it holds a decimal acreage-ish float); OneMap `parno`/`altparno` carry the 12-digit PIN.
 
 ## 17. Mitchell County (Verified 2026-09-25)
 - **Website:** https://www.mitchellcountync.gov/

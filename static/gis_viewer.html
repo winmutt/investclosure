@@ -34,8 +34,9 @@
 
     require([
       "esri/Map", "esri/views/MapView", "esri/layers/FeatureLayer",
-      "esri/Graphic", "esri/geometry/Point", "esri/symbols/SimpleMarkerSymbol"
-    ], function (Map, MapView, FeatureLayer, Graphic, Point, SimpleMarkerSymbol) {
+      "esri/Graphic", "esri/geometry/Point", "esri/geometry/Polygon",
+      "esri/symbols/SimpleMarkerSymbol"
+    ], function (Map, MapView, FeatureLayer, Graphic, Point, Polygon, SimpleMarkerSymbol) {
 
       const map = new Map({ basemap: "satellite" });
 
@@ -62,7 +63,8 @@
         (err) => { info.textContent = "Layer failed to load: " + err.message; }
       );
 
-      if (center && parcel) {
+      function addCenterMarker() {
+        if (!center) return;
         const [lng, lat] = center.split(",").map(Number);
         const g = new Graphic({
           geometry: new Point({ longitude: lng, latitude: lat }),
@@ -73,6 +75,61 @@
           popupTemplate: { title: "Parcel", content: "PIN: <b>" + parcel + "</b>" }
         });
         view.graphics.add(g);
+      }
+
+      // Locate the parcel through the same-origin proxy and zoom to it, so
+      // parcel-only links (no coordinates) are parcel-deep too. Mirrors the
+      // Python variants in scraper/nc_gis_lookup._parcel_variants: raw,
+      // dash-stripped, and McDowell-style middle-segment zero-padded.
+      async function locateParcel() {
+        if (!parcel || !/^[A-Za-z0-9\-\s]+$/.test(parcel)) return false;
+        const variants = [parcel, parcel.replace(/-/g, "")];
+        const m = parcel.match(/^(\d{4})-(\d{1,3})-(\d{4})$/);
+        if (m) variants.push(m[1] + m[2].padStart(4, "0") + m[3]);
+        const where = variants
+          .map(v => `parno='${v.replace(/'/g, "''")}' OR altparno='${v.replace(/'/g, "''")}'`)
+          .join(" OR ");
+        const qs = new URLSearchParams({
+          where: where,
+          outFields: "parno,altparno,ownname,gisacres,cntyname",
+          returnGeometry: "true",
+          f: "json",
+          resultRecordCount: "1"
+        });
+        try {
+          const res = await fetch(service + "/query?" + qs.toString());
+          const data = await res.json();
+          const feat = (data.features || [])[0];
+          if (!feat || !feat.geometry) return false;
+          const attrs = feat.attributes || {};
+          const g = new Graphic({
+            geometry: new Polygon({
+              rings: feat.geometry.rings,
+              spatialReference: feat.geometry.spatialReference
+            }),
+            symbol: {
+              type: "simple-fill",
+              color: [226, 119, 40, 0.25],
+              outline: { color: [255, 80, 0], width: 3 }
+            },
+            popupTemplate: {
+              title: (attrs.cntyname || "Parcel") + " Parcel",
+              content: "PIN: <b>" + (attrs.parno || parcel) + "</b><br>Owner: " +
+                       (attrs.ownname || "—") + "<br>GIS Acres: " + (attrs.gisacres ?? "—")
+            }
+          });
+          view.graphics.add(g);
+          await           view.goTo(g, { padding: { top: 60, left: 40, bottom: 40, right: 40 } });
+          info.textContent = "Parcel " + (attrs.parno || parcel) +
+                             (attrs.ownname ? " — " + attrs.ownname : "");
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      if (parcel) {
+        locateParcel().then(found => { if (!found) addCenterMarker(); });
       }
     });
   </script>
