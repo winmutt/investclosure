@@ -302,11 +302,34 @@ def _extract_notice_county(text: str, slug: str = "") -> Optional[str]:
 
 
 def _extract_notice_address(text: str, county: str = "") -> Optional[str]:
-    """Extract 'Address of Property: 328 Wooten Cove Rd.' style addresses."""
+    """Extract the property street address from notice *text*.
+
+    Handles the formats seen across feeds:
+      "Address of Property: 328 Wooten Cove Rd."  (Citizen-Times)
+      "ADDRESS: 206 ALICIA DR MARSHALL, NC 28753"  (BlueRidgeNow/Gannett)
+      "COMMONLY KNOWN AS: 206 ALICIA DRIVE, MARSHALL, NC 28753"
+    The bare "ADDRESS:"/known-as forms require a house number + NC token so
+    road-alias clauses ("also known as Bristol Avenue") stay rejected.
+    """
     from .courthouses import is_courthouse_address
     m = re.search(r"Address\s+of\s+(?:the\s+)?Property\s*:?\s*([^\n]+)", text, re.IGNORECASE)
     if m:
         addr = m.group(1).strip().strip(".,")
+        if addr and not is_courthouse_address(addr, county, "NC"):
+            return addr
+    m = re.search(
+        r"^ADDRESS\s*:\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
+    if m:
+        addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
+        if addr and re.search(r"\d", addr) and re.search(r"\bNC\b", addr, re.IGNORECASE) \
+                and not is_courthouse_address(addr, county, "NC"):
+            return addr
+    m = re.search(
+        r"(?:commonly|also)\s+known\s+as\s*:?\s*"
+        r"(\d[\w\s.,\-#']{4,90}?[,\s]\s*N(?:orth)?\s*C(?:arolina)?\.?(?:,?\s*\d{5})?)",
+        text, re.IGNORECASE)
+    if m:
+        addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
         if addr and not is_courthouse_address(addr, county, "NC"):
             return addr
     return None
@@ -559,6 +582,11 @@ class NewspaperNoticesScraper(BaseScraper):
           "Parcel #1984-32-8523-000"              (Watauga)
         """
         patterns = [
+            # "PARCEL IDENTIFICATION NUMBER(S): 8794-89-7318" (BlueRidgeNow).
+            # Numeric/dash/space only so trailing prose ("and ...", "ADDRESS:")
+            # is never swallowed; _normalize_pin turns spaces into hyphens.
+            r"[Pp]arcel\s+[Ii]dentification\s+[Nn]umber\S*\s*[:#]?\s*"
+            r"([0-9][0-9\- ]{3,29})",
             # "tax parcel #1984-32-8523-000"
             r"[Tt]ax\s+parcel\s*#?\s*(\d{3,}-[\d\u2013\-?]+)",
             # "Parcel ID #9508-82-4582-000" | "parcel ID 7567-93-8054"

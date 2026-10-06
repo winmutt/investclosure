@@ -90,6 +90,36 @@ def _parse_notice_date(text: str):
 # ga_publicnotice's bundled-notice handling).
 _TN_TOTAL_RE = re.compile(r"Total:\s*\$[\d,]+\.\d{2}")
 _TN_PARCEL_ID_RE = re.compile(r"(\d{2,3}-[A-Za-z]/[A-Za-z\d]+/\d+\.\d{2})")
+# Labeled space/dash-separated assessor IDs used by mortgage-trustee notices:
+# "Parcel Number: 068B A 025.00 000", "Tax ID: 085M A 030.00 000",
+# "Tax Id Number(s): 025 027.00 000". (Slash-format above covers tax-list tables.)
+_TN_LABELED_PARCEL_RE = re.compile(
+    r"(?:parcel\s*number|tax\s*(?:id|parcel\s*id))(?:\s*number\(s\))?"
+    r"\s*:?\s*([0-9A-Z][0-9A-Z \-.]{4,30})",
+    re.IGNORECASE)
+# Trailing prose glommed onto a labeled capture ("040M-D-02602-000 Property
+# Address: ...") — never part of an assessor ID.
+_TN_PARCEL_TRAIL_RE = re.compile(
+    r"\s+(Property|Street|Current|Owner|Land|Situated|Being|Map)\b.*$",
+    re.IGNORECASE)
+
+
+def _tn_extract_parcel(text: str) -> Optional[str]:
+    """Return the assessor parcel/Tax ID from notice *text*, or None.
+
+    Tries the slash-format tax-table ID first, then labeled space/dash
+    formats ("Parcel Number:", "Tax ID:", "Tax Id Number(s):").
+    """
+    if not text:
+        return None
+    m = _TN_PARCEL_ID_RE.search(text)
+    if m:
+        return m.group(1).strip()
+    m = _TN_LABELED_PARCEL_RE.search(text)
+    if m:
+        pin = _TN_PARCEL_TRAIL_RE.sub("", m.group(1)).strip(" .,;")
+        return pin[:40] if len(pin) >= 5 else None
+    return None
 _TN_LIST_HEADER_RE = re.compile(
     r"Owner\s+Property\s*Address\s+Parcel\s*Numbers?|Parcel\s*Numbers",
     re.IGNORECASE)
@@ -432,8 +462,7 @@ def _tn_parse_parcels(text: str, county: str, auction_date: str, detail_url: str
         if not blk.strip():
             continue
         address = _tn_extract_address(blk)
-        pid_m = _TN_PARCEL_ID_RE.search(blk)
-        parcel_no = pid_m.group(1).strip() if pid_m else None
+        parcel_no = _tn_extract_parcel(blk)
         acres = _tn_parse_acres(blk)
         key = parcel_no or address
         if not key:
@@ -839,8 +868,9 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         # Consolidated multi-parcel LISTS (delinquent-tax suits with parcel
         # tables but no Total:$ split markers) get no row: no single address
         # is attributable, and any extracted one would mislead.
-        if _TN_LIST_HEADER_RE.search(normalize_notice_text(raw_text)) or len(
-                _TN_PARCEL_ID_RE.findall(raw_text)) >= 5:
+        if _TN_LIST_HEADER_RE.search(normalize_notice_text(raw_text)) or (
+                len(_TN_PARCEL_ID_RE.findall(raw_text))
+                + len(_TN_LABELED_PARCEL_RE.findall(raw_text))) >= 5:
             log_raw(
                 self.SOURCE_NAME,
                 listing_id=record.get("sp_case") or pk_id,
@@ -865,6 +895,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             )
             return []
         address = _tn_fb_address or extract_street_address(raw_text)
+        parcel_no = _tn_extract_parcel(raw_text)
         prop: PropertyData = {
             "source": self.SOURCE_NAME,
             "source_listing_id": record.get("sp_case") or pk_id,
@@ -882,6 +913,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             "property_type": kind,
             "image_url": None,
             "auction_date": auction_date,
+            "parcel_number": parcel_no,
             "raw_source_text": raw_text,
             "raw_paragraph": raw_text,
         }
@@ -906,7 +938,7 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
                 prop["google_maps_topo_url"] = build_google_maps_topo_url(None, None, address, None, county, state="TN")
                 prop["google_maps_satellite_url"] = build_satellite_url(None, None, address, None, county, state="TN")
                 prop["google_maps_street_url"] = build_street_view_url(None, None, address, None, county, state="TN")
-                prop["gis_url"] = get_tn_gis_url(county, "")
+                prop["gis_url"] = get_tn_gis_url(county, parcel_no or "")
             except Exception:
                 pass
         return [prop]
