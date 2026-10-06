@@ -52,6 +52,20 @@ class TestPropertyCategoryTaxMtg:
 
 
 class TestClassifyNcNotice:
+    def test_title_case_county_of(self):
+        from scraper.nc_publicnotice import _extract_county
+        all_c = {"buncombe", "cherokee", "watauga"}
+        assert _extract_county(
+            "Order of the Clerk of Superior Court of Buncombe County, "
+            "North Carolina, in the action County of Buncombe", all_c) == "buncombe"
+
+    def test_reversed_county_state_order(self):
+        from scraper.nc_publicnotice import _extract_county
+        all_c = {"cherokee", "watauga"}
+        assert _extract_county(
+            "Deed of Trust recorded in Cherokee County, North Carolina",
+            all_c) == "cherokee"
+
     def test_tax_sale(self):
         assert _classify_nc_notice(
             "FORECLOSURE SALE TO SATISFY UNPAID PROPERTY TAXES owing to the County"

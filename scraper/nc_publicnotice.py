@@ -61,8 +61,11 @@ _PIN_RE = re.compile(
     r"\s*[:#]?\s*([0-9][0-9A-Za-z\-]{3,19})",
     re.IGNORECASE,
 )
-_COUNTY_OF_RE = re.compile(r"\bCOUNTY\s+OF\s+([A-Z][A-Za-z]+)\b")
-_COUNTY_NAME_RE = re.compile(r"\b([A-Z][A-Za-z]+)\s+COUNTY\b")
+_COUNTY_OF_RE = re.compile(r"\bCOUNTY\s+OF\s+([A-Z][A-Za-z]+)\b", re.IGNORECASE)
+# Title-case notice text ("Buncombe County", "County of Buncombe") needs
+# IGNORECASE here: without it only ALL-CAPS headers match and every
+# "X County, North Carolina"-ordered notice parses county=None.
+_COUNTY_NAME_RE = re.compile(r"\b([A-Z][A-Za-z]+)\s+COUNTY\b", re.IGNORECASE)
 _NC_HEADER_RE = re.compile(
     r"NORTH\s+CAROLINA[,\s:]+([A-Z][A-Za-z]+)\s+COUNTY\b", re.IGNORECASE
 )
