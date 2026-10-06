@@ -21,6 +21,8 @@ from typing import Optional
 import requests
 from requests.exceptions import RequestException
 
+from .config import config
+
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org"
@@ -140,6 +142,10 @@ class TelegramNotifier:
 
             # Links (HTML) - telegram caps at one preview, so we send as links
             link_parts = []
+            prop_id = prop.get("id")
+            if prop_id:
+                link_parts.append(
+                    f'<a href="{config.APP_URL}/property/{prop_id}">App</a>')
             if google:
                 link_parts.append(f'<a href="{google}">Maps</a>')
             if gis:
@@ -152,7 +158,10 @@ class TelegramNotifier:
             lines.append("")
 
         if len(properties) > 10:
-            lines += [f"... and {len(properties) - 10} more (see dashboard)"]
+            lines += [f"... and {len(properties) - 10} more "
+                      f'(<a href="{config.APP_URL}/">dashboard</a>)']
+        else:
+            lines += [f'<a href="{config.APP_URL}/">Open dashboard</a>']
 
         message = "\n".join(lines)
         # Telegram limit 4096 chars — truncate if needed
@@ -185,6 +194,7 @@ class TelegramNotifier:
             else:
                 lines.append(f"✅ {scraper} — Found: {found} | New: {new} | Dups: {dups}")
         lines += ["", f"Total Found: {total_found}", f"Total New: {total_new}", f"Total Dups: {total_dups}"]
+        lines += ["", f'<a href="{config.APP_URL}/">Open dashboard</a>']
         if errors:
             lines += ["", "<b>Errors:</b>"] + errors
         message = "\n".join(lines)

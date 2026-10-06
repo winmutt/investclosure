@@ -305,6 +305,7 @@ class Config:
     TELEGRAM_BOT_TOKEN: str
     TELEGRAM_CHAT_ID: str
     TELEGRAM_ENABLED: bool
+    APP_URL: str
 
     # ---- filter thresholds ----
     MIN_ACRES: float
@@ -376,6 +377,12 @@ class Config:
         self.TELEGRAM_CHAT_ID = _opt_str("TELEGRAM_CHAT_ID", "")
         _telegram_enabled_raw = _opt_str("TELEGRAM_ENABLED", "false")
         self.TELEGRAM_ENABLED = _telegram_enabled_raw.lower() in ("true", "1", "yes")
+
+        # Public app URL for links back to the dashboard (Telegram alerts)
+        self.APP_URL = (
+            _opt_str("INVESTCLOSURE_APP_URL", "http://winmutt.duckdns.org:5001")
+            or "http://winmutt.duckdns.org:5001"
+        ).rstrip("/")
 
         # Thresholds (env overridable)
         self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 1.1)
