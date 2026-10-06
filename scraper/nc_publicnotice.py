@@ -63,6 +63,19 @@ _PIN_RE = re.compile(
     re.IGNORECASE,
 )
 _COUNTY_OF_RE = re.compile(r"\bCOUNTY\s+OF\s+([A-Z][A-Za-z]+)\b", re.IGNORECASE)
+# Sale-intent anchors: the auction date sits next to these, never next to
+# deed recitals ("dated ...", "recorded on ...", "executed ...").
+_SALE_ANCHOR_RE = re.compile(
+    r"offer\s+for\s+sale|offered\s+for\s+sale|will\s+sell|exposed\s+to\s+"
+    r"public\s+sale|date\s+of\s+sale|sale\s+date|notice\s+of\s+sale|"
+    r"will\s+offer",
+    re.IGNORECASE,
+)
+# Deed-recital anchors: a date here is the loan/deed date, never the auction.
+_DEED_ANCHOR_RE = re.compile(
+    r"dated|recorded|executed|delivered|conveyed|recordation",
+    re.IGNORECASE,
+)
 # Title-case notice text ("Buncombe County", "County of Buncombe") needs
 # IGNORECASE here: without it only ALL-CAPS headers match and every
 # "X County, North Carolina"-ordered notice parses county=None.
@@ -123,9 +136,34 @@ def _row_county(text: str) -> Optional[str]:
 
 
 def _find_auction_date(text: str) -> Optional[str]:
-    """Find the sale/auction date in notice text."""
-    m = _SALE_DATE_RE.search(text)
-    return m.group(1).strip() if m else None
+    """Find the sale/auction date in notice text.
+
+    The old first-``on <date>`` match grabbed deed recitals ("recorded on
+    October 14, 2021") instead of the auction ("offer for sale ... on
+    September 22, 2026"). Now: skip candidates with a deed anchor
+    (dated/recorded/executed) in the preceding 60 chars, prefer candidates
+    with sale intent in the preceding 200 chars (continuances read later,
+    so the last strong candidate wins), and fall back to the first
+    surviving bare "on <date>" (preserves tax-notice behavior).
+    """
+    if not text:
+        return None
+    strong: list[tuple[int, str]] = []
+    weak: list[tuple[int, str]] = []
+    for m in _SALE_DATE_RE.finditer(text):
+        start = m.start()
+        before = text[max(0, start - 200):start]
+        if _DEED_ANCHOR_RE.search(before[-60:]):
+            continue
+        if _SALE_ANCHOR_RE.search(before):
+            strong.append((start, m.group(1).strip()))
+        else:
+            weak.append((start, m.group(1).strip()))
+    if strong:
+        return strong[-1][1]
+    if weak:
+        return weak[0][1]
+    return None
 
 
 def _extract_county(text: str, all_counties: set[str]) -> Optional[str]:

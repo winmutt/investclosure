@@ -350,6 +350,13 @@ def _extract_auction_date(text: str) -> Optional[str]:
             text,
             re.IGNORECASE,
         )
+        if m and re.search(
+            r"dated|recorded|executed|delivered",
+            text[max(0, m.start() - 60):m.start()],
+            re.IGNORECASE,
+        ):
+            # Deed recital ("recorded on October 14, 2021"), not the auction.
+            return None
     if not m:
         return None
     month = {
