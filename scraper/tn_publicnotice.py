@@ -102,6 +102,10 @@ _TN_LABELED_PARCEL_RE = re.compile(
     r"(?:\s+number\(s\))?"
     r"\s*:?\s*([0-9][0-9A-Z \-.]{3,29})",
     re.IGNORECASE)
+# Bare assessor map IDs ("Parcel ID: 049DE010") — no separators at all.
+_TN_BARE_PARCEL_RE = re.compile(
+    r"parcel\s+ids?\b\s*:?\s*([0-9][0-9A-Z]{5,11})\b",
+    re.IGNORECASE)
 # Trailing prose glommed onto a labeled capture ("040M-D-02602-000 Property
 # Address: ...") — never part of an assessor ID.
 _TN_PARCEL_TRAIL_RE = re.compile(
@@ -120,6 +124,9 @@ def _tn_extract_parcel(text: str) -> Optional[str]:
     m = _TN_PARCEL_ID_RE.search(text)
     if m:
         return m.group(1).strip()
+    m = _TN_BARE_PARCEL_RE.search(text)
+    if m:
+        return m.group(1).strip()[:40]
     # Notices hard-wrap the ID across lines ("136N-B-\n016.00") — flatten
     # whitespace before the labeled search so wrapped IDs still match.
     flat = re.sub(r"\s+", " ", text)
@@ -353,7 +360,7 @@ def _tn_extract_sale_date(text: str):
 _JUNK_ADDR_RE = re.compile(
     r"\b(feet|foot|miles?|chains?|poles?|rods?|perches?|acres?|owner|"
     r"parcel|plaintiff|defendant|deceased|docket|estate\s+(is|of)|"
-    r"of\s+record)\b",
+    r"discrepancy|inconsisten|of\s+record)\b",
     re.IGNORECASE)
 
 
@@ -384,6 +391,20 @@ def _tn_extract_address(block: str, county: str = ""):
             return False
         return text and (not _reject_match(block, m.start(), text)
                          and not is_courthouse_address(text, county, "TN"))
+
+    # Explicitly labeled property address wins outright ("PROPERTY
+    # ADDRESS: ... believed to be 5224 HORSESTALL DRIVE, KNOXVILLE, TN
+    # 37918") — it outranks grantor-name fragments ("MICHAEL ANTHONY ST")
+    # the suffix patterns can surface.
+    lab = re.search(
+        r"(?:property\s+address|address\s+of\s+(?:the\s+)?property)\s*:?\s*"
+        r"[^\n\d]*?(\d[^\n]{4,100}?(?:TN|Tennessee)\.?(?:,?\s*\d{5})?)",
+        block, re.IGNORECASE)
+    if lab:
+        addr = _clean_candidate(lab.group(1).rstrip(",. "))
+        if addr and not _reject_match(block, lab.start(1), addr) \
+                and not is_courthouse_address(addr, county, "TN"):
+            return addr
 
     # The subject property's own name first ("tract ... known as Warren
     # Lane") — deed fragments elsewhere in the notice ("estate is 200
