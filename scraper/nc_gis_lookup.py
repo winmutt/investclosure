@@ -200,44 +200,64 @@ class NC1MapService:
         if cache_key in _cache:
             return _cache[cache_key]
 
-        clean = parcel.strip()
         fips = NC_COUNTY_FIPS.get((county or "").lower().strip())
 
-        # Strategy 1: Try nparno = "37" + fips + "_" + parcel
-        if fips:
-            nparno = f"37{fips}_{clean}"
-            feats = _nc1map_query({
-                "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
-                "returnGeometry": "false",
-                "f": "json",
-                "resultRecordCount": "1",
-            }, timeout=timeout)
-            if feats:
-                result = _clean_features(feats)
-                if result and _county_matches(result.get("cntyname", ""), county):
+        # Try each normalization variant (raw, dash-stripped, and — for
+        # McDowell-style notices — middle-segment zero-padded) so callers
+        # can pass the notice-printed parcel verbatim.
+        for clean in _parcel_variants(parcel):
+            # Strategy 1: Try nparno = "37" + fips + "_" + parcel
+            if fips:
+                nparno = f"37{fips}_{clean}"
+                feats = _nc1map_query({
+                    "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
+                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                    "returnGeometry": "false",
+                    "f": "json",
+                    "resultRecordCount": "1",
+                }, timeout=timeout)
+                if feats:
+                    result = _clean_features(feats)
+                    if result and _county_matches(result.get("cntyname", ""), county):
+                        _cache[cache_key] = result
+                        return result
+
+            # Strategy 2: Try altparno = parcel with cntyfips filter
+            if fips:
+                feats = _nc1map_query({
+                    "where": f"cntyfips='{fips}' AND altparno='{clean}'",
+                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                    "returnGeometry": "false",
+                    "f": "json",
+                    "resultRecordCount": "1",
+                }, timeout=timeout)
+                if feats:
+                    result = _clean_features(feats)
+                    if result and _county_matches(result.get("cntyname", ""), county):
+                        _cache[cache_key] = result
+                        return result
+
+            # Strategy 3: Try parno = parcel with cntyfips filter
+            if fips:
+                feats = _nc1map_query({
+                    "where": f"cntyfips='{fips}' AND parno='{clean}'",
+                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                    "returnGeometry": "false",
+                    "f": "json",
+                    "resultRecordCount": "1",
+                }, timeout=timeout)
+                if feats:
+                    result = _clean_features(feats)
+                    if county and result and not _county_matches(result.get("cntyname", ""), county):
+                        logger.info("County mismatch %s/%s parcel=%s %s (fips=%s)",
+                                    county, "NC", clean, result.get("cntyname"), result.get("cntyfips"))
+                        return None
                     _cache[cache_key] = result
                     return result
 
-        # Strategy 2: Try altparno = parcel with cntyfips filter
-        if fips:
+            # Strategy 4: Query by parcel alone (no county filter)
             feats = _nc1map_query({
-                "where": f"cntyfips='{fips}' AND altparno='{clean}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
-                "returnGeometry": "false",
-                "f": "json",
-                "resultRecordCount": "1",
-            }, timeout=timeout)
-            if feats:
-                result = _clean_features(feats)
-                if result and _county_matches(result.get("cntyname", ""), county):
-                    _cache[cache_key] = result
-                    return result
-
-        # Strategy 3: Try parno = parcel with cntyfips filter
-        if fips:
-            feats = _nc1map_query({
-                "where": f"cntyfips='{fips}' AND parno='{clean}'",
+                "where": f"parno='{clean}'",
                 "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
                 "returnGeometry": "false",
                 "f": "json",
@@ -246,45 +266,28 @@ class NC1MapService:
             if feats:
                 result = _clean_features(feats)
                 if county and result and not _county_matches(result.get("cntyname", ""), county):
-                    logger.info("County mismatch %s/%s parcel=%s %s (fips=%s)",
-                                county, "NC", clean, result.get("cntyname"), result.get("cntyfips"))
+                    logger.info("County mismatch %s/%s parcel=%s %s",
+                                county, "NC", clean, result.get("cntyname"))
                     return None
                 _cache[cache_key] = result
                 return result
 
-        # Strategy 4: Query by parcel alone (no county filter)
-        feats = _nc1map_query({
-            "where": f"parno='{clean}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
-            "returnGeometry": "false",
-            "f": "json",
-            "resultRecordCount": "1",
-        }, timeout=timeout)
-        if feats:
-            result = _clean_features(feats)
-            if county and result and not _county_matches(result.get("cntyname", ""), county):
-                logger.info("County mismatch %s/%s parcel=%s %s",
-                            county, "NC", clean, result.get("cntyname"))
-                return None
-            _cache[cache_key] = result
-            return result
-        
-        # Strategy 5: Query by altparno alone (no county filter)
-        feats = _nc1map_query({
-            "where": f"altparno='{clean}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
-            "returnGeometry": "false",
-            "f": "json",
-            "resultRecordCount": "1",
-        }, timeout=timeout)
-        if feats:
-            result = _clean_features(feats)
-            if county and result and not _county_matches(result.get("cntyname", ""), county):
-                logger.info("County mismatch %s/%s parcel=%s (alt) %s",
-                            county, "NC", clean, result.get("cntyname"))
-                return None
-            _cache[cache_key] = result
-            return result
+            # Strategy 5: Query by altparno alone (no county filter)
+            feats = _nc1map_query({
+                "where": f"altparno='{clean}'",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "returnGeometry": "false",
+                "f": "json",
+                "resultRecordCount": "1",
+            }, timeout=timeout)
+            if feats:
+                result = _clean_features(feats)
+                if county and result and not _county_matches(result.get("cntyname", ""), county):
+                    logger.info("County mismatch %s/%s parcel=%s (alt) %s",
+                                county, "NC", clean, result.get("cntyname"))
+                    return None
+                _cache[cache_key] = result
+                return result
 
         _cache[cache_key] = None
         return None
@@ -357,6 +360,16 @@ def _parcel_variants(parcel: str) -> list[str]:
     stripped = re.sub(r"[^A-Za-z0-9]", "", cleaned)
     if stripped and stripped not in variants:
         variants.append(stripped)
+    # McDowell County notices print tax parcels as NNNN-NN-NNNN
+    # ("0668-15-3806") but NC OneMap stores 4-4-4 grouped 12-digit PINs
+    # ("066800153806") — pad the middle segment to 4 digits (tried last,
+    # after the exact/dash-stripped forms, so counties whose de-dashed form
+    # matches directly are never affected).
+    m = re.match(r"^(\d{4})-(\d{1,3})-(\d{4})$", cleaned)
+    if m:
+        padded = m.group(1) + m.group(2).zfill(4) + m.group(3)
+        if padded not in variants:
+            variants.append(padded)
     return variants
 
 
@@ -828,6 +841,14 @@ def enrich_properties(source: Optional[str] = None,
             if coords_lat and coords_lng:
                 update_fields["latitude"] = coords_lat
                 update_fields["longitude"] = coords_lng
+
+        # Parcel-to-address backfill: a row whose notice carried no street
+        # address gets the assessor's site address so Maps links resolve to
+        # the property. Runs even without acres (site data may exist while
+        # the acreage field is empty) but never overwrites a parsed address.
+        if not address and parcel_data and parcel_data.get("site_address"):
+            address = parcel_data["site_address"]
+            update_fields["address"] = address
 
         # Always build map/GIS links when an address or parcel is available, so
         # every property — from any scraper — gets both a Google Maps link and a

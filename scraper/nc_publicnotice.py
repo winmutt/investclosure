@@ -192,11 +192,39 @@ def extract_known_as_address(text: str) -> Optional[str]:
     return None
 
 
+# "Address of Property: 365 Old Haw Creek Road, Asheville, NC 28805"
+# (substitute-trustee notices) — the bare _ADDR_RE ("Address:") misses the
+# "of Property" infix, so this runs first.
+_ADDR_OF_PROPERTY_RE = re.compile(
+    r"address\s+of\s+(?:the\s+)?property\s*:?\s*([^\n]{5,120})",
+    re.IGNORECASE,
+)
+
+
+# "property being located at 2101 Wildwood Drive, Hickory, North Carolina"
+# — same house-number + NC gating as the known-as clause so road-only
+# descriptions ("situate on North Carolina State Secondary Road 1556")
+# stay rejected.
+_LOCATED_AT_RE = re.compile(
+    r"(?:being\s+)?located\s+at\s*:?\s*"
+    r"(\d[\w\s.,\-#']{4,80}?[,\s]\s*N(?:orth)?\s*C(?:arolina)?\.?(?:,?\s*\d{5})?)",
+    re.IGNORECASE,
+)
+# ("...NC 28805Tax Parcel ID: ...") — never part of the street address.
+_ADDR_TRAIL_RE = re.compile(
+    r"\s*(?:Tax\s+Parcel(?:\s+ID)?|Parcel\s*(?:ID|#)|PIN\b|Present\s+Record"
+    r"|Record\s+Owner).*$",
+    re.IGNORECASE,
+)
+
+
 def _extract_address(text: str, county: str = "") -> Optional[str]:
     from .courthouses import is_courthouse_address
-    for regex in (_KNOWN_AS_RE, _ADDR_RE):
+    for regex in (_KNOWN_AS_RE, _ADDR_OF_PROPERTY_RE, _LOCATED_AT_RE,
+                  _ADDR_RE):
         for m in regex.finditer(text or ""):
             addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
+            addr = _ADDR_TRAIL_RE.sub("", addr).strip(" .,")
             if addr and not is_courthouse_address(addr, county, "NC"):
                 return addr
     return None
@@ -357,43 +385,16 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
     # ------------------------------------------------------------------
 
     def _enrich_acres(self, props: list[PropertyData]) -> list[PropertyData]:
-        """Fill missing acreage (and coords/address) from NC OneMap via PIN."""
-        from .nc_gis_lookup import NC1MapService
-        svc = NC1MapService()
-        enriched = 0
-        for p in props:
-            if p.get("acres") is not None or not p.get("parcel_number"):
-                continue
-            try:
-                data = svc.by_parcel(p["parcel_number"], county=p.get("county"))
-            except Exception as e:
-                logger.warning("GIS lookup failed for %s: %s", p["parcel_number"], e)
-                data = None
-            if data and data.get("acres"):
-                p["acres"] = data["acres"]
-                p["acres_source"] = "gis"
-                if data.get("latitude"):
-                    p["latitude"] = data["latitude"]
-                if data.get("longitude"):
-                    p["longitude"] = data["longitude"]
-                if not p.get("address") and data.get("siteadd"):
-                    p["address"] = data["siteadd"]
-                if not p.get("parcel_number") and data.get("parno"):
-                    p["parcel_number"] = data["parno"]
-                # Backfill map links when enrichment supplied coords/address
-                # after build time (keeps Telegram-at-insert-time complete).
-                if (p.get("latitude") is not None
-                        and p.get("longitude") is not None):
-                    from .nc_gis_lookup import build_gis_url, build_google_maps_url
-                    p["gis_url"] = p.get("gis_url") or build_gis_url(
-                        p["longitude"], p["latitude"], p.get("parcel_number"),
-                        p.get("address"), p.get("county"), state="NC")
-                    p["google_maps_url"] = p.get("google_maps_url") or build_google_maps_url(
-                        p["longitude"], p["latitude"], p.get("address"), None,
-                        p.get("county"), state="NC")
-                enriched += 1
-            time.sleep(0.6)
-        print(f"  GIS acreage enrichment: {enriched} of {len(props)} filled")
+        """Fill missing acreage (and coords/address) from NC OneMap via PIN.
+
+        Delegates to the shared pre-insert enricher so parcel-variant
+        handling (de-dashed OneMap forms) and the ``site_address`` key stay
+        in one place.
+        """
+        from .nc_gis_lookup import fill_acres_in_memory
+        res = fill_acres_in_memory(props)
+        print(f"  GIS acreage enrichment: {res.get('enriched', 0)} "
+              f"of {len(props)} filled")
         return props
 
     # ------------------------------------------------------------------
