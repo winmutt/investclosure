@@ -253,7 +253,7 @@ class TestTNExtractFixes:
         assert _tn_extract_address(
             "commonly known as 1213 Hendricks St., Chattanooga, TN 37406. "
             "Property Address: 1213 Hendricks St., Chattanooga, TN 37406.",
-            "hamilton") == "1213 Hendricks St"
+            "hamilton") == "1213 Hendricks St., Chattanooga, TN 37406"
 
     def test_metes_courses_are_not_addresses(self):
         from scraper.tn_publicnotice import _tn_extract_address
