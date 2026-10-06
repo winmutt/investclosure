@@ -168,7 +168,16 @@ class TNMapScraper:
             f"{TNMAP_BASE_URL}/arcgis/rest/services/CADASTRAL/"
             f"STATEWIDE_PARCELS_WEB_MERCATOR/MapServer/0/query"
         )
-        where = f"COUNTY_ID = {county_id} AND ADDRESS LIKE '%{house_number}%'"
+        # TNMap situs addresses carry the house number LAST ("SYCAMORE
+        # GARDEN ST 524"). A bare %num% substring also matches 5901/1524
+        # and floods the 200-row cap with wrong-number rows the matcher
+        # then rejects, so the true parcel never comes back. Anchor the
+        # number to a word edge (trailing, middle, or leading order).
+        where = (
+            f"COUNTY_ID = {county_id} AND (ADDRESS LIKE '% {house_number}'"
+            f" OR ADDRESS LIKE '% {house_number} %'"
+            f" OR ADDRESS LIKE '{house_number} %')"
+        )
         params = {
             "f": "json",
             "where": where,

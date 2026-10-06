@@ -234,7 +234,15 @@ _SALE_FUTURE_MAX_YEARS = 2
 # as Warren Lane").
 _DESCRIPTION_BOUNDARY_RE = re.compile(
     r"following described|described as|to-wit|situate|lying and being|"
-    r"more particularly|tract no\.?", re.IGNORECASE)
+    r"more particularly|known and designated as|designated as|tract no\.?",
+    re.IGNORECASE)
+# Contact markers after a candidate mean it's the trustee/attorney's
+# office ("FARINASH & STOFAN\n7047 Lee Highway...\njdf@..."), never the
+# property being sold.
+_CONTACT_AFTER_RE = re.compile(
+    r"@|\bBPR\b|\bEsq\.?|\b\(\d{3}\)\s*\d{3}[-.]\d{4}"
+    r"|\b\d{3}[-.]\d{3}[-.]\d{4}\b",
+    re.IGNORECASE)
 
 
 def _in_venue_context(text: str, pos: int, window: int = 150) -> bool:
@@ -370,6 +378,10 @@ def _tn_extract_address(block: str, county: str = ""):
 
     def _usable(m):
         text = _clean_candidate(m.group(1))
+        if not text:
+            return False
+        if _CONTACT_AFTER_RE.search(block[m.end():m.end() + 150]):
+            return False
         return text and (not _reject_match(block, m.start(), text)
                          and not is_courthouse_address(text, county, "TN"))
 
@@ -912,6 +924,18 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         if address and _JUNK_ADDR_RE.search(address):
             # Shared fallback has no deed-prose filter ("2023 and of record").
             address = None
+        if address and not _tn_fb_address:
+            # Generic fallback also lacks the attorney-office filter: drop
+            # it when every occurrence sits next to contact markers.
+            cand, pos, clean = address, raw_text.find(address), False
+            while pos != -1:
+                if not _CONTACT_AFTER_RE.search(raw_text[pos:pos + len(cand) + 150]) \
+                        and not _reject_match(raw_text, pos, cand):
+                    clean = True
+                    break
+                pos = raw_text.find(cand, pos + 1)
+            if not clean:
+                address = None
         parcel_no = _tn_extract_parcel(raw_text)
         prop: PropertyData = {
             "source": self.SOURCE_NAME,
