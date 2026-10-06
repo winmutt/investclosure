@@ -92,10 +92,15 @@ _TN_TOTAL_RE = re.compile(r"Total:\s*\$[\d,]+\.\d{2}")
 _TN_PARCEL_ID_RE = re.compile(r"(\d{2,3}-[A-Za-z]/[A-Za-z\d]+/\d+\.\d{2})")
 # Labeled space/dash-separated assessor IDs used by mortgage-trustee notices:
 # "Parcel Number: 068B A 025.00 000", "Tax ID: 085M A 030.00 000",
-# "Tax Id Number(s): 025 027.00 000". (Slash-format above covers tax-list tables.)
+# "Tax Id Number(s): 025 027.00 000", "Tax Map Identification No.: 082NK024".
+# (Slash-format above covers tax-list tables.) The capture must start with a
+# digit: bare "tax identification number" prose (no Map/No. label) must NOT
+# match, otherwise the capture becomes the garbage "entification number".
 _TN_LABELED_PARCEL_RE = re.compile(
-    r"(?:parcel\s*number|tax\s*(?:id|parcel\s*id))(?:\s*number\(s\))?"
-    r"\s*:?\s*([0-9A-Z][0-9A-Z \-.]{4,30})",
+    r"(?:parcel\s+number|tax\s+ids?\b|tax\s+parcel\s+id"
+    r"|tax\s+map\s+(?:identification\s+)?no\.?)"
+    r"(?:\s+number\(s\))?"
+    r"\s*:?\s*([0-9][0-9A-Z \-.]{3,29})",
     re.IGNORECASE)
 # Trailing prose glommed onto a labeled capture ("040M-D-02602-000 Property
 # Address: ...") — never part of an assessor ID.
@@ -115,9 +120,15 @@ def _tn_extract_parcel(text: str) -> Optional[str]:
     m = _TN_PARCEL_ID_RE.search(text)
     if m:
         return m.group(1).strip()
-    m = _TN_LABELED_PARCEL_RE.search(text)
+    # Notices hard-wrap the ID across lines ("136N-B-\n016.00") — flatten
+    # whitespace before the labeled search so wrapped IDs still match.
+    flat = re.sub(r"\s+", " ", text)
+    m = _TN_LABELED_PARCEL_RE.search(flat)
     if m:
-        pin = _TN_PARCEL_TRAIL_RE.sub("", m.group(1)).strip(" .,;")
+        # A wrapped line break flattens to a space ("136N-B- 016.00") —
+        # rejoin around hyphens; inter-block spaces are significant.
+        pin = re.sub(r"\s*-\s*", "-", m.group(1))
+        pin = _TN_PARCEL_TRAIL_RE.sub("", pin).strip(" .,;")
         return pin[:40] if len(pin) >= 5 else None
     return None
 _TN_LIST_HEADER_RE = re.compile(
@@ -329,9 +340,12 @@ def _tn_extract_sale_date(text: str):
 # ("Owner", "Parcel Numbers", "Plaintiff") mark table headers/captions.
 # ("Estate" alone is NOT junk — "Glenview Estate Road" is a real street;
 # only "estate is/of" deed fragments qualify, handled by known-as order.)
+# "of record" marks deed-registry prose ("2023 and of record in Book..."),
+# never a street address.
 _JUNK_ADDR_RE = re.compile(
     r"\b(feet|foot|miles?|chains?|poles?|rods?|perches?|acres?|owner|"
-    r"parcel|plaintiff|defendant|deceased|docket|estate\s+(is|of))\b",
+    r"parcel|plaintiff|defendant|deceased|docket|estate\s+(is|of)|"
+    r"of\s+record)\b",
     re.IGNORECASE)
 
 
@@ -895,6 +909,9 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
             )
             return []
         address = _tn_fb_address or extract_street_address(raw_text)
+        if address and _JUNK_ADDR_RE.search(address):
+            # Shared fallback has no deed-prose filter ("2023 and of record").
+            address = None
         parcel_no = _tn_extract_parcel(raw_text)
         prop: PropertyData = {
             "source": self.SOURCE_NAME,
