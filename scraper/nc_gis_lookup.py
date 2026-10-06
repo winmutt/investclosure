@@ -600,10 +600,14 @@ def build_google_maps_url(lng: Optional[float] = None, lat: Optional[float] = No
     address is available. ``state`` defaults to ``NC`` (the primary scrape
     region) but is set to ``GA`` for Georgia properties so the search is not
     mis-scoped to North Carolina.
+
+    Address- or coordinate-backed only (link-depth policy): a county-only
+    query ("Clay NC") doesn't take you to the property, so it returns None
+    instead of a generic map search.
     """
     st = (state or "NC").strip() or "NC"
-    parts = [p for p in [address, city, county, st] if p and p.strip()]
-    if parts:
+    if address and address.strip():
+        parts = [p for p in [address, city, county, st] if p and p.strip()]
         q = "+".join(p.replace(" ", "+") for p in parts)
         return f"https://www.google.com/maps/search/?api=1&query={q}"
     if lng and lat:

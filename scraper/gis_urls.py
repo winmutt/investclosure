@@ -211,11 +211,14 @@ def get_nconemap_viewer_url(lng: float = None, lat: float = None,
     return url
 
 
-def get_tn_gis_url(county: str = "", parcel: str = "", lng: float = None, lat: float = None) -> str:
-    """Tennessee TNMap Assessment viewer URL."""
-    # The GISLINK-based TPAD deep link (https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink=...)
-    # is set directly by tnmap.py after enrichment. This helper builds a
-    # pre-enrichment TNMap link from county/parcel or coordinates.
+def get_tn_gis_url(county: str = "", parcel: str = "", lng: float = None, lat: float = None):
+    """Tennessee TNMap Assessment viewer URL, or None.
+
+    Parcel-deep or coordinate-centered only (link-depth policy): a
+    county-only viewer doesn't take you to the property, so it returns
+    None instead of a generic link. (The GISLINK-based TPAD deep link is
+    set directly by tnmap.py after enrichment.)
+    """
     if lng is not None and lat is not None:
         try:
             # TNMap assessment site centers on lat/lng when provided via viewer;
@@ -225,9 +228,7 @@ def get_tn_gis_url(county: str = "", parcel: str = "", lng: float = None, lat: f
             pass
     if parcel and str(parcel).strip():
         return f"https://tnmap.tn.gov/assessment/?parcel={quote(str(parcel).strip())}&county={quote(str(county or '').strip())}"
-    if county and str(county).strip():
-        return f"https://tnmap.tn.gov/assessment/?county={quote(str(county).strip())}"
-    return "https://tnmap.tn.gov/assessment/"
+    return None
 
 
 def get_gis_viewer_url(county: str, parcel: str,

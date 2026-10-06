@@ -2001,7 +2001,11 @@ class TestGAPublicNoticeCountyAttribution:
     @pytest.fixture()
     def scraper(self):
         from scraper.ga_publicnotice import GAPublicNoticeScraper
-        return GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        from scraper.publicnotice_base import LOOKBACK_DAYS
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        # __new__ skips __init__; provide the lookback the scrape loop reads.
+        s.lookback_days = LOOKBACK_DAYS
+        return s
 
     def test_county_from_grid_text_named(self, scraper):
         grid = ("The Dahlonega Nugget Wednesday, August 26, 2026 City: "
