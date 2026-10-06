@@ -490,15 +490,21 @@ def cmd_run_all() -> list[dict]:
         conn.close()
         logger.warning("Auto-archive failed: %s", e)
 
-    # Auto-link properties appearing in both kania_law and nc_publicnotice
+    # Auto-link properties appearing in both kania_law and nc_publicnotice,
+    # plus newspaper_notices and nc_publicnotice (same sale published twice,
+    # e.g. foreclosure + Gannett legal notice sharing parcel/court case).
     try:
         conn = _ensure_db()
         try:
             from scraper import db as scraper_db
             link_result = scraper_db.link_cross_source(conn)
-            if link_result.get("links"):
-                print(f"  Cross-linked: {link_result.get('links')} pairs "
-                      f"({link_result.get('notes')} notes)")
+            news_result = scraper_db.link_cross_source(
+                conn, "newspaper_notices", "nc_publicnotice")
+            total_links = link_result.get("links", 0) + news_result.get("links", 0)
+            total_notes = link_result.get("notes", 0) + news_result.get("notes", 0)
+            if total_links:
+                print(f"  Cross-linked: {total_links} pairs "
+                      f"({total_notes} notes)")
         finally:
             conn.close()
     except Exception as e:

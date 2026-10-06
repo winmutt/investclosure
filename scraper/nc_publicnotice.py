@@ -57,7 +57,8 @@ _SALE_DATE_RE = re.compile(
 )
 _CASE_RE = re.compile(r"\b(\d{2}\s?(?:SP|CV|GS|ME)\d{5,9}(?:-\d+)?)\b")
 _PIN_RE = re.compile(
-    r"(?:parcel(?:\s*(?:id|no\.?|#))?|tax\s*(?:id|parcel)|p\.?i\.?n\.?)"
+    r"(?:parcel(?:\s*(?:id|no\.?|#))?|parcel\s+identification\s+number\S*"
+    r"|tax\s*(?:id|parcel)|p\.?i\.?n\.?)"
     r"\s*[:#]?\s*([0-9][0-9A-Za-z\-]{3,19})",
     re.IGNORECASE,
 )
