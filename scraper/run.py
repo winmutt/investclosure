@@ -658,6 +658,14 @@ def cmd_cron(minutes: int = 720, hours: tuple[int, ...] = (4, 16)) -> None:
             time.sleep(max(sleep_secs, 1))
             print(f"\n  --- Starting scheduled scrape at "
                   f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S %Z')} ---")
+            try:
+                from scraper.backups import backup_if_needed
+                res = backup_if_needed()
+                if res.get("backed_up"):
+                    print(f"  Daily backup: {res['backed_up']} "
+                          f"({res.get('rows')} rows, pruned {res.get('pruned', 0)})")
+            except Exception as e:
+                logger.warning("Scheduled backup failed: %s", e)
             cmd_run_all()
         except KeyboardInterrupt:
             print("\n  Stopped.")
@@ -769,6 +777,12 @@ def main():
              "use a larger value to recover older notices after an outage.",
     )
     parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Snapshot the SQLite DB to ./data/backups (prunes snapshots "
+             "older than 7 days)",
+    )
+    parser.add_argument(
         "--add-user",
         metavar="USERNAME",
         help="Create a dashboard login user (prompts for password)",
@@ -794,6 +808,11 @@ def main():
 
     if args.list:
         cmd_list()
+    elif args.backup:
+        from scraper.backups import backup_database
+        res = backup_database()
+        print(f"\n  Backup: {res.get('backed_up') or res.get('error')} "
+              f"({res.get('rows')} rows, pruned {res.get('pruned', 0)})")
     elif args.add_user:
         import getpass
         from scraper import db as scraper_db
