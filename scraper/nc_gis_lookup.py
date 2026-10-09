@@ -962,8 +962,12 @@ def _normalize_address(addr: str) -> Optional[str]:
 
 def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     """Try to find a parcel by normalized street address in NC OneMap.
-    
-    Returns enriched data dict if found, else None.
+
+    The LIKE search normalizes the house number away and can bind a
+    neighboring parcel on the same road (#250 Bell Hill Rd bound to #1546,
+    #255 Coweeta Lake Cir to 901). When the input carries a house number it
+    must survive on the returned siteadd; house-anchored LIKE queries run
+    first, and a wrong-house loose hit is rejected (parcel-deep-or-nothing).
     """
     if not address or not county:
         return None
@@ -975,11 +979,32 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     fips = _COUNTY_FIPS.get((county or "").lower().strip())
     if not fips:
         return None
-    
+
+    m = re.match(r"^\s*(\d+)\s+", address)
+    house_num = m.group(1) if m else None
+
+    def _first_valid(feats: Optional[list[dict]]) -> Optional[dict]:
+        for one in feats or []:
+            result = _clean_features([one])
+            if not result or result.get("acres", 0) <= 0:
+                continue
+            site = (result.get("site_address") or "").strip()
+            if house_num and not re.match(rf"^{house_num}(?![0-9])", site):
+                logger.info(
+                    "Address search rejected wrong-house match %s site=%r for %r (%s)",
+                    result.get("parno"), site, address, county,
+                )
+                continue
+            return result
+        return None
+
     # Query with wildcards between words
     like_parts = " ".join(normalized.split())
-    # Try full pattern first, then abbreviated
-    for pattern in [like_parts, "%".join(like_parts.split()[:2])]:
+    # Try full pattern first, then abbreviated; when a house number is known,
+    # anchored variants go first so the right parcel wins over loose hits.
+    patterns = [f"{house_num} {like_parts}", f"{house_num} {like_parts.split()[0]}"] if house_num else []
+    patterns += [like_parts, "%".join(like_parts.split()[:2])]
+    for pattern in patterns:
         if not pattern:
             continue
         where_str = f"cntyfips='{fips}' AND siteadd LIKE '%{pattern}%'"
@@ -989,14 +1014,13 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
                 "outFields": "parno,siteadd,gisacres,ownname,sourceref,altparno",
                 "returnGeometry": "false",
                 "f": "json",
-                "resultRecordCount": "3",
+                "resultRecordCount": "10",
             },
             timeout=5,
         )
-        if resp:
-            result = _clean_features(resp)
-            if result and result.get("acres", 0) > 0:
-                return result
+        result = _first_valid(resp)
+        if result:
+            return result
     
     return None
 
