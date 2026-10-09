@@ -431,6 +431,15 @@ def _upsert_property(
             updates.append("court_case = ?")
             values.append(court_case)
 
+        # Backfill location fields when the incoming record carries them
+        # (a truncated first sighting — e.g. HTML fallback before the PDF
+        # was grabbed — must not pin a NULL address forever).
+        for _field, _val in (("address", address), ("city", city),
+                             ("zip_code", zip_code)):
+            if not (existing[_field] or "").strip() and (_val or "").strip():
+                updates.append(f"{_field} = ?")
+                values.append(_val.strip())
+
         # Detect sale/auction detail changes — auction date or price.
         # last_updated is ONLY set here, never on routine re-sightings.
         auction_date_new = str(auction_date or "").strip()
