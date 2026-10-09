@@ -616,7 +616,8 @@ class NewspaperNoticesScraper(BaseScraper):
             # "Parcel 1984-32-8523-000"
             r"[Pp]arcel\s+(\d{3,}-[\d\u2013\-?]+)",
             # "PIN 9738-38-5063" | "PIN: 061878609600000" | "PIN 9775-39-2342?00000"
-            r"\bPIN\s*[:#]?\s*(\d{4,}(?:-[\d\u2013\-?]+)+|\d{12,})",
+            # "PIN: 9648623059C0401" (Buncombe service-by-publication: letters)
+            r"\bPIN\s*[:#]?\s*(\d[0-9A-Za-z\-?]{3,29})",
             # "PID: 1984-42-0606-000"
             r"\bPID\s*[:#]?\s*(\d{3,}-[\d\u2013\-?]+)",
             # "REID 12345" (NC tax deed)

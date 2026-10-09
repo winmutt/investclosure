@@ -731,6 +731,7 @@ def link_cross_source(
 
     Returns a summary dict with the number of links and notes created.
     """
+    conn.row_factory = sqlite3.Row
     a_rows = conn.execute(
         "SELECT id, source, parcel_number, court_case, address, county, description "
         "FROM properties WHERE source = ?", (source_a,)
@@ -770,6 +771,8 @@ def link_cross_source(
                 reason, key = "same address", a["address"]
             if not reason:
                 continue
+            if a["id"] == b["id"]:
+                continue  # same row (same-source pairing) — never self-link
 
             lo, hi = sorted((a["id"], b["id"]))
             try:
