@@ -522,8 +522,14 @@ def cmd_run_all(lookback_days: int = 7) -> list[dict]:
             link_result = scraper_db.link_cross_source(conn)
             news_result = scraper_db.link_cross_source(
                 conn, "newspaper_notices", "nc_publicnotice")
-            total_links = link_result.get("links", 0) + news_result.get("links", 0)
-            total_notes = link_result.get("notes", 0) + news_result.get("notes", 0)
+            hut_result = scraper_db.link_cross_source(
+                conn, "hutchens_law", "nc_publicnotice")
+            total_links = (link_result.get("links", 0)
+                           + news_result.get("links", 0)
+                           + hut_result.get("links", 0))
+            total_notes = (link_result.get("notes", 0)
+                           + news_result.get("notes", 0)
+                           + hut_result.get("notes", 0))
             if total_links:
                 print(f"  Cross-linked: {total_links} pairs "
                       f"({total_notes} notes)")
