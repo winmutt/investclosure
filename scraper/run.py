@@ -101,6 +101,12 @@ except ImportError as e:
     logger.warning("rlselaw not available: %s", e)
 
 try:
+    from scraper.hutchens_law import HutchensLawScraper
+    SCRAPER_MODULES["hutchens_law"] = HutchensLawScraper
+except ImportError as e:
+    logger.warning("hutchens_law not available: %s", e)
+
+try:
     from scraper.brockandscott import BrockScottScraper
     SCRAPER_MODULES["brockandscott"] = BrockScottScraper
 except ImportError as e:
