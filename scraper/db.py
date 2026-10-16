@@ -955,8 +955,53 @@ def set_password(conn: sqlite3.Connection, username: str,
     return True
 
 
-def archive_below_acres(
+# Sources publishing a COMPLETE current inventory: a listing absent from a
+# successful run means redeemed/sold/withdrawn. Windowed feeds
+# (nc/tn/ga_publicnotice, newspaper_notices) are excluded — absence there
+# only means the notice aged off the search grid.
+REAP_SOURCES = frozenset({
+    "hutchens_law", "kania_law", "zls_nc",
+    "rlselaw", "brockandscott", "foreclosuretennessee",
+    "bellcarrington", "logs_nc", "auction_com",
+    "buncombe_tax", "haywood_county", "macon_county",
+    "mcdowell_county", "ashe_county", "swain_county",
+})
+
+
+def reap_missing_listings(
     conn: sqlite3.Connection,
+    source: str,
+    seen_ids: set[int],
+    actor: str = "system",
+) -> int:
+    """Archive active ``source`` rows not seen in the latest run.
+
+    Removal from a full-inventory listing means redeemed/sold/withdrawn.
+    Only call after a SUCCESSFUL run (callers must skip empty/failed runs
+    so an outage never mass-archives). Returns the archived count.
+    """
+    if source not in REAP_SOURCES:
+        return 0
+    if not seen_ids:
+        return 0  # never reap on an empty sighting set (outage safety)
+    rows = conn.execute(
+        "SELECT id FROM properties WHERE source = ? AND status = 'active'",
+        (source,),
+    ).fetchall()
+    reaped = 0
+    for (pid,) in rows:
+        if pid in seen_ids:
+            continue
+        if archive_property(
+            conn, pid,
+            reason=f"removed from {source} listings (redeemed/sold/withdrawn)",
+            archived_by=actor,
+        ):
+            reaped += 1
+    return reaped
+
+
+def archive_below_acres(    conn: sqlite3.Connection,
     min_acres: float,
     source: Optional[str] = None,
     include_sources: Optional[list[str]] = None,

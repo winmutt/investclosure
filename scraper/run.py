@@ -213,6 +213,7 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
 
     new_count = 0
     dup_count = 0
+    seen_ids: set[int] = set()
 
     for prop in properties:
         try:
@@ -266,6 +267,10 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
                     prop.get("county") or "?", prop.get("acres") or 0,
                     prop.get("county") or "?", prop.get("state") or "?",
                 )
+            try:
+                seen_ids.add(row["id"])
+            except (TypeError, KeyError, IndexError):
+                pass
                 # Send Telegram per new property (like realestate/scraper/run.py:189)
                 try:
                     # Merge scraper prop + DB row so formatter sees both raw and enriched fields
@@ -347,6 +352,20 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
 
     # Track success
     _reset_failure_counter(scraper_name)
+
+    # Reap listings that vanished from full-inventory sources (redeemed /
+    # sold / withdrawn). Only after a successful non-empty run with rows
+    # actually seen — an empty pull or total insert failure must never
+    # mass-archive.
+    if properties and seen_ids:
+        try:
+            from scraper.db import reap_missing_listings
+            reaped = reap_missing_listings(conn, scraper_name, seen_ids)
+            if reaped:
+                print(f"  Redeemed/withdrawn: {reaped} archived "
+                      f"(gone from {scraper_name} listings)")
+        except Exception as e:
+            logger.warning("Redeem-reap failed: %s", e)
 
     return {
         "scraper": scraper_name,

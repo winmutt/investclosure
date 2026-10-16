@@ -30,6 +30,7 @@ from scraper.db import (
     insert_property,
     _upsert_property,
     archive_below_acres,
+    reap_missing_listings,
     get_stats,
     get_all_active,
     get_new_since,
@@ -761,6 +762,51 @@ class TestArchiveBelowAcres:
         archived = archive_below_acres(conn, 5.0, source="A")
         assert archived == 1
         assert _make_prop(conn, "P1", 1.0, source="A")[0]  # just to ensure P1 still exists
+
+
+class TestReapMissingListings:
+    """Removal from a full-inventory listing means redeemed/sold."""
+
+    def _ids(self, conn, source):
+        return {r[0] for r in conn.execute(
+            "SELECT id FROM properties WHERE source = ?", (source,)).fetchall()}
+
+    def test_reaps_unseen_but_keeps_seen(self, conn):
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        _make_prop(conn, "P2", 5.0, source="hutchens_law")
+        _make_prop(conn, "P3", 5.0, source="hutchens_law")
+        seen = self._ids(conn, "hutchens_law")
+        seen.discard(conn.execute(
+            "SELECT id FROM properties WHERE source_listing_id='P3'").fetchone()[0])
+        assert reap_missing_listings(conn, "hutchens_law", seen) == 1
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P3'").fetchone()["status"] == "archived"
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P1'").fetchone()["status"] == "active"
+        reason = conn.execute(
+            "SELECT archive_reason FROM properties WHERE source_listing_id='P3'").fetchone()[0]
+        assert "redeemed" in reason
+
+    def test_windowed_sources_never_reaped(self, conn):
+        _make_prop(conn, "P1", 5.0, source="nc_publicnotice")
+        _make_prop(conn, "P2", 5.0, source="tn_publicnotice")
+        _make_prop(conn, "P3", 5.0, source="newspaper_notices")
+        assert reap_missing_listings(conn, "nc_publicnotice", set()) == 0
+        assert reap_missing_listings(conn, "tn_publicnotice", {999}) == 0
+        assert reap_missing_listings(conn, "newspaper_notices", {999}) == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM properties WHERE status='active'").fetchone()[0] == 3
+
+    def test_empty_sighting_set_reaps_nothing(self, conn):
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        assert reap_missing_listings(conn, "hutchens_law", set()) == 0
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P1'").fetchone()["status"] == "active"
+
+    def test_unknown_source_reaps_nothing(self, conn):
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        ids = self._ids(conn, "hutchens_law")
+        assert reap_missing_listings(conn, "nope", ids) == 0
 
 
 class TestScrapeRun:
