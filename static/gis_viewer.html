@@ -14,6 +14,15 @@
     }
     #bar a { color: #93c5fd; }
     #bar .sp { opacity: .7; }
+    #card {
+      position: absolute; top: 52px; right: 12px; z-index: 10; width: 280px;
+      background: rgba(17,24,39,0.92); color: #fff; border-radius: 8px;
+      padding: 10px 12px; font: 13px/1.5 system-ui, sans-serif; display: none;
+    }
+    #card h3 { margin: 0 0 6px; font-size: 14px; }
+    #card table { border-collapse: collapse; width: 100%; }
+    #card td { padding: 1px 4px 1px 0; vertical-align: top; }
+    #card td.k { opacity: .65; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -21,6 +30,7 @@
     <strong>InvestClosure Parcel Map</strong>
     <span class="sp" id="info">Loading NC OneMap parcel layer…</span>
   </div>
+  <div id="card"></div>
   <div id="view"></div>
 
   <script src="https://js.arcgis.com/4.29/"></script>
@@ -63,6 +73,14 @@
         (err) => { info.textContent = "Layer failed to load: " + err.message; }
       );
 
+      function showCard(rows, title) {
+        const card = document.getElementById("card");
+        card.innerHTML = "<h3>" + title + "</h3><table>" +
+          rows.map(r => "<tr><td class=\"k\">" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("") +
+          "</table>";
+        card.style.display = "block";
+      }
+
       function addCenterMarker() {
         if (!center) return;
         const [lng, lat] = center.split(",").map(Number);
@@ -75,6 +93,7 @@
           popupTemplate: { title: "Parcel", content: "PIN: <b>" + parcel + "</b>" }
         });
         view.graphics.add(g);
+        view.popup.open({ features: [g], location: g.geometry });
       }
 
       // Locate the parcel through the same-origin proxy and zoom to it, so
@@ -91,8 +110,9 @@
           .join(" OR ");
         const qs = new URLSearchParams({
           where: where,
-          outFields: "parno,altparno,ownname,gisacres,cntyname",
+          outFields: "parno,altparno,ownname,gisacres,cntyname,siteadd",
           returnGeometry: "true",
+          outSR: "4326",
           f: "json",
           resultRecordCount: "1"
         });
@@ -100,27 +120,38 @@
           const res = await fetch(service + "/query?" + qs.toString());
           const data = await res.json();
           const feat = (data.features || [])[0];
-          if (!feat || !feat.geometry) return false;
+          if (!feat || !feat.geometry || !feat.geometry.rings) return false;
           const attrs = feat.attributes || {};
+          // ArcGIS REST puts spatialReference at the response root, not on
+          // each geometry — default to 4326 to match the requested outSR.
+          const sr = feat.geometry.spatialReference || data.spatialReference || { wkid: 4326 };
+          const poly = new Polygon({ rings: feat.geometry.rings, spatialReference: sr });
+          const pin = attrs.parno || parcel;
+          const owner = attrs.ownname || "—";
+          const acres = attrs.gisacres ?? "—";
+          const site = attrs.siteadd || "—";
+          const county = attrs.cntyname || "";
           const g = new Graphic({
-            geometry: new Polygon({
-              rings: feat.geometry.rings,
-              spatialReference: feat.geometry.spatialReference
-            }),
+            geometry: poly,
             symbol: {
               type: "simple-fill",
               color: [226, 119, 40, 0.25],
               outline: { color: [255, 80, 0], width: 3 }
             },
             popupTemplate: {
-              title: (attrs.cntyname || "Parcel") + " Parcel",
-              content: "PIN: <b>" + (attrs.parno || parcel) + "</b><br>Owner: " +
-                       (attrs.ownname || "—") + "<br>GIS Acres: " + (attrs.gisacres ?? "—")
+              title: (county || "Parcel") + " Parcel",
+              content: "PIN: <b>" + pin + "</b><br>Owner: " + owner +
+                       "<br>GIS Acres: " + acres + "<br>Site: " + site
             }
           });
           view.graphics.add(g);
           await           view.goTo(g, { padding: { top: 60, left: 40, bottom: 40, right: 40 } });
-          info.textContent = "Parcel " + (attrs.parno || parcel) +
+          view.popup.open({ features: [g], location: poly.centroid });
+          showCard(
+            [["PIN", pin], ["Owner", owner], ["Acres", acres],
+             ["Site", site], ["County", county || "—"]],
+            (county ? county + " Parcel" : "Parcel"));
+          info.textContent = "Parcel " + pin +
                              (attrs.ownname ? " — " + attrs.ownname : "");
           return true;
         } catch (e) {
@@ -129,7 +160,12 @@
       }
 
       if (parcel) {
-        locateParcel().then(found => { if (!found) addCenterMarker(); });
+        locateParcel().then(found => {
+          if (!found) {
+            addCenterMarker();
+            showCard([["PIN", parcel], ["Status", "Not found in NC OneMap"]], "Parcel lookup");
+          }
+        });
       }
     });
   </script>
