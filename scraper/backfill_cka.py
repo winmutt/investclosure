@@ -204,6 +204,13 @@ def backfill_cka_addresses(source: str = "nc_publicnotice") -> dict:
         conn.commit()
         if "address" in update:
             addr_updated += 1
+        if (update.get("acres") is not None
+                and update["acres"] < config.MIN_ACRES):
+            from .db import archive_property
+            archive_property(conn, row_id, reason="below_min_acres",
+                             archived_by="system")
+            logger.info("Archived #%s: filled acres %s < MIN_ACRES %s",
+                        row_id, update["acres"], config.MIN_ACRES)
         logger.info("Backfilled #%s %s addr=%s parcel=%s gis=%s",
                     row_id, county, update.get("address"),
                     update.get("parcel_number"), bool(update.get("gis_url")))
