@@ -764,6 +764,24 @@ class TestArchiveBelowAcres:
         assert _make_prop(conn, "P1", 1.0, source="A")[0]  # just to ensure P1 still exists
 
 
+class TestAcresNeverClobberedToNull:
+    """A re-sighting without acreage must not wipe GIS-enriched acres."""
+
+    def test_null_resighting_keeps_acres(self, conn):
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        _make_prop(conn, "P1", None, source="hutchens_law")
+        row = conn.execute(
+            "SELECT acres FROM properties WHERE source_listing_id='P1'").fetchone()
+        assert row["acres"] == 5.0
+
+    def test_fresh_acres_still_win(self, conn):
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        _make_prop(conn, "P1", 7.5, source="hutchens_law")
+        row = conn.execute(
+            "SELECT acres FROM properties WHERE source_listing_id='P1'").fetchone()
+        assert row["acres"] == 7.5
+
+
 class TestReapMissingListings:
     """Removal from a full-inventory listing means redeemed/sold."""
 

@@ -375,11 +375,18 @@ def _upsert_property(
         values: list[Any] = [
             last_seen_val,
         ]
-        # Only overwrite acres if manual override is not set
+        # Acres: fresh scraper data wins, but an empty re-sighting must
+        # never clobber GIS-enriched acreage back to NULL (manual lock
+        # already bypasses entirely).
         manual_set = existing["manual_acres_set"]
         if not (manual_set or "").strip():
-            updates.append("acres = ?")
-            values.append(acres)
+            if acres is not None or existing["acres"] is None:
+                updates.append("acres = ?")
+                values.append(acres)
+                # A cleared acreage invalidates its provenance tag too.
+                if acres is None:
+                    updates.append("acres_source = ?")
+                    values.append(None)
         updates.extend([
             "price_cents = ?",
             "description = ?",
