@@ -5,6 +5,16 @@ Target set: `TN_FORECLOSURE_COUNTIES` (38 east-TN mountain counties, config.py:2
 ## Key finding
 Most TN counties conduct delinquent-property-tax sales **once a year** (or per court decree), usually run by the **Chancery Court Clerk & Master** (or the **County Trustee** in a few). These sales are published on the county Clerk & Master / Trustee site (often a PDF "Properties for Sale" list) — **not** on tnpublicnotice.com, and the `tn_publicnotice` scraper only reads page 1 of the statewide "Tax Sales" feed, so it misses most annual county-direct sales. Blount County (Clerk & Master, annual June sale, PDF list) is the canonical example.
 
+## tnpublicnotice.com site-wide access (verified 2026-10-18)
+- Grid/search pages work from any egress, but **detail pages are
+  IP-gated**: blocked IPs get the IPA page "You are not permitted to view
+  public notices from this computer. Please contact IPA." (no Turnstile)
+  instead of the notice. Direct egress has been blocked since ~2026-10-06;
+  the configured proxy is NOT blocked — it gets the normal Turnstile gate,
+  which the in-browser solver passes. `tn_publicnotice` therefore defaults
+  to `use_proxy=True`. If details start returning the "not permitted" page
+  again, the proxy IP needs rotating (or contact IPA).
+
 ## TNMap assessment deep-link behavior (verified 2026-09-10)
 - `https://tnmap.tn.gov/assessment/` (retitled **"TN Property Viewer"`) loads
   fine in camoufox (HTTP 200, map canvas renders after accepting the

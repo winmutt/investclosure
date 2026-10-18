@@ -561,13 +561,15 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         self,
         search_type: str = "foreclosure",
         delay: float = 1.5,
-        # Direct egress by default: the configured proxy is an IONOS
-        # *datacenter* exit, which Cloudflare distrusts and answers with
-        # the failure_retry widget variant (in-browser clicks never yield
-        # a token, forcing every detail through paid 2captcha). Same
-        # rationale as the GA/NC proxy-off defaults. Verified live:
-        # direct-egress details solve in-browser in ~30s.
-        use_proxy: bool = False,
+        # Proxy by default (reverted 2026-10-18): tnpublicnotice.com began
+        # serving direct egress the app-level block "You are not permitted
+        # to view public notices from this computer ... contact IPA" (~since
+        # 10/06), while the grid kept working — every detail silently
+        # failed with "detail content unavailable". Through the configured
+        # proxy the detail page instead shows the Turnstile gate, and the
+        # retried-click in-browser solver passes it live (verified
+        # 2026-10-18, full trustee notice rendered + PDF link present).
+        use_proxy: bool = True,
         solve_captcha: bool = True,
         lookback_days: int = LOOKBACK_DAYS,
     ):

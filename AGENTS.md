@@ -260,6 +260,24 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-10-18 (TN detail-view IP block — proxy back on)**: `tn_publicnotice`
+  reported `found=0` on 26 of 27 runs since 2026-10-06. The grid still parsed
+  (243 notices/run) but every detail returned the IPA app-level block
+  "You are not permitted to view public notices from this computer. Please
+  contact IPA." — no Turnstile, so the gate silently returned False and all
+  239 details logged a contentless "detail content unavailable". Live probe:
+  direct egress = blocked page (350 chars); via the configured proxy the page
+  instead shows the normal Turnstile gate and the retried-click in-browser
+  solver passes it in one shot (full trustee notice + PDF link). Fix: TN
+  `use_proxy` default flipped back to `True` (supersedes the 2026-09-25
+  proxy-off note — the failure_retry concern is moot since the click-retry
+  fix; proxy details solve in-browser). Also: `_extract_notice_text` now logs
+  a text snippet of the page when the gate fails, so block pages are visible
+  in logs instead of a bare "content unavailable". NC/GA verified healthy the
+  same day (NC 27 details/20 kept with full PDF text; GA 15 candidates all
+  seen-or-non-foreclosure). Separate open item: `zls_nc` lost its "All"
+  page-size option upstream — only 11 first-page rows are seen (was 241),
+  so mountain listings on later pages are missed.
 - **2026-10-06 (GIS viewer parcel location + McDowell PIN format)**:
   `/property/976` opened its GIS map at statewide zoom 7 with no parcel —
   (1) `static/gis_viewer.html` never queried the layer by parcel, only dropped

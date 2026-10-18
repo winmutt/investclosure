@@ -820,7 +820,11 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         page.wait_for_timeout(3000)
 
         if not self._pass_turnstile_gate(page, site_key):
-            logger.warning("detail content unavailable for %s", pk_id)
+            snippet = page.evaluate(
+                "() => (document.body ? document.body.innerText : '') || ''"
+            )
+            logger.warning("detail content unavailable for %s: %s", pk_id,
+                           " ".join((snippet or "").split())[:160])
             return None
 
         notice_text = page.evaluate(
