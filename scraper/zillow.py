@@ -81,7 +81,8 @@ def lot_acres(home_info: dict) -> Optional[float]:
 def parse_county_page(html: str, county: str, state: str,
                       max_price: int = 0,
                       min_acres: float = 0.0,
-                      centroids: Optional[dict] = None) -> list[PropertyData]:
+                      centroids: Optional[dict] = None,
+                      max_acres: float = 0.0) -> list[PropertyData]:
     """Extract qualifying listings from a county search page's __NEXT_DATA__.
 
     ``max_price`` is in dollars; 0 means no cap. ``centroids`` (see
@@ -124,6 +125,8 @@ def parse_county_page(html: str, county: str, state: str,
 
         acres = lot_acres(home_info)
         if acres is not None and acres < min_acres:
+            continue
+        if acres is not None and max_acres and acres > max_acres:
             continue
 
         # Zillow county URLs leak same-named counties from other states
@@ -217,6 +220,7 @@ class ZillowScraper(BaseScraper):
         super().__init__(delay_range=config.get_delay_range("zillow"))
         self.max_price = config.get_max_price("zillow")
         self.min_acres = config.get_min_acres("zillow")
+        self.max_acres = config.get_max_acres("zillow")
         self.fetch_details = fetch_details
         self.states = [s.upper() for s in states] if states else None
         self.centroids = load_centroids()
@@ -296,7 +300,8 @@ class ZillowScraper(BaseScraper):
                 return parse_county_page(
                     html, county, state,
                     max_price=self.max_price, min_acres=self.min_acres,
-                    centroids=self.centroids), False
+                    centroids=self.centroids,
+                    max_acres=self.max_acres), False
             if attempt < attempts:
                 cooldown = random.uniform(*self.BOT_PAGE_COOLDOWN)
                 logger.info("Bot page for %s (%s) — cooling down %.0fs, "

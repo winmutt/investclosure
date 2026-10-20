@@ -414,6 +414,7 @@ class Config:
             "zillow": {
                 "min_acres": _opt_float("ZILLOW_MIN_ACRES", 5.0),
                 "max_price": _opt_int("ZILLOW_MAX_PRICE", 400_000),
+                "max_acres": _opt_float("ZILLOW_MAX_ACRES", 1000.0),
             },
         }
 
@@ -437,6 +438,11 @@ class Config:
         """Get maximum price, with scraper override."""
         overrides = self.SCRAPER_OVERRIDES.get(name, {})
         return overrides.get("max_price", self.MAX_PRICE)
+
+    def get_max_acres(self, name: str) -> float:
+        """Get maximum acres, with scraper override (0 = no cap)."""
+        overrides = self.SCRAPER_OVERRIDES.get(name, {})
+        return overrides.get("max_acres", self.MAX_ACRES)
 
     def should_use_proxy(self, name: str) -> bool:
         """Check if proxy should be used for this scraper."""

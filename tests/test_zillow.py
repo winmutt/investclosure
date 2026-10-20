@@ -112,6 +112,16 @@ def test_parse_rejects_far_from_county():
     assert [p["source_listing_id"] for p in props] == ["2"]
 
 
+def test_parse_applies_max_acres():
+    items = [
+        _listing(1, 239000, lot=107195.0, state="TN"),   # lot-size glitch
+        _listing(2, 120000, lot=40.0, state="TN"),
+    ]
+    props = parse_county_page(_page(items), "grundy", "TN",
+                                min_acres=5.0, max_acres=1000.0)
+    assert [p["source_listing_id"] for p in props] == ["2"]
+
+
 def test_extract_detail():
     cache = json.dumps({"q": {"property": {
         "description": "Creek, views, unrestricted.",
