@@ -118,10 +118,10 @@ All 20 NC mountain counties probed live via the scraper's camoufox (stealth Fire
 
 ## 12. Haywood County (Verified 2026-09-25, scraper live)
 - **Website:** https://www.haywoodcountync.gov/
-- **Tax-foreclosure listing (self-hosted):** INFO + bid module — https://www.haywoodcountync.gov/337/Tax-Foreclosures is process info; live sales post to the CivicPlus bid module (`Bids.aspx?CatID=17`, currently "no open bid postings"). No Turnstile.
+- **Tax-foreclosure listing (self-hosted):** INFO + bid module — https://www.haywoodcountync.gov/337/Tax-Foreclosures is process info; live sales post to the CivicPlus bid module (`Bids.aspx?CatID=17`). First live posting seen 2026-10-13 (bidID=267, "Tax Foreclosure sale November 19th", PIN 8711-00-6993, 597 Laurel Branch Rd; OneMap gisacres 1.00 → below MIN_ACRES, dropped). No Turnstile.
 - **Legal notices:** The Mountaineer TownNews hub (https://www.themountaineer.com/classifieds/, live, no Turnstile). NOT ncnotices.com.
 - **Turnstile:** No.
-- **Scraper:** DONE — `scraper/haywood_county.py` (bid-module monitor; live run 2026-09-25 correctly returned 0).
+- **Scraper:** DONE — `scraper/haywood_county.py` (bid-module monitor, detail-aware since 2026-10-20: opens each `bids.aspx?bidID=N` detail, pulls the Description's DocumentCenter PDF — scanned image, no text layer, so OCR'd via `pdftoppm` 300dpi + `tesseract` (added to Dockerfile/requirements); notice text stored as raw_source_text; parses case/PIN/acreage/address/closing date; OneMap pre-insert acreage gate, notice acreage only fills unknown).
 
 ## 13. Jackson County (Verified 2026-09-25)
 - **Website:** https://www.jacksonnc.org/

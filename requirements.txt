@@ -6,3 +6,4 @@ requests>=2.31
 camoufox[geoip]>=0.4.11
 pytest>=8.0
 pdfplumber>=0.11
+pytesseract>=0.3.10

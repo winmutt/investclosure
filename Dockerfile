@@ -10,6 +10,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget gnupg ca-certificates \
     xvfb libgl1-mesa-dri libgl1 libegl1 \
+    tesseract-ocr poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps (install playwright + camoufox, then download browsers)

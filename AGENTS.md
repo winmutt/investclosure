@@ -58,6 +58,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/courthouses.py` | County-courthouse address registry (61 across NC/TN/GA) + matcher — rejects sale-venue addresses |
 | `scraper/kania_law.py` | Kania Law scraper — NC tax foreclosure auctions, NC OneMap enrichment |
 | `scraper/buncombe_tax.py` | Buncombe County tax foreclosure scraper — Trumba iCal feed (`tax-foreclosures-all.ics`), NC OneMap enrichment |
+| `scraper/haywood_county.py` | Haywood County CivicPlus bid-module monitor — detail pages (`bids.aspx?bidID=N`) + DocumentCenter notice PDFs (scanned → OCR via pdftoppm+tesseract), full notice text as raw source |
 
 | `scraper/zls_nc.py` | ZLS-NC scraper — Zacchaeus Legal foreclosure listings, filtered to NC mountain counties |
 | `scraper/nc_publicnotice.py` | NC "Public Notice" foreclosure scraper — ncnotices.com (ASP.NET WebForms), PDF text as raw source, NC OneMap enrichment |
@@ -259,6 +260,32 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-10-20 (Haywood bid-module went live — detail-aware rewrite + OCR)**:
+  The CivicPlus bid module ("no open postings" since 2026-09-25) now carries
+  its first tax foreclosure: `bids.aspx?bidID=267` ("Tax Foreclosure sale
+  November 19th @10:00 a.m.", published 10/13). The old scraper only parsed
+  list-page link text (no closing date even — the title has no year). Rewrite:
+  opens each `bids.aspx?bidID=N` detail, extracts the bid-fields tables
+  (single-td label rows followed by separate single-td value rows — one td
+  label/value per row, NOT 2-td rows), downloads the Description's
+  DocumentCenter PDF, and OCRs it (scanned image, zero text layer) via
+  `pdftoppm` 300dpi + `tesseract` (added to Dockerfile + live container;
+  `pytesseract` pip-included but the scraper shells out to the CLI instead).
+  Parsed from bidID=267: case 26CV000653-430, PIN 8711-00-6993 (new
+  `county_static.PARCEL_RE` clause tolerates `Number ("PIN") 8711-00-6993`
+  quote/paren separators for Haywood's 3-segment 4-2-4 PINs — the bare dash
+  form stays 4-segment only), address "597 Laurel Branch Road" via a
+  clause-anchored `described ... as` regex (attorney-footer-safe), notice
+  acreage 1.21ac ("containing", fallback-only when OneMap lookup fails), sale
+  date 11/19/2026 from Closing Date/Time, full notice text as
+  raw_source_text. OneMap resolves the PIN via the McDowell middle-padded
+  variant (871100006993) → GIS acres 1.00 **< MIN_ACRES 1.1 → row dropped
+  pre-insert** per policy (plat says 1.21ac; GLS/recompute discrepancy —
+  flag if you want these kept). Live verified: posting found → detail+PDF +
+  OCR in ~26s → correct parse → gate drop logged as
+  `dropped_below_min_acres`. 4 new tests in test_county_static.py (parsers,
+  label fallback, acreage policy, bidID extraction); full suite 427 pass.
 
 - **2026-10-18 (TN detail-view IP block — proxy back on)**: `tn_publicnotice`
   reported `found=0` on 26 of 27 runs since 2026-10-06. The grid still parsed

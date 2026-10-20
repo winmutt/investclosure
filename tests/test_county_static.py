@@ -139,3 +139,90 @@ def test_all_four_registered():
     from scraper.run import SCRAPER_MODULES
     for name in ("ashe_county", "haywood_county", "macon_county", "mcdowell_county"):
         assert name in SCRAPER_MODULES, f"{name} not registered"
+
+
+def test_haywood_notice_parsers_real_text():
+    """Fields parsed from the real bidID=267 notice (OCR'd 2026-10-20)."""
+    from scraper.haywood_county import (
+        _extract_acreage, _extract_address,
+    )
+    from scraper import county_static as cs
+    notice = (
+        "IN THE GENERAL COURT OF JUSTICE\n26CV000653-430\n"
+        "NOTICE OF TAX FORECLOSURE SALE\n"
+        'County of Haywood vs. 597 Laure] Branch, LLC (Owner), et al."\n'
+        "sell for cash, to the last and highest bidder at public auction\n"
+        'shown on the Haywood County Tax Records as Parcel Identification\n'
+        'Number ("PIN") 8711-00-6993, and is that certain parcel, tract or\n'
+        "Lot No. 20-T Revised of Twin Oaks Estates, Section One, containing 1.21 acres\n"
+        "The real property to be sold is generally described* as 597 Laurel Branch Road,\n"
+        "Waynesville, NC 28785."
+    )
+    assert cs.find_case(notice) == "26CV000653-430"
+    assert cs.find_parcels(notice) == ["8711-00-6993"]
+    assert _extract_acreage(notice) == 1.21
+    assert _extract_address(notice) == "597 Laurel Branch Road"
+    # Attorney-firm footer address must never win
+    assert _extract_address("11 N. Market Street, Asheville, NC 28801 (828)258-2991") is None
+
+
+def test_haywood_address_requires_three_words():
+    from scraper.haywood_county import _extract_address
+    assert _extract_address("described as 34.72 feet, Waynesville, NC 28786") is None
+    assert _extract_address(
+        "described* as 597 Laurel Branch Road Waynesville NC") is None  # no city comma
+
+
+def test_haywood_detail_body_fallback_parses_labels():
+    from scraper.haywood_county import _parse_detail_body_fallback
+    body = (
+        "HomeBid Postings\n"
+        "\tPrint\n"
+        "Bid Title:\tTax Foreclosure sale November 19th @10:00 a.m.\n\n"
+        "Category:\tTax Foreclosures\n"
+        "Status:\tOpen\n\n"
+        "Description:\n\n\n"
+        "/DocumentCenter/View/8001/597-Laurel-Branch-LLC\n\n\n"
+        "Publication Date/Time:\n10/13/2026 10:00 AM\n"
+        "Publication Information:\n"
+        "Tax Foreclosure Sale November 19th @ 10:00 a.m/\n"
+        "Closing Date/Time:\n11/19/2026 10:15 AM\n"
+    )
+    fields = _parse_detail_body_fallback(body)
+    assert fields["Bid Title"] == "Tax Foreclosure sale November 19th @10:00 a.m."
+    assert fields["Closing Date/Time"] == "11/19/2026 10:15 AM"
+    assert fields["Status"] == "Open"
+
+
+def test_haywood_notice_acreage_policy():
+    from scraper.haywood_county import HaywoodCountyScraper
+    s = HaywoodCountyScraper()
+    # GIS already resolved row keeps GIS acres; fallback only when GIS None.
+    props = [
+        {"source_listing_id": "g", "county": "Haywood", "state": "NC",
+         "acres": 1.0, "acres_source": "gis", "raw_source_text": "", "url": "u"},
+        {"source_listing_id": "f", "county": "Haywood", "state": "NC",
+         "acres": None, "raw_source_text": "", "url": "u"},
+        {"source_listing_id": "sub", "county": "Haywood", "state": "NC",
+         "acres": None, "raw_source_text": "", "url": "u"},
+    ]
+    notice = {"g": None, "f": 1.21, "sub": 0.5}
+    kept = s._apply_notice_acres(props, notice)
+    ids = [p["source_listing_id"] for p in kept]
+    assert ids == ["g", "f"]  # 'sub' dropped: 0.5ac notice figure < MIN_ACRES
+    assert props[0]["acres"] == 1.0 and props[0]["acres_source"] == "gis"
+    assert props[1]["acres"] == 1.21 and props[1]["acres_source"] == "notice_text"
+
+
+def test_haywood_bid_ids_extracted_from_list_html():
+    from scraper.haywood_county import BID_ID_RE
+    html = (
+        '<a href="/bids.aspx?bidID=267">Tax Foreclosure sale November 19th</a>'
+        '<a href="/bids.aspx?bidID=267&PRINT=YES">Print</a>'
+        '<a href="/bids.aspx">Return To Main Bid Postings Page</a>'
+        '<a href="/bids.aspx?bidID=300">Another sale</a>'
+    )
+    found = BID_ID_RE.findall(html)
+    seen: set = set()
+    ordered = [b for b in found if not (b in seen or seen.add(b))]
+    assert ordered == ["267", "300"]

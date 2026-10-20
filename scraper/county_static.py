@@ -22,9 +22,12 @@ logger = logging.getLogger(__name__)
 # IDs ("Parcel #12345", "PIN: 061878609600000"). Bare digit runs are
 # deliberately NOT matched — they hit ZIP codes (28734), phone fragments,
 # years and dollar fragments (see 2026-09-25 macon_28734 false positive).
+# The labeled form tolerates quotes/parens between label and number — Haywood
+# notices print `Number ("PIN") 8711-00-6993` (a Haywood-style 4-2-4 PIN that
+# the bare dash-form alternative deliberately doesn't cover).
 PARCEL_RE = re.compile(
     r"\b\d{3,5}-\d{2}-\d{2,3}-\d{3,5}\b"      # 1739-00-31-2535
-    r"|(?:parcel|pin|pid|reid)\s*[:#]?\s*(\d{4,}(?:[-\s]*\d+)*)",
+    r"|\b(?:parcel|pin|pid|reid)\W{0,4}(\d{4,}(?:[-\s]*\d+)*)",
     re.IGNORECASE,
 )
 # NC court case numbers: 26CV000538-580 (suffix optional).
