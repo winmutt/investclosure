@@ -13,11 +13,13 @@ This module factors that common behaviour into :class:`PublicNoticeScraper` so
 the three per-state modules stay thin and consistent.
 """
 from __future__ import annotations
+import glob
 import html as html_lib
 import io
 import logging
+import os
 import re
-import sys
+import subprocess
 import time
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -93,9 +95,57 @@ VIEW_NOTICE_BTN = 'input[name="ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody
 DOWNLOAD_LINK = 'a[id*="lnkDownload"]'
 PER_PAGE_SELECT = 'select[name*="ddlPerPage"]'
 
+def ocr_pdf_text(data: bytes) -> Optional[str]:
+    """OCR a scanned notice PDF (pdftoppm 300dpi PNG render + tesseract).
+
+    Some county PDFs have no text layer at all (ImageMagick "smashed"
+    300dpi scans — e.g. Grainger County's monthly delinquent-tax list).
+    pdfplumber returns nothing for those; this recovers the full text.
+    """
+    if not data or data[:4] != b"%PDF":
+        return None
+    try:
+        import subprocess
+        import tempfile
+        import glob
+        tmpdir = tempfile.mkdtemp(prefix="pn_ocr_")
+        pdf_path = os.path.join(tmpdir, "notice.pdf")
+        prefix = os.path.join(tmpdir, "pg")
+        with open(pdf_path, "wb") as f:
+            f.write(data)
+        try:
+            subprocess.run(["pdftoppm", "-r", "300", "-png",
+                            pdf_path, prefix], check=True)
+            pages = sorted(glob.glob(f"{prefix}-*.png"))
+            texts = []
+            for png in pages:
+                r = subprocess.run(
+                    ["tesseract", png, "stdout", "--psm", "4"],
+                    capture_output=True, text=True)
+                texts.append(r.stdout or "")
+                try:
+                    os.unlink(png)
+                except OSError:
+                    pass
+        finally:
+            try:
+                os.remove(pdf_path)
+                os.rmdir(tmpdir)
+            except OSError:
+                pass
+        text = "\n".join(t for t in texts if t).strip()
+        return text or None
+    except FileNotFoundError:
+        logger.warning("OCR unavailable (pdftoppm/tesseract missing)")
+        return None
+    except Exception as e:
+        logger.warning("PDF OCR failed: %s", e)
+        return None
+
+
 # --- shared PDF extraction ---------------------------------------------------
 def extract_pdf_text(data: bytes) -> Optional[str]:
-    """Extract text from PDF bytes via pdfplumber."""
+    """Extract text from PDF bytes via pdfplumber; OCR fallback for scans."""
     if not data or data[:4] != b"%PDF":
         return None
     try:
@@ -113,7 +163,13 @@ def extract_pdf_text(data: bytes) -> Optional[str]:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             pages = [p.extract_text() or "" for p in pdf.pages]
         text = "\n".join(pages).strip()
-        return text or None
+        if not text:
+            # No text layer — a scanned/image-only PDF. OCR it so the row
+            # keeps the full notice instead of the 1,000-char on-page
+            # fallback (e.g. TN Grainger delinquent-tax lists).
+            logger.info("PDF has no text layer; OCR fallback")
+            return ocr_pdf_text(data)
+        return text
     except Exception as e:
         logger.warning("PDF text extraction failed: %s", e)
         return None

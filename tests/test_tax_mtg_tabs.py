@@ -1,7 +1,10 @@
 """Tax / Mtg dashboard tabs: category mapping, mortgage retention tagging,
 newspaper mortgage classification, and JSONL raw-notice logging."""
 from __future__ import annotations
+import io
 import json
+
+import pytest
 from datetime import datetime, timezone
 
 from scraper.server import property_category
@@ -903,3 +906,87 @@ class TestTNSaleDateExtraction:
         text = ("The sale that will be on September 2, 2026 has been "
                 "continued to October 14, 2026 at the courthouse.")
         assert _tn_extract_sale_date(text) == "2026-10-14"
+
+
+class TestTNExhibitA470:
+    """Property #470 (Grainger 2026-CH-41) regressions: a consolidated
+    delinquent-taxpayer list slipped through as a 'property' with the
+    invented address '34711 IN THE CHANCERY COURT'."""
+
+    TRUNCATED_HTML = (
+        "ENTERED 9-22-2026 MINUTE BOOK B4 PAGE 280-281 ESTEP & ESTEP "
+        "ATTORNEYS AT LAW P.O. Box 770 Tazewell, TN 37879-0770 "
+        "Name 1. Adams, Paul N. 156 Shadow Lane Rutledge, TN 37861 "
+        "2. Arnone, Charles D. 9211 County Road 56 Clermont, FL 34711 "
+        "IN THE CHANCERY COURT FOR GRAINGER COUNTY, TENNESSEE AT RUTLEDGE: "
+        "STATE OF TENNESSEE, EX REL, GRAINGER COUNTY. TENNESSEE Plaintiff "
+        "VS. DELINQUENT TAXPAYERS ET AL, Defendants Case No. 2026-CH-41. "
+        "ORDER FOR SERVICE BY NON-RESIDENT NOTICE In this cause, upon "
+        "Motion filed by Plaintiff, the Court is of the opinion that the "
+        "Clerk & Master should serve the Defendants listed on the Exhibit "
+        "\"A\" by legal advertisement by Non-Resident Notice in a "
+        "newspaper of general circulation in Grainger County, Tennessee."
+    )
+
+    def test_quoted_exhibit_a_glues_to_marker(self):
+        # The HTML roster prints the header with quotes AND no glue marker:
+        # "Exhibit \"A\"" must still produce EXHIBITA after stripping.
+        s = TNPublicNoticeScraper
+        assert s._is_publication_notice(self.TRUNCATED_HTML) is True
+
+    def test_defendant_list_yields_no_address(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        ocr_style = "\n".join(
+            f"{i}. Doe, John 0{i:02d}-038.00 {100+i} Rock Haven Road "
+            f"Bean Station, TN 37708" for i in range(1, 10))
+        assert _tn_extract_address(ocr_style, "Grainger") is None
+
+    def test_chancery_caption_candidate_rejected(self):
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "2. Arnone, Charles D. 9211 County Road 56 Clermont, FL 34711 "
+            "IN THE CHANCERY COURT FOR GRAINGER COUNTY, TENNESSEE",
+            "grainger") == "9211 County Road 56"
+
+    def test_plain_notice_untouched(self):
+        # A genuine trustee sale must still keep its address.
+        from scraper.tn_publicnotice import _tn_extract_address
+        assert _tn_extract_address(
+            "Sale at public auction will be on November 19, 2026. The "
+            "property is commonly known as 5224 Horsestall Drive, "
+            "Knoxville, TN 37918.", "knox"
+        ) == "5224 Horsestall Drive"
+
+
+class TestScannedPdfOcr:
+    """extract_pdf_text must fall back to OCR for text-less PDFs
+    (Grainger publishes ImageMagick-smashed 300dpi scans)."""
+
+    def test_textless_pdf_ocr_fallback(self):
+        Image = pytest.importorskip("PIL.Image")
+        ImageDraw = pytest.importorskip("PIL.ImageDraw")
+        pytest.importorskip("pdfplumber")
+        import shutil
+        if not (shutil.which("tesseract") and shutil.which("pdftoppm")):
+            pytest.skip("pdftoppm/tesseract required for OCR")
+        from scraper.publicnotice_base import extract_pdf_text
+
+        img = Image.new("RGB", (1400, 400), "white")
+        d = ImageDraw.Draw(img)
+        d.text((50, 50), "SUBSTITUTE TRUSTEE'S NOTICE OF SALE", fill="black")
+        d.text((50, 150), "Property Address: 501 Oak Ridge Turnpike", fill="black")
+        buf = io.BytesIO()
+        img.save(buf, format="PDF")
+        text = extract_pdf_text(buf.getvalue())
+        assert text and "OAK RIDGE TURNPIKE" in text.upper()
+
+    def test_text_pdf_still_text_layer(self):
+        pytest.importorskip("pdfplumber")
+        from scraper.publicnotice_base import extract_pdf_text
+        from unittest.mock import patch
+
+        # A text-layer PDF must return pdfplumber output unchanged; OCR is
+        # only the fallback for empty extraction.
+        with patch("pdfplumber.open") as po:
+            po.return_value.__enter__.return_value.pages = []
+            assert extract_pdf_text(b"%PDF-fake") is None

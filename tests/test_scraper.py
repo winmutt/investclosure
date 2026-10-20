@@ -337,6 +337,38 @@ class TestSiteEnv:
 class TestUpsertProperty:
     """Test _upsert_property insert and update logic."""
 
+    def test_truncated_raw_text_upgraded_on_resighting(self, conn):
+        TRUNC = ("NOTICE ... ESTEP & ESTEP ATTORNEYS AT LAW P.O. Box 770 "
+                 "Tazewell, TN 37879. Web display limited to 1,000 "
+                 "characters. Please view the PDF for the complete "
+                 "Public Notice.")
+        FULL = ("ESTEP & ESTEP ATTORNEYS AT LAW " + "EXHIBIT A ROSTER "
+                "defendant rows padding " * 120)
+        _upsert_property(
+            conn, "tn_publicnotice", "P470", "http://x", None,
+            None, "Grainger", "TN", None, None, None, 100, None,
+            description=TRUNC, raw_source_text=TRUNC)
+        status, row = _upsert_property(
+            conn, "tn_publicnotice", "P470", "http://x", None,
+            None, "Grainger", "TN", None, None, None, 100, None,
+            description=FULL, raw_source_text=FULL)
+        assert status == "duplicate"
+        assert row["raw_source_text"] == FULL
+
+    def test_full_raw_text_never_downgraded(self, conn):
+        FULL = "ESTEP & ESTEP: " + "full notice padding " * 200
+        TRUNC = "Web display limited to 1,000 characters."
+        _upsert_property(
+            conn, "tn_publicnotice", "P471", "http://x", None,
+            None, "Grainger", "TN", None, None, None, 100, None,
+            description=FULL, raw_source_text=FULL)
+        status, row = _upsert_property(
+            conn, "tn_publicnotice", "P471", "http://x", None,
+            None, "Grainger", "TN", None, None, None, 100, None,
+            description=TRUNC, raw_source_text=TRUNC)
+        assert status == "duplicate"
+        assert row["raw_source_text"] == FULL
+
     def test_insert_new_property(self, conn):
         status, row = _upsert_property(
             conn, "test", "P1", "http://example.com", "100 Main St",

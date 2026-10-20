@@ -394,6 +394,16 @@ def _upsert_property(
         values.extend([
             price_cents, description,
         ])
+        # Repair degraded raw text: a first sighting that fell back to the
+        # 1,000-char on-page HTML (PDF missing/scanned at scrape time) must
+        # not pin that truncation forever. Upgrade it once a full-text
+        # source becomes available (e.g. an OCR pass over a scanned PDF).
+        _truncated_marker = "Web display limited to 1,000 characters"
+        old_raw = (existing["raw_source_text"] or "")
+        new_raw = raw_source_text or ""
+        if _truncated_marker in old_raw and len(new_raw) > len(old_raw):
+            updates.append("raw_source_text = ?")
+            values.append(new_raw)
         # Only update parcel_number if existing record doesn't already have one
         if not existing["parcel_number"] and parcel_number:
             updates.append("parcel_number = ?")

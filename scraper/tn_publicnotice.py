@@ -195,7 +195,17 @@ _FOOTER_RES = ("attempt to collect a debt", "fx:", "fax:", "publication",
 _HEADER_ATTY_RES = ("substitute trustee", "co-substitute", "registered agent")
 # County-facility fragments are never private property addresses.
 _COURT_FRAG_RE = re.compile(
-    r"county\s+(court|courthouse|office|building|government)", re.IGNORECASE)
+    r"county\s+(court|courthouse|office|building|government)"
+    r"|(?:in\s+the\s+)?(?:chancery|circuit|criminal|juvenile|general\s+"
+    r"sessions|probate|bankruptcy|superior|district)\s+court\b",
+    re.IGNORECASE)
+# Zip carry-over: consolidated taxpayer lists print defendant mailing
+# addresses that end with a state zip ("Clermont, FL 34711"); the next
+# caption text glued after it ("34711 IN THE CHANCERY COURT") starts with
+# that zip as if it were a house number. House numbers are <=4 digits, so
+# any candidate whose leading token is 5 digits straight after a two-letter
+# state code is the previous line's postal zip, not an address.
+_STATE_ZIP_LEAD_RE = re.compile(r"\b[A-Z]{2}\s*\d{5}$")
 # Verbs anchoring the actual auction date (vs deed/loan/modification dates).
 _SALE_VERBS = ("offer for sale", "offered for sale", "will sell",
                "sell at public", "sale date", "date of sale", "auction",
@@ -276,7 +286,16 @@ def _reject_match(text: str, pos: int, match_text: str) -> bool:
     if any(k in back200 for k in _FOOTER_RES):
         return True
     back100 = text[max(0, pos - 100):pos].lower()
-    return any(k in back100 for k in _HEADER_ATTY_RES)
+    if any(k in back100 for k in _HEADER_ATTY_RES):
+        return True
+    leading = re.match(r"\d+", match_text or "")
+    if leading and len(leading.group(0)) >= 5:
+        # 5-digit "house number" straight after a two-letter state code
+        # ("Clermont, FL |34711 IN THE ...") is the previous line's zip.
+        before = (text[max(0, pos - 8):pos] or "").rstrip()
+        if re.search(r"\b[A-Z]{2}$", before):
+            return True
+    return False
 
 
 def _tn_extract_sale_date(text: str):
@@ -383,6 +402,17 @@ def _tn_extract_address(block: str, county: str = ""):
         return None
     block = normalize_notice_text(block)
 
+    # Consolidated delinquent-taxpayer lists (county chancery Exhibit "A",
+    # printed monthly by counties like Grainger: "1. Adams, Paul N. 156
+    # Shadow Lane ..." ×76) have no single subject property — every street
+    # match belongs to a *different* defendant. Starting at the generic
+    # scans below we don't fabricate an address; the row stays parcel-backed
+    # (or parcel-less) instead of pointing Google Maps at defendant #40's
+    # mailing address. The labeled/known-as checks above still win because
+    # they name THE subject property outright.
+    _defendant_list = len(
+        re.findall(r"\b\d{1,3}\.\s+[A-Z][a-z]+[a-z.]*,", block)) >= 5
+
     def _usable(m):
         text = _clean_candidate(m.group(1))
         if not text:
@@ -421,6 +451,8 @@ def _tn_extract_address(block: str, county: str = ""):
     # end of its block (the leading preamble, e.g. "2026 IN THE CHANCERY
     # COURT", would otherwise be matched first). Venue matches ("in front
     # of the ... Courthouse, 8095 Rutledge Pike") name the auction site.
+    if _defendant_list:
+        return None
     for m in reversed(list(_TN_ADDR_RE.finditer(block))):
         if _usable(m):
             return _clean_candidate(m.group(1))
@@ -636,7 +668,11 @@ class TNPublicNoticeScraper(PublicNoticeScraper):
         """
         if not text:
             return False
-        t = re.sub(r"[\s,\-]+", "", normalize_notice_text(text).upper())
+        # Strip ALL non-word punctuation, not just spaces/commas/hyphens:
+        # HTML notices print the roster header with quotes and no glue is
+        # possible ("Exhibit \"A\"" -> EXHIBIT"A" would never match
+        # EXHIBITA; #470 slipped past this filter that way).
+        t = re.sub(r"\W+", "", normalize_notice_text(text).upper())
         if not any(
             k in t
             for k in (
