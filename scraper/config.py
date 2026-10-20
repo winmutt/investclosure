@@ -401,14 +401,21 @@ class Config:
             "tn_publicnotice": (1.5, 3.0),
             "zls_nc": (2.0, 4.0),
             "newspaper_notices": (2.0, 4.0),
+            "zillow": (1.0, 2.0),
             "default": (1.5, 3.0),
         }
 
         self.CAPTCHA_ENABLED = True
         self.PROXY_ENABLED = True
 
-        # Per-scraper overrides
-        self.SCRAPER_OVERRIDES: dict[str, dict[str, Any]] = {}
+        # Per-scraper overrides (land-listing sources keep their own
+        # economics; env overrides per scraper, e.g. ZILLOW_MIN_ACRES)
+        self.SCRAPER_OVERRIDES: dict[str, dict[str, Any]] = {
+            "zillow": {
+                "min_acres": _opt_float("ZILLOW_MIN_ACRES", 5.0),
+                "max_price": _opt_int("ZILLOW_MAX_PRICE", 400_000),
+            },
+        }
 
         # Ensure directories exist
         for d in [self.data_dir, self.backups_dir, self.logs_dir]:

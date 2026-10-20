@@ -137,6 +137,12 @@ except ImportError as e:
     logger.warning("auction_com not available: %s", e)
 
 try:
+    from scraper.zillow import ZillowScraper
+    SCRAPER_MODULES["zillow"] = ZillowScraper
+except ImportError as e:
+    logger.warning("zillow not available: %s", e)
+
+try:
     from scraper.swain_county import SwainCountyScraper
     SCRAPER_MODULES["swain_county"] = SwainCountyScraper
 except ImportError as e:
