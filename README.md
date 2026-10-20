@@ -133,6 +133,7 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `bellcarrington` | bellcarrington.com (Google Sheet) | GA/NC/SC/AL/TN mountain | None | state map links |
 | `logs_nc` | logs.com NC report (PowerBI) | 20 NC mountain | None | NC OneMap links |
 | `auction_com` | auction.com county + detail pages | NC/GA/TN/SC/AL mountain | None | state map links |
+| `zillow` | zillow.com county search pages (`__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile/county) | centroid guard + post-insert enrichers |
 
 ### Selection Criteria
 

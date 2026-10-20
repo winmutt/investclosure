@@ -209,6 +209,8 @@ class ZillowScraper(BaseScraper):
     BASE_URL = "https://www.zillow.com"
     PAGE_TIMEOUT_MS = 60000
     DELAY_BETWEEN_DETAIL_PAGES = (1.0, 2.0)
+    BOT_PAGE_COOLDOWN = (10.0, 18.0)
+    MAX_CONSECUTIVE_CHALLENGES = 12
 
     def __init__(self, fetch_details: bool = False,
                  states: Optional[list[str]] = None):
@@ -220,59 +222,91 @@ class ZillowScraper(BaseScraper):
         self.centroids = load_centroids()
 
     def scrape(self) -> list[PropertyData]:
-        """Scrape all qualifying counties, state by state."""
+        """Scrape all qualifying counties, state by state.
+
+        Zillow's PerimeterX flags a browser session after a handful of
+        same-origin navigations, so each county gets a FRESH Camoufox
+        profile (matching the legacy curl_cffi-per-request recipe that
+        produced 57 listings/run). A circuit breaker aborts the sweep when
+        Zillow starts serving bot pages consecutively (IP-level flag).
+        """
         all_props: list[PropertyData] = []
         state_map = {s: c for s, c in QUALIFYING_COUNTIES.items()
                      if not self.states or s in self.states}
         total = sum(len(c) for c in state_map.values())
         logger.info("ZILLOW: %d counties, max_price=%s, min_acres=%s, "
-                    "details=%s", sum(len(c) for c in state_map.values()),
+                    "details=%s", total,
                     self.max_price or "none", self.min_acres,
                     self.fetch_details)
 
-        try:
-            with camoufox_context() as page:
-                page.set_default_timeout(self.PAGE_TIMEOUT_MS)
-                for state, counties in state_map.items():
-                    logger.info("── %s (%d counties) ──", state, len(counties))
-                    for county in counties:
-                        props = self._scrape_county(page, county, state)
-                        logger.info("  %s, %s: %d listings",
-                                    county_display(county), state, len(props))
-                        all_props.extend(props)
+        for state, counties in state_map.items():
+            if self._sweep_state(state, counties, all_props):
+                break
 
-                if self.fetch_details and all_props:
-                    self._enrich_details(page, all_props)
-        except Exception as exc:
-            logger.error("Zillow fetch failed: %s", exc, exc_info=True)
+        if self.fetch_details and all_props:
+            self._enrich_details(all_props)
 
         unique = self._dedupe(all_props)
         logger.info("ZILLOW done: %d raw → %d unique", len(all_props),
                     len(unique))
         return unique
 
-    def _scrape_county(self, page, county: str, state: str
-                       ) -> list[PropertyData]:
-        url = build_county_url(county, state)
-        self._random_delay()
-        try:
-            resp = page.goto(url, wait_until="domcontentloaded",
-                              timeout=self.PAGE_TIMEOUT_MS)
-            html = resp.text() if resp else ""
-        except Exception as exc:
-            logger.warning("County page fetch failed (%s, %s): %s",
-                           county, state, exc)
-            return []
-        props = parse_county_page(html, county, state,
-                                  max_price=self.max_price,
-                                  min_acres=self.min_acres,
-                                  centroids=self.centroids)
-        if not props and "__NEXT_DATA__" not in (html or ""):
-            logger.warning("No __NEXT_DATA__ on %s (%s) — bot page or "
-                           "layout change?", county, state)
-        return props
+    def _sweep_state(self, state: str, counties: list[str],
+                     all_props: list[PropertyData]) -> bool:
+        """Scrape every county in one state into all_props.
 
-    def _enrich_details(self, page, props: list[PropertyData]) -> None:
+        Returns True when the circuit breaker tripped (caller stops)."""
+        logger.info("── %s (%d counties) ──", state, len(counties))
+        consecutive = 0
+        for county in counties:
+            props, challenged = self._scrape_county(county, state)
+            logger.info("  %s, %s: %d listings%s", county_display(county),
+                        state, len(props),
+                        " [bot page]" if challenged else "")
+            all_props.extend(props)
+            consecutive = consecutive + 1 if challenged else 0
+            if consecutive >= self.MAX_CONSECUTIVE_CHALLENGES:
+                logger.error(
+                    "ZILLOW: %d consecutive bot pages — aborting sweep; "
+                    "egress IP likely flagged by Zillow",
+                    consecutive)
+                return True
+        return False
+
+    def _scrape_county(self, county: str, state: str,
+                       attempts: int = 2) -> tuple[list[PropertyData], bool]:
+        """Fetch + parse one county in a fresh Camoufox profile.
+
+        Returns (properties, challenged) — challenged means the page
+        carried no __NEXT_DATA__ (bot page / layout change)."""
+        url = build_county_url(county, state)
+        for attempt in range(1, attempts + 1):
+            self._random_delay()
+            html = ""
+            try:
+                with camoufox_context() as page:
+                    page.set_default_timeout(self.PAGE_TIMEOUT_MS)
+                    resp = page.goto(url, wait_until="domcontentloaded",
+                                     timeout=self.PAGE_TIMEOUT_MS)
+                    html = resp.text() if resp else ""
+            except Exception as exc:
+                logger.warning("County page fetch failed (%s, %s): %s",
+                               county, state, exc)
+            if "__NEXT_DATA__" in (html or ""):
+                return parse_county_page(
+                    html, county, state,
+                    max_price=self.max_price, min_acres=self.min_acres,
+                    centroids=self.centroids), False
+            if attempt < attempts:
+                cooldown = random.uniform(*self.BOT_PAGE_COOLDOWN)
+                logger.info("Bot page for %s (%s) — cooling down %.0fs, "
+                            "retrying", county, state, cooldown)
+                time.sleep(cooldown)
+        logger.warning("No __NEXT_DATA__ for %s (%s) after %d attempts — "
+                       "bot page or layout change?", county, state, attempts)
+        return [], True
+
+    def _enrich_details(self, props: list[PropertyData]) -> None:
         logger.info("Fetching %d detail pages", len(props))
         for i, prop in enumerate(props, 1):
             url = prop.get("url")
@@ -280,15 +314,18 @@ class ZillowScraper(BaseScraper):
                 continue
             time.sleep(random.uniform(*self.DELAY_BETWEEN_DETAIL_PAGES))
             try:
-                resp = page.goto(url, wait_until="domcontentloaded",
-                                 timeout=self.PAGE_TIMEOUT_MS)
-                desc, parcel = extract_detail(resp.text() if resp else "")
-                if desc:
-                    prop["description"] = desc
-                if parcel:
-                    prop["parcel_number"] = parcel
+                with camoufox_context() as page:
+                    page.set_default_timeout(self.PAGE_TIMEOUT_MS)
+                    resp = page.goto(url, wait_until="domcontentloaded",
+                                     timeout=self.PAGE_TIMEOUT_MS)
+                    desc, parcel = extract_detail(resp.text() if resp else "")
             except Exception as exc:
                 logger.warning("Detail fetch failed for %s: %s", url, exc)
+                continue
+            if desc:
+                prop["description"] = desc
+            if parcel:
+                prop["parcel_number"] = parcel
 
     @staticmethod
     def _dedupe(props: list[PropertyData]) -> list[PropertyData]:

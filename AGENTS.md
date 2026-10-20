@@ -93,6 +93,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `bellcarrington` | bellcarrington.com (Google Sheet CSV) | GA/NC/SC/AL/TN mountain | None | state map links |
 | `logs_nc` | logs.com NC report (PowerBI table visual) | 20 NC mountain | None | NC OneMap links |
 | `auction_com` | auction.com county pages + details | NC/GA/TN/SC/AL mountain | None | state map links |
+| `zillow` | zillow.com county search pages (`__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile/county) | centroid guard + post-insert enrichers |
 
 The five trustee-sale scrapers (`rlselaw`, `brockandscott`,
 `foreclosuretennessee`, `bellcarrington`, `logs_nc`) share
@@ -260,6 +261,30 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-10-20 (Zillow imported from the legacy realestate app)**: Audited
+  `~/src/realestate` (the pre-investclosure app) to find the best-performing
+  source: **zillow** (76 runs, 5,506 found, 57 qualifying listings/run —
+  vs townandmountain 24, landhub 2, and 0 for landwatch/morocks/arg/
+  brrealty/wardandward/mls; the old DB itself was empty because its
+  `run.py` passed an unsupported `taxnet_url` kwarg to `insert_property`,
+  788 TypeErrors in the log). Ported as `scraper/zillow.py`: same
+  `__NEXT_DATA__` parsing, but fetching via `camoufox_context` instead of
+  curl_cffi (project policy). Zillow's PerimeterX flags a shared browser
+  session after ~3 navigations (84/88 counties bot-walled on the first
+  port), so **each county gets a fresh Camoufox profile** — replicating the
+  legacy per-request-session recipe — with a bot-page cooldown+retry and
+  a 12-consecutive-bot-pages circuit breaker. New `scraper/county_centroids.json`
+  (89 target counties from realestate's `target_counties_coords.json` +
+  Unicoi) adds a centroid guard Zillow's payload demands: searches serve
+  same-name *cities* the state guard can't catch (macon-nc served Warren
+  County listings 5° from Macon County; dawson-ga returned Dawson GA the
+  city, 39842). Filters live in `config.SCRAPER_OVERRIDES["zillow"]`
+  (min_acres 5.0, max_price $400k — the legacy thresholds, env-overridable
+  via `ZILLOW_MIN_ACRES`/`ZILLOW_MAX_PRICE`); DELAY_RANGES zillow (2.5,
+  4.5). The old curl_cffi zillow's failure counter
+  (`data/logs/scraper_failures/zillow.json`, dated 2026-07-27) had to be
+  removed to un-disable the name. 9 parser tests in `tests/test_zillow.py`.
 
 - **2026-10-20 (Haywood bid-module went live — detail-aware rewrite + OCR)**:
   The CivicPlus bid module ("no open postings" since 2026-09-25) now carries

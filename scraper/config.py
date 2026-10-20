@@ -401,7 +401,7 @@ class Config:
             "tn_publicnotice": (1.5, 3.0),
             "zls_nc": (2.0, 4.0),
             "newspaper_notices": (2.0, 4.0),
-            "zillow": (1.0, 2.0),
+            "zillow": (2.5, 4.5),
             "default": (1.5, 3.0),
         }
 
