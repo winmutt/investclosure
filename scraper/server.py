@@ -58,16 +58,20 @@ def clean_date(value):
 
 
 def property_category(prop: dict) -> str:
-    """Bucket a property into 'tax' or 'mtg' for dashboard tabs.
+    """Bucket a property into 'tax', 'mtg', or 're' for dashboard tabs.
 
     Each state has one Tax tab (tax foreclosures, tax sales, and all other
     public/auction notices) and one Mtg tab for mortgage / deed-of-trust
-    (bank) foreclosures plus bank-owned (REO) auction inventory.
+    (bank) foreclosures plus bank-owned (REO) auction inventory. Non-
+    foreclosure market listings (the 're' tab) are sourced entirely from
+    regular listing feeds (zillow) rather than foreclosure proceedings.
     Mortgage detection checks the explicit ``property_type`` first
     (``mortgage_foreclosure`` / ``bank_owned``, set by the scrapers),
     falling back to notes/description keyword heuristics for legacy rows
     stored before explicit tagging.
     """
+    if (prop.get("source") or "").strip().lower() == "zillow":
+        return "re"
     ptype = (prop.get("property_type") or "").strip().lower()
     notes = (prop.get("notes") or "").lower()
     desc = (prop.get("description") or "").lower()
@@ -191,9 +195,9 @@ def landing():
     states: dict[str, dict[str, list]] = {}
     for p in props:
         st = (p.get("state") or "UNKNOWN").strip().upper()
-        cat = property_category(p)  # 'tax' or 'mtg'
+        cat = property_category(p)  # 'tax', 'mtg', or 're'
         if st not in states:
-            states[st] = {"tax": [], "mtg": []}
+            states[st] = {"tax": [], "mtg": [], "re": []}
         states[st][cat].append(p)
 
     # Order states: priority markets first, then alphabetically
@@ -458,7 +462,7 @@ def property_navigation(property_id):
     conn.close()
 
     ordered = [dict(r) for r in rows]
-    if category in ('tax', 'mtg'):
+    if category in ('tax', 'mtg', 're'):
         ordered = [p for p in ordered if property_category(p) == category]
 
     ids = [p["id"] for p in ordered]

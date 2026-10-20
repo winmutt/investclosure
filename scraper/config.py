@@ -413,7 +413,7 @@ class Config:
         self.SCRAPER_OVERRIDES: dict[str, dict[str, Any]] = {
             "zillow": {
                 "min_acres": _opt_float("ZILLOW_MIN_ACRES", 5.0),
-                "max_price": _opt_int("ZILLOW_MAX_PRICE", 400_000),
+                "max_price": _opt_int("ZILLOW_MAX_PRICE", 200_000),
                 "max_acres": _opt_float("ZILLOW_MAX_ACRES", 1000.0),
             },
         }

@@ -53,6 +53,15 @@ class TestPropertyCategoryTaxMtg:
              "notes": None, "description": "service of process by publication"}
         ) == "tax"
 
+    def test_zillow_is_re_tab(self):
+        """Non-foreclosure market listings (zillow) live on the Re tab."""
+        assert property_category(
+            {"source": "zillow", "property_type": "lot"}
+        ) == "re"
+        assert property_category(
+            {"source": "zillow", "property_type": None}
+        ) == "re"
+
 
 class TestClassifyNcNotice:
     def test_title_case_county_of(self):

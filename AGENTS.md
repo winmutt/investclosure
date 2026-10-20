@@ -280,9 +280,14 @@ All paths configurable via env vars — **no hardcoded paths**:
   same-name *cities* the state guard can't catch (macon-nc served Warren
   County listings 5° from Macon County; dawson-ga returned Dawson GA the
   city, 39842). Filters live in `config.SCRAPER_OVERRIDES["zillow"]`
-  (min_acres 5.0, max_price $400k — the legacy thresholds, env-overridable
-  via `ZILLOW_MIN_ACRES`/`ZILLOW_MAX_PRICE`); DELAY_RANGES zillow (2.5,
-  4.5). The old curl_cffi zillow's failure counter
+  (min_acres 5.0, max_price $200k, max_acres 1000 — env-overridable
+  via `ZILLOW_MIN_ACRES`/`ZILLOW_MAX_PRICE`/`ZILLOW_MAX_ACRES`);
+  DELAY_RANGES zillow (2.5, 4.5). Zillow rows are non-foreclosure market
+  listings: `server.property_category()` buckets `source='zillow'` into a
+  per-state **Re** tab (Tax | Mtg | Re), and rows carry the Zillow URL —
+  linked from the tile's external-link button and the detail page's
+  Source tab ("View Zillow listing" + source/listing ID).
+  The old curl_cffi zillow's failure counter
   (`data/logs/scraper_failures/zillow.json`, dated 2026-07-27) had to be
   removed to un-disable the name. 9 parser tests in `tests/test_zillow.py`.
 

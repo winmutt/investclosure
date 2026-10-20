@@ -55,6 +55,11 @@
         </a>
         {% endif %}
        <div class="tile-actions">
+            {% if prop.url %}
+            <a href="{{ prop.url }}" target="_blank" rel="noopener" class="tile-action-btn" title="{% if prop.source == 'zillow' %}View listing on Zillow{% else %}View source listing{% endif %}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            {% endif %}
             {% if prop.google_maps_topo_url %}
             <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener" class="tile-action-btn tile-action-btn-google" title="View on Google Maps (Topo)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -107,7 +112,7 @@
 <div class="tabs tabs-states" data-tab-group="state">
     {% for st in states_order %}
     <button type="button" class="tab-btn{% if loop.first %} active{% endif %}" data-tab="{{ st }}" aria-selected="{% if loop.first %}true{% else %}false{% endif %}">
-        {{ st }} <span class="tab-count">{{ states[st].tax|length + states[st].mtg|length }}</span>
+        {{ st }} <span class="tab-count">{{ states[st].tax|length + states[st].mtg|length + states[st].re|length }}</span>
     </button>
     {% endfor %}
 </div>
@@ -121,6 +126,9 @@
         <button type="button" class="tab-btn" data-tab="mtg" aria-selected="false">
             Mtg <span class="tab-count">{{ states[st].mtg|length }}</span>
         </button>
+        <button type="button" class="tab-btn" data-tab="re" aria-selected="false">
+            Re <span class="tab-count">{{ states[st].re|length }}</span>
+        </button>
     </div>
 
     <div class="tab-pane" data-tab-pane="tax" data-tab-pane-group="cat-{{ st }}">
@@ -129,6 +137,10 @@
 
     <div class="tab-pane" data-tab-pane="mtg" data-tab-pane-group="cat-{{ st }}" hidden>
         {{ tile_grid(states[st].mtg, st, 'mtg') }}
+    </div>
+
+    <div class="tab-pane" data-tab-pane="re" data-tab-pane-group="cat-{{ st }}" hidden>
+        {{ tile_grid(states[st].re, st, 're') }}
     </div>
 </div>
 {% endfor %}

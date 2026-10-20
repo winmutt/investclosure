@@ -39,7 +39,7 @@
             <button type="button" class="prop-tab-btn active" onclick="showPropTab('overview', this)">Overview</button>
             {% set _show_maps = prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.get('tnmap_owner') or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink or prop.tnmap_gislink or prop.get('tnmap_address') %}
             {% if _show_maps %}<button type="button" class="prop-tab-btn" onclick="showPropTab('maps', this)">Maps &amp; GIS</button>{% endif %}
-            {% set _show_source = (prop.source in ('newspaper_notices', 'ncforeclosures', 'tnforeclosures', 'ganotices') and prop.url) or prop.raw_source_text or prop.description %}
+            {% set _show_source = (prop.url and prop.source in ('newspaper_notices', 'ncforeclosures', 'tnforeclosures', 'ganotices', 'zillow')) or prop.url or prop.raw_source_text or prop.description %}
             {% if _show_source %}<button type="button" class="prop-tab-btn" onclick="showPropTab('source', this)">Source</button>{% endif %}
             {% if same_case or cross_links %}<button type="button" class="prop-tab-btn" onclick="showPropTab('related', this)">Related</button>{% endif %}
             <button type="button" class="prop-tab-btn" onclick="showPropTab('notes', this)">Notes</button>
@@ -197,14 +197,15 @@
 
             <!-- SOURCE -->
             <div class="prop-tab-pane" id="tab-source">
-                {% if prop.source in ('newspaper_notices', 'ncforeclosures', 'tnforeclosures', 'ganotices') and prop.url %}
+                {% if prop.url %}
                 <div class="prop-detail-section">
-                    <h3>Source Notice</h3>
+                    <h3>Source</h3>
                     <p>
                         <a href="{{ prop.url }}" target="_blank" rel="noopener" class="btn">
-                            View Original Notice
+                            {% if prop.source == 'zillow' %}View Zillow listing{% else %}View Original Notice{% endif %}
                         </a>
                     </p>
+                    <p class="muted">Source: {{ prop.source }}{% if prop.source_listing_id %} · Listing ID: {{ prop.source_listing_id }}{% endif %}</p>
                 </div>
                 {% endif %}
                 {% if prop.raw_source_text %}
