@@ -20,7 +20,12 @@ def _has_house_number(address: object) -> bool:
 
 
 def enrich_db(limit: int = 200) -> Dict[str, int]:
-    """Enrich active TN rows missing a TPAD link. Returns counts."""
+    """Enrich active TN rows missing a TPAD link (or with NULL acres after one).
+
+    Self-filter: rows that already have a TPAD link but no acres are
+    re-processed too — the cadastral layer frequently stores DEEDAC=0/CALCAC=0
+    for them, and the polygon-area fallback only fills on a later pass.
+    """
     from . import db as D
     from .config import config
     from .tnmap import enrich_with_tnmap
@@ -29,7 +34,8 @@ def enrich_db(limit: int = 200) -> Dict[str, int]:
     rows = conn.execute(
         "SELECT id, address, city, county, state FROM properties "
         "WHERE status='active' AND state='TN' "
-        "AND (gis_url IS NULL OR gis_url NOT LIKE '%TPAD%') "
+        "AND ((gis_url IS NULL OR gis_url NOT LIKE '%TPAD%') "
+        "     OR (tnmap_data IS NOT NULL AND acres IS NULL)) "
         "LIMIT ?",
         (limit,),
     ).fetchall()
@@ -62,6 +68,7 @@ def enrich_db(limit: int = 200) -> Dict[str, int]:
                 conn, pid,
                 owner_name=prop.get("owner_name"),
                 acres=prop.get("acres"),
+                acres_source=prop.get("acres_source"),
                 gis_url=prop.get("gis_url"),
                 google_maps_url=prop.get("google_maps_url"),
                 google_maps_topo_url=prop.get("google_maps_topo_url"),

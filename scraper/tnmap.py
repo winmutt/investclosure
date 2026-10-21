@@ -12,6 +12,7 @@ that can be cross-referenced with foreclosure listings.
 """
 from __future__ import annotations
 import json
+import math
 import re
 import logging
 import time
@@ -203,6 +204,81 @@ class TNMapScraper:
 
         return [f.get("attributes", {}) for f in result.get("features", [])]
 
+    def _query_parcel_geometry(self, page, gislink: str) -> Optional[dict]:
+        """Fetch the parcel polygon (WGS84) for one GISLINK.
+
+        Used when the cadastral layer stores DEEDAC=0/CALCAC=0 — common for
+        small urban/subdivision lots — so acreage can be derived from the
+        parcel geometry instead of staying NULL.
+        """
+        query_url = (
+            f"{TNMAP_BASE_URL}/arcgis/rest/services/CADASTRAL/"
+            f"STATEWIDE_PARCELS_WEB_MERCATOR/MapServer/0/query"
+        )
+        where = f"COUNTY_ID IS NOT NULL AND GISLINK = '{gislink}'"
+        params = {
+            "f": "json",
+            "where": where,
+            "outFields": "GISLINK",
+            "returnGeometry": "true",
+            "outSR": "4326",
+            "resultRecordCount": "2",
+            "token": self._token,
+        }
+        result = page.evaluate("""
+            ([queryUrl, params]) => {
+                const url = new URL(queryUrl);
+                Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+                return fetch(url.toString()).then(r => r.json());
+            }
+        """, [query_url, params])
+        if result.get("error"):
+            logger.warning("ArcGIS geometry query error (gislink=%s): %s",
+                           gislink, result["error"].get("message"))
+            return None
+        features = result.get("features") or []
+        return features[0].get("geometry") if features else None
+
+    _EARTH_RADIUS_M = 6371008.8
+    _SQM_PER_ACRE = 4046.8564224
+
+    @classmethod
+    def _polygon_acres(cls, geometry: Optional[dict]) -> Optional[float]:
+        """Geodesic area (acres) of an Esri WGS84 polygon geometry.
+
+        Planar shoelace in radians with a mean-latitude cosine correction:
+        A = R^2 * |shoelace(lon_i * cos(phi0), lat_i)|. Exact for
+        parcel-scale extents (error < 0.1% for areas < a few km across).
+        Rings after the outer ring are treated as holes and subtracted.
+        """
+        if not geometry:
+            return None
+        rings = geometry.get("rings") or []
+        if not rings:
+            return None
+
+        def _ring_rad2(ring):
+            total = 0.0
+            n = len(ring)
+            if n < 3:
+                return 0.0
+            for i in range(n - 1):
+                x1 = math.radians(ring[i][0])
+                y1 = math.radians(ring[i][1])
+                x2 = math.radians(ring[(i + 1) % n][0])
+                y2 = math.radians(ring[(i + 1) % n][1])
+                total += x1 * y2 - x2 * y1
+            return total / 2.0
+
+        phi0 = math.radians(rings[0][0][1])
+        scale = abs(math.cos(phi0))
+        outer = abs(_ring_rad2(rings[0])) * scale
+        holes = sum(abs(_ring_rad2(r)) * scale for r in rings[1:])
+        area_m2 = (outer - holes) * (cls._EARTH_RADIUS_M ** 2)
+        if area_m2 <= 0:
+            return None
+        return round(area_m2 / cls._SQM_PER_ACRE, 2)
+
     def _get_county_id(self, county_name: str) -> Optional[int]:
         """Look up county ID from alphabetical index."""
         county_lower = county_name.lower().strip()
@@ -286,25 +362,42 @@ class TNMapScraper:
                         prop.update(enriched)
                         # Surface TNMap values onto the standard columns so
                         # they persist + render on the dashboard.
-                        # Prefer the deeded acreage, but fall back to the
-                        # calculated acreage when the deeded value is 0/empty
-                        # (TN's CADASTRAL layer frequently stores DEEDAC=0 while
-                        # CALCAC holds the real figure).
+                        # Prefer the deeded acreage, then the calculated
+                        # acreage, then the parcel-polygon area when the
+                        # cadastral layer stores 0 for both (common on small
+                        # urban/subdivision lots).
                         acres = None
-                        for _src in (
-                            enriched.get("tnmap_deeded_acres"),
-                            enriched.get("tnmap_calculated_acres"),
+                        acres_source = None
+                        for _key, _src_name in (
+                            ("tnmap_deeded_acres", "tnmap_deeded"),
+                            ("tnmap_calculated_acres", "tnmap_calculated"),
+                            ("tnmap_polygon_acres", "tnmap_polygon"),
                         ):
+                            _src = enriched.get(_key)
                             if _src in (None, "", 0, "0"):
                                 continue
                             try:
                                 if float(_src) > 0:
                                     acres = float(_src)
+                                    acres_source = _src_name
                                     break
                             except (TypeError, ValueError):
                                 pass
                         if acres is not None:
                             prop["acres"] = acres
+                            prop["acres_source"] = acres_source
+                        else:
+                            # Both deeded and calculated are 0 — derive the
+                            # acreage from the parcel polygon geometry.
+                            gislink = (enriched.get("tnmap_gislink") or "").strip() or None
+                            if gislink:
+                                geometry = self._query_parcel_geometry(page, gislink)
+                                time.sleep(0.5)
+                                poly_acres = self._polygon_acres(geometry)
+                                if poly_acres:
+                                    enriched["tnmap_polygon_acres"] = poly_acres
+                                    prop["acres"] = poly_acres
+                                    prop["acres_source"] = "tnmap_polygon"
                         if enriched.get("tnmap_gislink"):
                             gislink = str(enriched["tnmap_gislink"]).strip()
                             # TPAD GIS deep link is the working viewer for TN parcels

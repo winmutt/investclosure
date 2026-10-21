@@ -547,13 +547,15 @@ def update_tnmap_enrichment(
     tnmap_data: Optional[str] = None,
     google_maps_url: Optional[str] = None,
     google_maps_topo_url: Optional[str] = None,
+    acres_source: Optional[str] = None,
 ) -> None:
     """Persist TNMap assessment enrichment onto a property row.
 
     Only touches the TNMap-derived columns so it never clobbers scraper-supplied
     fields. ``acres``/``gis_url``/``google_maps_url`` are only written when the
     caller actually provides a value (TNMap enrichment only sets them on a verified
-    match).
+    match). ``acres_source`` records the provenance of the acreage value
+    (tnmap_deeded / tnmap_calculated / tnmap_polygon).
     """
     updates = []
     values = []
@@ -563,6 +565,9 @@ def update_tnmap_enrichment(
     if acres is not None:
         updates.append("acres = ?")
         values.append(acres)
+        if acres_source:
+            updates.append("acres_source = ?")
+            values.append(acres_source)
     if gis_url:
         updates.append("gis_url = ?")
         values.append(gis_url)

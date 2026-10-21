@@ -3,6 +3,7 @@ newspaper mortgage classification, and JSONL raw-notice logging."""
 from __future__ import annotations
 import io
 import json
+import math
 
 import pytest
 from datetime import datetime, timezone
@@ -999,3 +1000,44 @@ class TestScannedPdfOcr:
         with patch("pdfplumber.open") as po:
             po.return_value.__enter__.return_value.pages = []
             assert extract_pdf_text(b"%PDF-fake") is None
+
+
+class TestTNMapPolygonAcres:
+    """TNMap acreage fallback: DEEDAC/CALCAC are 0 on many small TN parcels;
+    acreage must be derived from the parcel polygon geometry instead."""
+
+    def test_square_parcel_one_acre(self):
+        from scraper.tnmap import TNMapScraper
+        # ~1 acre square at Knoxville's latitude (cos ~ 0.8102):
+        # 4046.86 m^2 -> dlat = 63.93m, dlon = 63.93 / cos(lat)
+        lat0, lon0 = 35.9606, -83.9207
+        dlat = 4046.86 ** 0.5 / 111320.0
+        dlon = (4046.86 ** 0.5 / (111320.0 * math.cos(math.radians(lat0))))
+        ring = [
+            [lon0, lat0], [lon0 + dlon, lat0],
+            [lon0 + dlon, lat0 + dlat], [lon0, lat0 + dlat],
+            [lon0, lat0],
+        ]
+        acres = TNMapScraper._polygon_acres({"rings": [ring]})
+        assert acres is not None and abs(acres - 1.0) < 0.05
+
+    def test_ring_hole_subtracted(self):
+        from scraper.tnmap import TNMapScraper
+        lat0, lon0 = 35.9606, -83.9207
+        d = 0.001
+        outer = [[lon0, lat0], [lon0 + d, lat0],
+                 [lon0 + d, lat0 + d], [lon0, lat0 + d], [lon0, lat0]]
+        hole = [[lon0 + d / 4, lat0 + d / 4], [lon0 + 3 * d / 4, lat0 + d / 4],
+                [lon0 + 3 * d / 4, lat0 + 3 * d / 4],
+                [lon0 + d / 4, lat0 + 3 * d / 4], [lon0 + d / 4, lat0 + d / 4]]
+        acres_full = TNMapScraper._polygon_acres({"rings": [outer]})
+        acres_hole = TNMapScraper._polygon_acres({"rings": [outer, hole]})
+        assert acres_full and acres_hole
+        # hole spans half the side length -> 1/4 the area
+        assert abs(acres_hole - acres_full * 3 / 4) < acres_full * 0.05
+
+    def test_bad_geometry_none(self):
+        from scraper.tnmap import TNMapScraper
+        assert TNMapScraper._polygon_acres(None) is None
+        assert TNMapScraper._polygon_acres({}) is None
+        assert TNMapScraper._polygon_acres({"rings": []}) is None
