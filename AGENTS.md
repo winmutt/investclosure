@@ -59,6 +59,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/kania_law.py` | Kania Law scraper — NC tax foreclosure auctions, NC OneMap enrichment |
 | `scraper/buncombe_tax.py` | Buncombe County tax foreclosure scraper — Trumba iCal feed (`tax-foreclosures-all.ics`), NC OneMap enrichment |
 | `scraper/haywood_county.py` | Haywood County CivicPlus bid-module monitor — detail pages (`bids.aspx?bidID=N`) + DocumentCenter notice PDFs (scanned → OCR via pdftoppm+tesseract), full notice text as raw source |
+| `scraper/hutchens_law.py` | Hutchens Law Firm NC foreclosure sales (`sales.hutchenslawfirm.com` RadGrid) — `mortgage_foreclosure`, 20 NC mountain, REAP source, cross-linked to nc_publicnotice; post-run OneMap enrichment (address → parcel) fills acres |
 
 | `scraper/zls_nc.py` | ZLS-NC scraper — Zacchaeus Legal foreclosure listings, filtered to NC mountain counties |
 | `scraper/nc_publicnotice.py` | NC "Public Notice" foreclosure scraper — ncnotices.com (ASP.NET WebForms), PDF text as raw source, NC OneMap enrichment |
@@ -306,6 +307,24 @@ All paths configurable via env vars — **no hardcoded paths**:
   The old curl_cffi zillow's failure counter
   (`data/logs/scraper_failures/zillow.json`, dated 2026-07-27) had to be
   removed to un-disable the name. 9 parser tests in `tests/test_zillow.py`.
+
+- **2026-10-10 (hutchens_law RE-ADDED — the 8/28 removal note below is
+  outdated)**: commit `055ed15` restored `scraper/hutchens_law.py`
+  (`sales.hutchenslawfirm.com` RadGrid, static single-page table) as a
+  `mortgage_foreclosure` source filtered to the 20 NC mountain counties,
+  registered in `SCRAPER_MODULES` (runs on the cron/pass schedule as
+  before). It is a REAP source (a listing absent from a successful run
+  auto-archives as redeemed/sold/withdrawn) and is cross-linked to
+  `nc_publicnotice` every run (`db.link_cross_source` hutchens↔nc
+  pairing on parcel/court-case/address). The hutchens page publishes no
+  parcel/acreage; rows are enriched in the post-run
+  `enrich_properties(source='hutchens_law')` pass —
+  `search_address_in_nc1map` resolves the street address to a OneMap
+  parcel (house-number-guarded), fills acres + parcel_number + deep GIS
+  links, and the below-MIN_ACRES auto-archive applies. Known data gap:
+  addresses OneMap has no parcel for stay NULL-acres (e.g. #771
+  "10 Ross Road", Transylvania — url-only link, no acreage match at the
+  source; row since manually archived).
 
 - **2026-10-20 (Haywood bid-module went live — detail-aware rewrite + OCR)**:
   The CivicPlus bid module ("no open postings" since 2026-09-25) now carries
