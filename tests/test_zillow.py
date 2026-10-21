@@ -13,7 +13,7 @@ def _next_data(payload: dict) -> str:
 
 def _listing(zpid, price, lot=None, unit="acres", state="NC",
              address="1 Empty Road, Sparta, NC 28675", home_type="LOT",
-             lat=36.5, lon=-81.1):
+             lat=36.5, lon=-81.1, city="Sparta", zipcode="28675"):
     home_info = {"price": price, "state": state, "homeType": home_type,
                  "streetAddress": address}
     if lot is not None:
@@ -24,8 +24,8 @@ def _listing(zpid, price, lot=None, unit="acres", state="NC",
         "address": address,
         "unformattedPrice": price,
         "detailUrl": f"https://www.zillow.com/homedetails/{zpid}_zpid/",
-        "addressCity": "Sparta",
-        "addressZipcode": "28675",
+        "addressCity": city,
+        "addressZipcode": zipcode,
         "hdpData": {"homeInfo": home_info},
         "latLong": {"latitude": lat, "longitude": lon},
         "imgSrc": f"https://images.zillowcdn.com/{zpid}.webp",
@@ -155,6 +155,58 @@ def test_enforce_thresholds_archives_strays(monkeypatch, tmp_path):
         "SELECT status FROM properties ORDER BY id")]
     assert got == ["archived", "archived", "archived", "active",
                    "active", "archived", "active"]
+
+
+def test_geo_lookup_index():
+    from scraper.geo_lookup import load_index
+    geo = load_index()
+    assert load_index() is not None
+    assert geo.counties_for_zip("27551", "NC") == {"warren"}
+    assert "warren" in geo.counties_for_city("macon", "NC")
+    assert geo.counties_for_city("macon", "GA") == {"bibb", "monroe", "jones",
+                                                    "twiggs"}
+    assert geo.counties_for_city("nowhereville", "NC") == set()
+
+
+def test_geo_resolve_semantics():
+    from scraper.geo_lookup import TownCountyIndex
+    geo = TownCountyIndex(zips={"NC|27551": ["warren"]},
+                          cities={"GA|epworth": ["white"]})
+    # unknown town -> keep searched county
+    assert geo.resolve("buncombe", "NC", city="Nowhere", zip_code="99999",
+                       targets={"buncombe"}) == "buncombe"
+    # town in a non-target county -> None (drop the URL county)
+    assert geo.resolve("macon", "NC", zip_code="27551",
+                       targets={"macon", "buncombe"}) is None
+    # town in a different target county -> reassign
+    assert geo.resolve("union", "GA", city="Epworth",
+                       targets={"union", "white"}) == "white"
+    # ambiguous across several target counties -> keep searched
+    geo2 = TownCountyIndex(zips={"TN|37374": ["grundy", "marion"]}, cities={})
+    assert geo2.resolve("sequatchie", "TN", zip_code="37374",
+                        targets={"grundy", "marion",
+                                 "sequatchie"}) == "sequatchie"
+
+
+def test_parse_geo_rejects_and_reattributes():
+    from scraper.geo_lookup import load_index
+    geo = load_index()
+    # Macon (the town, Warren Co) under a macon-nc search: dropped
+    macon = _page([_listing(1, 64900, lot=10.0, state="NC", lat=None, lon=None,
+                            address="57 Harbor Dr, Macon, NC 27551",
+                            city="Macon", zipcode="27551")])
+    assert parse_county_page(macon, "macon", "NC", min_acres=5.0, geo=geo,
+                             targets={"macon", "buncombe"}) == []
+    # Ellijay (Gilmer) found under a union search: reattributed
+    ellijay = _page([_listing(2, 150000, lot=8.0, state="GA",
+                              address="100 Costers Creek Rd, Ellijay, GA 30540",
+                              city="Ellijay", zipcode="30540")])
+    props = parse_county_page(ellijay, "union", "GA", min_acres=5.0, geo=geo,
+                              targets={"gilmer", "union", "white"})
+    assert [p["county"] for p in props] == ["Gilmer"]
+    # without geo the URL county wins (old behavior)
+    plain = parse_county_page(ellijay, "union", "GA", min_acres=5.0)
+    assert plain[0]["county"] == "Union"
 
 
 def test_extract_detail():

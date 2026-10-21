@@ -25,6 +25,7 @@ from typing import Optional
 
 from .base import BaseScraper, PropertyData, camoufox_context
 from .config import config, QUALIFYING_COUNTIES
+from .geo_lookup import load_index
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,9 @@ def parse_county_page(html: str, county: str, state: str,
                       max_price: int = 0,
                       min_acres: float = 0.0,
                       centroids: Optional[dict] = None,
-                      max_acres: float = 0.0) -> list[PropertyData]:
+                      max_acres: float = 0.0,
+                      geo=None,
+                      targets: Optional[set] = None) -> list[PropertyData]:
     """Extract qualifying listings from a county search page's __NEXT_DATA__.
 
     ``max_price`` is in dollars; 0 means no cap. ``centroids`` (see
@@ -153,6 +156,20 @@ def parse_county_page(html: str, county: str, state: str,
                     county, state, item.get("address", "?"),
                     lat, lon, ref[0], ref[1])
                 continue
+        city = item.get("addressCity") or home_info.get("city")
+        zipcode = (item.get("addressZipcode")
+                   or home_info.get("zipcode") or "")
+        county_out = county
+        if geo is not None:
+            resolved = geo.resolve(county, state, city=city,
+                                   zip_code=zipcode, targets=targets)
+            if resolved is None:
+                logger.warning(
+                    "Skipping town/ZIP county mismatch for %s, %s: %s "
+                    "(%s %s not in any target county)",
+                    county, state, item.get("address", "?"), city, zipcode)
+                continue
+            county_out = resolved
         home_type = home_info.get("homeType", "")
         prop: PropertyData = {
             "source": "zillow",
@@ -160,10 +177,10 @@ def parse_county_page(html: str, county: str, state: str,
             "url": item.get("detailUrl")
                    or f"https://www.zillow.com/homedetails/{zpid}_zpid/",
             "address": item.get("address") or home_info.get("streetAddress"),
-            "city": item.get("addressCity") or home_info.get("city"),
-            "county": county_display(county),
+            "city": city,
+            "county": county_display(county_out),
             "state": actual_state or state.upper(),
-            "zip_code": item.get("addressZipcode") or home_info.get("zipcode"),
+            "zip_code": zipcode,
             "latitude": lat,
             "longitude": lon,
             "price": float(price),
@@ -224,6 +241,7 @@ class ZillowScraper(BaseScraper):
         self.fetch_details = fetch_details
         self.states = [s.upper() for s in states] if states else None
         self.centroids = load_centroids()
+        self.geo = load_index()
 
     def scrape(self) -> list[PropertyData]:
         """Scrape all qualifying counties, state by state.
@@ -301,7 +319,9 @@ class ZillowScraper(BaseScraper):
                     html, county, state,
                     max_price=self.max_price, min_acres=self.min_acres,
                     centroids=self.centroids,
-                    max_acres=self.max_acres), False
+                    max_acres=self.max_acres,
+                    geo=self.geo,
+                    targets=set(QUALIFYING_COUNTIES.get(state.upper(), []))), False
             if attempt < attempts:
                 cooldown = random.uniform(*self.BOT_PAGE_COOLDOWN)
                 logger.info("Bot page for %s (%s) — cooling down %.0fs, "

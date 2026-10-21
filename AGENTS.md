@@ -72,6 +72,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
 | `scraper/server.py` | Flask dashboard — port 5001, HTTP Basic Auth, Admin page |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
+| `scraper/geo_lookup.py` + `town_county.json` | town/ZIP→county cross-reference (4,917 ZIPs / 3,625 USPS towns, 6 states, from Census ZIP→county) — resolves town-only listings |
 | `nc_county_summary.md` | Per-county NC property/tax/GIS lookup systems + verified portal URLs |
 | `ga_county_summary.md` | Per-county GA qPublic (Schneider Corp) app IDs, pages, KeyValue spacing |
 | `tn_county_summary.md` | Per-county TN property/tax/GIS systems + tax-foreclosure handling |
@@ -288,6 +289,14 @@ All paths configurable via env vars — **no hardcoded paths**:
   per-state **Re** tab (Tax | Mtg | Re), and rows carry the Zillow URL —
   linked from the tile's external-link button and the detail page's
   Source tab ("View Zillow listing" + source/listing ID).
+  **Town/ZIP cross-reference**: `scraper/geo_lookup.py` + `town_county.json`
+  (from realestate's `target_counties_zips.csv`, Census ZIP→county:
+  4,917 ZIPs / 3,625 USPS cities, 6 states) resolves town/ZIP→county when
+  coordinates can't; the zillow parser uses it to reject city-name
+  collisions with no coordinates (Macon NC 27551 = Warren County, not
+  Macon), re-hang listings whose town lies in exactly ONE other target
+  county, and keep the searched county when the town/ZIP straddles
+  several (e.g. Johnson City 37604 = Carter+Washington).
   `zillow.enforce_thresholds()` runs after every zillow run (post-
   enrichment) and archives active rows outside the CURRENT thresholds —
   tightened defaults and GIS-corrected acreage can't leave strays; the
