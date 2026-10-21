@@ -295,9 +295,16 @@ All paths configurable via env vars — **no hardcoded paths**:
   4,917 ZIPs / 3,625 USPS cities, 6 states) resolves town/ZIP→county when
   coordinates can't; the zillow parser uses it to reject city-name
   collisions with no coordinates (Macon NC 27551 = Warren County, not
-  Macon), re-hang listings whose town lies in exactly ONE other target
-  county, and keep the searched county when the town/ZIP straddles
-  several (e.g. Johnson City 37604 = Carter+Washington).
+  Macon) and to re-hang listings whose town lies outside the searched
+  county (Copperhill listings under an unicoi search → Polk; Johnson City
+  37604 → Carter). When the town/ZIP maps to several target counties the
+  first (alphabetically) is used — the searched county is excluded by the
+  cross-reference, so keeping it would knowingly keep a wrong county.
+  Also discovered: TNMap's statewide parcel layer currently has ZERO
+  parcels for 9 counties flagged `disabled` upstream (Chester, Davidson,
+  Hamilton, Hickman, **Knox**, Montgomery, Rutherford, Shelby, Williamson)
+  — TNMap enrichment can never match rows there; Knox rows go through
+  `kgis_enrich.py` instead.
   `zillow.enforce_thresholds()` runs after every zillow run (post-
   enrichment) and archives active rows outside the CURRENT thresholds —
   tightened defaults and GIS-corrected acreage can't leave strays; the

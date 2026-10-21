@@ -181,11 +181,12 @@ def test_geo_resolve_semantics():
     # town in a different target county -> reassign
     assert geo.resolve("union", "GA", city="Epworth",
                        targets={"union", "white"}) == "white"
-    # ambiguous across several target counties -> keep searched
+    # ambiguous across several target counties -> first hit (the searched
+    # county is excluded by the cross-reference, so it can't be kept)
     geo2 = TownCountyIndex(zips={"TN|37374": ["grundy", "marion"]}, cities={})
     assert geo2.resolve("sequatchie", "TN", zip_code="37374",
                         targets={"grundy", "marion",
-                                 "sequatchie"}) == "sequatchie"
+                                 "sequatchie"}) == "grundy"
 
 
 def test_parse_geo_rejects_and_reattributes():

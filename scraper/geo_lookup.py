@@ -57,10 +57,12 @@ class TownCountyIndex:
         """Attribute a listing to a county given its searched (URL) county.
 
         Returns:
-          searched  — cross-reference confirms it, is ambiguous between
-                      several target counties, or knows nothing (keep as-is)
-          other     — cross-reference puts the town/ZIP in exactly ONE
-                      target county other than the searched one
+          searched  — cross-reference confirms it, or knows nothing (keep as-is)
+          other     — cross-reference puts the town/ZIP in target county
+                      other than the searched one (ambiguous hits resolve to
+                      the first alphabetically — the searched county is
+                      excluded by the cross-reference, so keeping it would
+                      knowingly keep a wrong county)
           None      — the town/ZIP lies in NO target county in this state
                       (a city-name collision like Macon town -> Warren)
         """
@@ -78,15 +80,12 @@ class TownCountyIndex:
                 "town/zip %r %r resolves to %s — none are target counties",
                 city, zip_code, sorted(counties))
             return None
-        if len(hits) == 1:
-            resolved = sorted(hits)[0]
-            logger.info("town/zip %r %r: reattributing county %s -> %s",
-                        city, zip_code, searched, resolved)
-            return resolved
-        logger.info(
-            "town/zip %r %r ambiguous across %s — keeping %s",
-            city, zip_code, sorted(hits), searched)
-        return searched
+        resolved = sorted(hits)[0]
+        logger.info("town/zip %r %r: reattributing county %s -> %s%s",
+                    city, zip_code, searched, resolved,
+                    " (ambiguous across %s)" % sorted(hits)
+                    if len(hits) > 1 else "")
+        return resolved
 
 
 def load_index() -> Optional[TownCountyIndex]:
