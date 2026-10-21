@@ -493,8 +493,6 @@ class TNMapScraper:
             p_num, p_street = self._normalize_address(parcel_address)
             if p_num != prop_num:
                 continue
-            if not p_street:
-                continue
             # Skip public/institutional owners (school boards, counties, ...)
             # — they signal an address collision, not a real match.
             if self._is_public_owner(parcel.get("OWNER"),
@@ -504,6 +502,30 @@ class TNMapScraper:
             if self._streets_match(prop_street, p_street):
                 best_match = parcel
                 break
+
+        if best_match is None and prop_street:
+            # Abbreviation bend + full street still missed: fall back to
+            # house number + FIRST street word ("2869 Hatcher Mountain Rd"
+            # -> "HATCHER..."). Rescue for long compound street names whose
+            # every token disagrees with the parcel's wording; the exact
+            # house number keeps the collision risk low.
+            first_word = prop_street.split(" ")[0]
+            if first_word:
+                for parcel in parcels:
+                    parcel_address = (parcel.get("ADDRESS") or "").strip()
+                    if not parcel_address:
+                        continue
+                    p_num, p_street = self._normalize_address(parcel_address)
+                    if p_num != prop_num:
+                        continue
+                    if self._is_public_owner(parcel.get("OWNER"),
+                                             parcel.get("OWNER2")):
+                        continue
+                    p_first = p_street.split(" ")[0] if p_street else ""
+                    if p_first and self._canon_street_token(p_first) \
+                            == self._canon_street_token(first_word):
+                        best_match = parcel
+                        break
 
         if best_match is None:
             return None
@@ -548,6 +570,8 @@ class TNMapScraper:
     @staticmethod
     def _streets_match(street1: str, street2: str) -> bool:
         """Loose street-name equality: token overlap >= 0.5 with a shared token."""
+        street1 = " ".join(TNMapScraper._canon_street(street1))
+        street2 = " ".join(TNMapScraper._canon_street(street2))
         if not street1 or not street2:
             return False
         if street1 == street2:
@@ -564,6 +588,58 @@ class TNMapScraper:
         # normalized streets as matching when one is a substring of the other.
         s1, s2 = street1.replace(" ", ""), street2.replace(" ", "")
         return bool(s1 and s2) and (s1 in s2 or s2 in s1)
+
+    # Listings spell road words out ("Hatcher Mountain Rd") while TNMap
+    # abbreviates them ("HATCHER MTN RD") — and vice versa ("WEBB CREEK" vs
+    # "webb crk"). Canonicalize BOTH comparison sides to the group key so a
+    # full-to-abbrev token pair always matches.
+    _STREET_VARIANTS: dict[str, tuple[str, ...]] = {
+        "mountain": ("mtn", "mt", "mnt", "mountains"),
+        "valley": ("vly", "vlyd"),
+        "creek": ("crk", "ck"),
+        "branch": ("br", "brnch"),
+        "church": ("ch", "chh"),
+        "heights": ("hts",),
+        "center": ("ctr", "cent", "centre", "cnter"),
+        "junction": ("jct", "jction"),
+        "court": ("ct", "crt"),
+        "square": ("sq", "sqr"),
+        "meadow": ("mdw", "mdws", "meadows"),
+        "mill": ("ml",),
+        "ridge": ("rdg", "rdge"),
+        "river": ("riv", "rver"),
+        "spring": ("spg", "sprng", "springs", "spgs"),
+        "willow": ("wllw",),
+        "crossing": ("xing", "crossrd", "xng"),
+        "corner": ("cor", "corners"),
+        "camp": ("cp", "campground"),
+        "grape": ("grp",),
+        "leap": ("lp",),
+        "knob": ("knb",),
+        "orchard": ("orch",),
+        "point": ("pt", "pts", "points"),
+        "park": ("prk",),
+        "plaza": ("plz",),
+        "place": ("pl",),
+        "terrace": ("ter", "terr"),
+        "trail": ("trl",),
+        "turnpike": ("tpke", "pkwy", "parkway", "pky"),
+        "green": ("grn",),
+    }
+
+    _STREET_CANON: dict[str, str] = {
+        v: key
+        for key, variants in _STREET_VARIANTS.items()
+        for v in (key,) + variants
+    }
+
+    @classmethod
+    def _canon_street_token(cls, token: str) -> str:
+        return cls._STREET_CANON.get(token.lower(), token.lower())
+
+    @classmethod
+    def _canon_street(cls, street: str) -> list[str]:
+        return [cls._canon_street_token(t) for t in (street or "").split()]
 
     def _find_chromium(self) -> Optional[str]:
         """Find chromium executable."""

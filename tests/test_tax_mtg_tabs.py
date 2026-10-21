@@ -1041,3 +1041,60 @@ class TestTNMapPolygonAcres:
         assert TNMapScraper._polygon_acres(None) is None
         assert TNMapScraper._polygon_acres({}) is None
         assert TNMapScraper._polygon_acres({"rings": []}) is None
+
+
+class TestTNMapStreetVariants:
+    """Street-word abbreviation mapping + number+first-word fallback
+    (property #777: '2869 Hatcher Mountain Rd' vs TNMap 'HATCHER MTN RD')."""
+
+    def test_abbrev_variants_match(self):
+        from scraper.tnmap import TNMapScraper
+        m = TNMapScraper._streets_match
+        assert m("hatcher mountain", "hatcher mtn")
+        assert m("webb creek", "webb crk")
+        assert m("english valley", "english vly")
+        assert m("cedar ridge", "cedar rdg")
+        assert m("pigeon crossing", "pigeon xing")
+
+    def test_variant_negative(self):
+        from scraper.tnmap import TNMapScraper
+        assert not TNMapScraper._streets_match("hatcher mountain", "cedar bluff")
+
+    def test_first_word_fallback_resolves_777(self):
+        from scraper.tnmap import TNMapScraper
+        s = TNMapScraper()
+        parcels = [
+            {"ADDRESS": "CEDAR BLUFF RD 2869", "OWNER": "LEACH RUTH &",
+             "DEEDAC": 2.42, "GISLINK": "078052    06304"},
+            {"ADDRESS": "HATCHER MTN RD 2869", "DEEDAC": 2.25,
+             "GISLINK": "078113    03502",
+             "OWNER": "BRIGHTHOUSE LIFE INSURANCE COMPANY"},
+            {"ADDRESS": "HAPPY HOLLOW RD 2869", "OWNER": "JENSEN VINCENT KYHL",
+             "DEEDAC": 1.92, "GISLINK": "078123    01202"},
+        ]
+        enriched = s._match_parcel(
+            {"address": "2869 Hatcher Mountain Rd"}, parcels, {})
+        assert enriched["tnmap_gislink"] == "078113    03502"
+        assert enriched["tnmap_deeded_acres"] == 2.25
+
+    def test_public_owner_skipped_in_fallback(self):
+        from scraper.tnmap import TNMapScraper
+        s = TNMapScraper()
+        parcels = [
+            {"ADDRESS": "HATCHER MTN RD 2869", "OWNER": "COUNTY OF SEVIER",
+             "DEEDAC": 5.0, "GISLINK": "078000    00001"},
+            {"ADDRESS": "HATCHER HOLLOW RD 2869", "OWNER": "SMITH JANE",
+             "DEEDAC": 1.0, "GISLINK": "078000    00002"},
+        ]
+        enriched = s._match_parcel(
+            {"address": "2869 Hatcher Mountain Rd"}, parcels, {})
+        assert enriched["tnmap_gislink"] == "078000    00002"
+
+    def test_no_fallback_cross_address_confusion(self):
+        # distinct first word -> no match, returns None (never fabricate)
+        from scraper.tnmap import TNMapScraper
+        s = TNMapScraper()
+        parcels = [{"ADDRESS": "CEDAR BLUFF RD 2869", "OWNER": "LEACH RUTH &",
+                    "DEEDAC": 2.42, "GISLINK": "078052    06304"}]
+        assert s._match_parcel(
+            {"address": "2869 Hatcher Mountain Rd"}, parcels, {}) is None
