@@ -347,3 +347,45 @@ class ZillowScraper(BaseScraper):
 def scrape_all() -> list[PropertyData]:
     """Shortcut: instantiate and run the scraper."""
     return ZillowScraper().run()
+
+
+def enforce_thresholds() -> dict:
+    """Archive active zillow rows that violate the CURRENT threshold set.
+
+    Thresholds can tighten after rows were scraped (and enrichment can
+    overwrite listing acreage with smaller survey values), so every zillow
+    run reaps stragglers: price above the cap, or known (non-NULL) acreage
+    outside [min_acres, max_acres]. NULL-acreage rows stay for the
+    enrichers. Returns archived/kept counts."""
+    import sqlite3
+    min_acres = config.get_min_acres("zillow")
+    max_price = config.get_max_price("zillow")
+    max_acres = config.get_max_acres("zillow")
+    conn = sqlite3.connect(str(config.db_path))
+    conn.execute("PRAGMA busy_timeout = 30000")
+    try:
+        conds, params = [], []
+        if max_price:
+            conds.append("(price_cents IS NOT NULL AND price_cents > ?)")
+            params.append(int(max_price) * 100)
+        acres_cond = "acres < ?"
+        params_a: list = [min_acres]
+        if max_acres:
+            acres_cond += " OR acres > ?"
+            params_a.append(max_acres)
+        conds.append(f"(acres IS NOT NULL AND ({acres_cond}))")
+        params += params_a
+        cur = conn.execute(
+            "UPDATE properties SET status = 'archived' "
+            "WHERE source = 'zillow' AND status = 'active' AND ("
+            + " OR ".join(conds) + ")", params)
+        conn.commit()
+        archived = cur.rowcount
+        kept = conn.execute("SELECT COUNT(*) FROM properties "
+                            "WHERE source = 'zillow' "
+                            "AND status = 'active'").fetchone()[0]
+        logger.info("zillow threshold reap: archived=%d active_kept=%d",
+                    archived, kept)
+        return {"archived": archived, "kept": kept}
+    finally:
+        conn.close()

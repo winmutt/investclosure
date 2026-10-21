@@ -505,12 +505,13 @@ class TNMapScraper:
 
         if best_match is None and prop_street:
             # Abbreviation bend + full street still missed: fall back to
-            # house number + FIRST street word ("2869 Hatcher Mountain Rd"
-            # -> "HATCHER..."). Rescue for long compound street names whose
+            # house number + the first TWO street words, then the first
+            # word only ("2869 Hatcher Mountain Rd" -> "HATCHER MOUNTAIN"
+            # -> "HATCHER"). Rescue for long compound street names whose
             # every token disagrees with the parcel's wording; the exact
-            # house number keeps the collision risk low.
-            first_word = prop_street.split(" ")[0]
-            if first_word:
+            # house number plus the tightest prefix tier keeps collision
+            # risk low (fallback never searches beyond two words).
+            for tier in (2, 1):
                 for parcel in parcels:
                     parcel_address = (parcel.get("ADDRESS") or "").strip()
                     if not parcel_address:
@@ -521,11 +522,14 @@ class TNMapScraper:
                     if self._is_public_owner(parcel.get("OWNER"),
                                              parcel.get("OWNER2")):
                         continue
-                    p_first = p_street.split(" ")[0] if p_street else ""
-                    if p_first and self._canon_street_token(p_first) \
-                            == self._canon_street_token(first_word):
+                    if len(p_street.split()) < tier:
+                        continue
+                    if self._street_prefix_matches(prop_street, p_street,
+                                                   tier):
                         best_match = parcel
                         break
+                if best_match:
+                    break
 
         if best_match is None:
             return None
@@ -570,18 +574,12 @@ class TNMapScraper:
     @staticmethod
     def _streets_match(street1: str, street2: str) -> bool:
         """Loose street-name equality: token overlap >= 0.5 with a shared token."""
-        street1 = " ".join(TNMapScraper._canon_street(street1))
-        street2 = " ".join(TNMapScraper._canon_street(street2))
+        from .street_canon import canon_street, tokens_match
+        street1 = canon_street(street1)
+        street2 = canon_street(street2)
         if not street1 or not street2:
             return False
-        if street1 == street2:
-            return True
-        w1, w2 = set(street1.split()), set(street2.split())
-        if not w1 or not w2:
-            return False
-        common = len(w1 & w2)
-        union = len(w1 | w2)
-        if common >= 1 and common / union >= 0.5:
+        if tokens_match(street1.split(), street2.split()):
             return True
         # Fallback: a directional sometimes fuses to the street name in one
         # source but not the other (e.g. "esevier" vs "e sevier"). Treat the
@@ -589,57 +587,20 @@ class TNMapScraper:
         s1, s2 = street1.replace(" ", ""), street2.replace(" ", "")
         return bool(s1 and s2) and (s1 in s2 or s2 in s1)
 
-    # Listings spell road words out ("Hatcher Mountain Rd") while TNMap
-    # abbreviates them ("HATCHER MTN RD") — and vice versa ("WEBB CREEK" vs
-    # "webb crk"). Canonicalize BOTH comparison sides to the group key so a
-    # full-to-abbrev token pair always matches.
-    _STREET_VARIANTS: dict[str, tuple[str, ...]] = {
-        "mountain": ("mtn", "mt", "mnt", "mountains"),
-        "valley": ("vly", "vlyd"),
-        "creek": ("crk", "ck"),
-        "branch": ("br", "brnch"),
-        "church": ("ch", "chh"),
-        "heights": ("hts",),
-        "center": ("ctr", "cent", "centre", "cnter"),
-        "junction": ("jct", "jction"),
-        "court": ("ct", "crt"),
-        "square": ("sq", "sqr"),
-        "meadow": ("mdw", "mdws", "meadows"),
-        "mill": ("ml",),
-        "ridge": ("rdg", "rdge"),
-        "river": ("riv", "rver"),
-        "spring": ("spg", "sprng", "springs", "spgs"),
-        "willow": ("wllw",),
-        "crossing": ("xing", "crossrd", "xng"),
-        "corner": ("cor", "corners"),
-        "camp": ("cp", "campground"),
-        "grape": ("grp",),
-        "leap": ("lp",),
-        "knob": ("knb",),
-        "orchard": ("orch",),
-        "point": ("pt", "pts", "points"),
-        "park": ("prk",),
-        "plaza": ("plz",),
-        "place": ("pl",),
-        "terrace": ("ter", "terr"),
-        "trail": ("trl",),
-        "turnpike": ("tpke", "pkwy", "parkway", "pky"),
-        "green": ("grn",),
-    }
+    @staticmethod
+    def _street_prefix_matches(prop_street: str, parcel_street: str,
+                               words: int) -> bool:
+        """True when both streets share their first ``words`` tokens canonically.
 
-    _STREET_CANON: dict[str, str] = {
-        v: key
-        for key, variants in _STREET_VARIANTS.items()
-        for v in (key,) + variants
-    }
+        The bounded address fallback tier: at most the first TWO street
+        words are searched — deeper matching binds wrong neighboring
+        parcels that share a number or a single common word.
+        """
+        from .street_canon import canon_tokens
+        p1 = canon_tokens(prop_street)[:words]
+        p2 = canon_tokens(parcel_street)[:words]
+        return bool(p1 and len(p1) == words and p1 == p2[:len(p1)])
 
-    @classmethod
-    def _canon_street_token(cls, token: str) -> str:
-        return cls._STREET_CANON.get(token.lower(), token.lower())
-
-    @classmethod
-    def _canon_street(cls, street: str) -> list[str]:
-        return [cls._canon_street_token(t) for t in (street or "").split()]
 
     def _find_chromium(self) -> Optional[str]:
         """Find chromium executable."""

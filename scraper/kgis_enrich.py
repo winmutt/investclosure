@@ -92,7 +92,10 @@ def _query(page, where: str) -> list:
 
 def _match(prop: dict, feats: list) -> Optional[dict]:
     """First feature whose FULL_ADDRESS carries the house number and shares
-    a street token with the notice address (mirrors tnmap strictness)."""
+    a street token with the notice address (mirrors tnmap strictness),
+    with canonical abbreviations ("mtn"/"mountain", "vly"/"valley")."""
+    from .street_canon import tokens_match
+
     split = _split_address(prop.get("address") or "")
     num = split[0] if split else None
     want = set(split[1].split()) if split else set()
@@ -100,7 +103,8 @@ def _match(prop: dict, feats: list) -> Optional[dict]:
         full = str(f.get("FULL_ADDRESS") or "").upper()
         if num and not re.search(rf"(^|\s){re.escape(num)}(\s|$)", full):
             continue
-        if want and not (want & set(re.sub(r"[^A-Z0-9 ]", " ", full).split())):
+        full_words = set(re.sub(r"[^A-Z0-9 ]", " ", full).split())
+        if want and not tokens_match(want, full_words):
             continue
         try:
             area = float(f.get("SHAPE.AREA") or 0)
@@ -129,7 +133,14 @@ def _feature_to_match(f: dict) -> dict:
 
 
 def lookup(page, address: str, parcel: str = "") -> Optional[dict]:
-    """Parcel-exact first, then address LIKE. Returns match dict or None."""
+    """Parcel-exact first, then address LIKE. Returns match dict or None.
+
+    Address tier (bounded): house number + the first street word's
+    variants, then house number + the first TWO street words. Never
+    searches deeper than two street words on the fallback.
+    """
+    from .street_canon import alternate_tokens
+
     for v in _parcel_variants(parcel or ""):
         feats = _query(page, f"PARCELID = '{v}'")
         time.sleep(random.uniform(0.3, 0.6))
@@ -138,15 +149,25 @@ def lookup(page, address: str, parcel: str = "") -> Optional[dict]:
     split = _split_address(address or "")
     if split:
         num, core = split
-        tok = core.split()[0]
+        toks = core.split() or [""]
+        tiers: list[str] = []
+        if len(toks) >= 2:
+            # Tightest first: house number + first two street words
+            tiers.append("%".join(toks[:2]))
+        # Then house number + first street word (canonical spelling and
+        # bounded alternates — "MOUNTAIN" would retry as "MTN").
+        tiers.append(toks[0])
+        for alt in alternate_tokens(toks[0])[:2]:
+            tiers.append(alt)
         # KGIS stores number-LAST ("BIDDLE ST 1123"); try both orders.
-        for pat in (f"FULL_ADDRESS LIKE '%{num}%{tok}%'",
-                    f"FULL_ADDRESS LIKE '%{tok}%{num}%'"):
-            feats = _query(page, pat)
-            time.sleep(random.uniform(0.3, 0.6))
-            m = _match({"address": address}, feats)
-            if m:
-                return m
+        for core_pat in tiers:
+            for pat in (f"FULL_ADDRESS LIKE '%{num}%{core_pat}%'",
+                        f"FULL_ADDRESS LIKE '%{core_pat}%{num}%'"):
+                feats = _query(page, pat)
+                time.sleep(random.uniform(0.3, 0.6))
+                m = _match({"address": address}, feats)
+                if m:
+                    return m
     return None
 
 

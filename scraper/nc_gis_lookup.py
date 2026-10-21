@@ -980,6 +980,8 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     if not fips:
         return None
 
+    from .street_canon import canon_tokens, pattern_variants
+
     m = re.match(r"^\s*(\d+)\s+", address)
     house_num = m.group(1) if m else None
 
@@ -989,7 +991,9 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
             if not result or result.get("acres", 0) <= 0:
                 continue
             site = (result.get("site_address") or "").strip()
-            if house_num and not re.match(rf"^{house_num}(?![0-9])", site):
+            # OneMap zero-pads siteadd house numbers to a fixed width
+            # ("000454 WOODSONG DR") — allow leading zeros before the match.
+            if house_num and not re.match(rf"^0*{house_num}(?![0-9])", site):
                 logger.info(
                     "Address search rejected wrong-house match %s site=%r for %r (%s)",
                     result.get("parno"), site, address, county,
@@ -1000,10 +1004,27 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
 
     # Query with wildcards between words
     like_parts = " ".join(normalized.split())
-    # Try full pattern first, then abbreviated; when a house number is known,
-    # anchored variants go first so the right parcel wins over loose hits.
-    patterns = [f"{house_num} {like_parts}", f"{house_num} {like_parts.split()[0]}"] if house_num else []
-    patterns += [like_parts, "%".join(like_parts.split()[:2])]
+
+    # Pattern priority (all bounded — address fallback never searches
+    # beyond the first TWO street words):
+    #   1. anchored full pattern (house number + normalized street),
+    #      plus bounded alternate-spelling variants ("MTN"/"MOUNTAIN",
+    #      "VLY"/"VALLEY", ...) from the shared street_canon map,
+    #   2. unanchored full pattern,
+    #   3. house number + first street word,
+    #   4. canon-joined first TWO street words (wildcard between).
+    first_word = like_parts.split()[0] if like_parts.split() else ""
+    two_tokens = "%".join(canon_tokens(like_parts)[:2])
+    patterns: list[str] = []
+    if house_num:
+        patterns.append(f"{house_num} {like_parts}")
+        for variant in pattern_variants(like_parts, limit=6)[1:]:
+            patterns.append(f"{house_num} {variant}")
+    patterns.extend([like_parts, *pattern_variants(like_parts, limit=4)[1:]])
+    if house_num and first_word:
+        patterns.append(f"{house_num} {first_word}")
+    if two_tokens:
+        patterns.append(two_tokens)
     for pattern in patterns:
         if not pattern:
             continue
@@ -1021,7 +1042,7 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
         result = _first_valid(resp)
         if result:
             return result
-    
+
     return None
 
 

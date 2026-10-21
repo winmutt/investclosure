@@ -285,8 +285,15 @@ All paths configurable via env vars — **no hardcoded paths**:
   DELAY_RANGES zillow (2.5, 4.5). Zillow rows are non-foreclosure market
   listings: `server.property_category()` buckets `source='zillow'` into a
   per-state **Re** tab (Tax | Mtg | Re), and rows carry the Zillow URL —
+  per-state **Re** tab (Tax | Mtg | Re), and rows carry the Zillow URL —
   linked from the tile's external-link button and the detail page's
   Source tab ("View Zillow listing" + source/listing ID).
+  `zillow.enforce_thresholds()` runs after every zillow run (post-
+  enrichment) and archives active rows outside the CURRENT thresholds —
+  tightened defaults and GIS-corrected acreage can't leave strays; the
+  initial pass archived 121 of 212 (119 over-$200k/under-5ac + 2 over-cap).
+  Note: enrich_properties' below-MIN_ACRES auto-archive can fire on a
+  wrong-parcel GIS match — 3 qualifying rows it archived were restored.
   The old curl_cffi zillow's failure counter
   (`data/logs/scraper_failures/zillow.json`, dated 2026-07-27) had to be
   removed to un-disable the name. 9 parser tests in `tests/test_zillow.py`.

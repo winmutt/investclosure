@@ -122,6 +122,41 @@ def test_parse_applies_max_acres():
     assert [p["source_listing_id"] for p in props] == ["2"]
 
 
+def test_enforce_thresholds_archives_strays(monkeypatch, tmp_path):
+    """Post-enrichment reap: price cap + acreage bounds on active rows."""
+    import sqlite3
+    from scraper import zillow as zl
+
+    db = tmp_path / "enforce.db"
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE properties (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, status TEXT,
+        price_cents INTEGER, acres REAL)""")
+    rows = [
+        ("zillow", "active", 25_000_000, 10.0),   # over $200k -> archive
+        ("zillow", "active", 15_000_000, 3.0),    # under min acres -> archive
+        ("zillow", "active", 15_000_000, 2000.0),  # over max acres -> archive
+        ("zillow", "active", 15_000_000, 10.0),   # keeps
+        ("zillow", "active", 15_000_000, None),   # NULL acres keeps (enricher)
+        ("zillow", "archived", 99_000_000, 1.0),  # already archived
+        ("kania_law", "active", 99_000_000, 1.0),  # other source untouched
+    ]
+    conn.executemany("INSERT INTO properties (source, status, price_cents,"
+                     " acres) VALUES (?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(zl.config, "db_path", str(db))
+    result = zl.enforce_thresholds()
+    assert result == {"archived": 3, "kept": 2}
+
+    conn = sqlite3.connect(db)
+    got = [r[0] for r in conn.execute(
+        "SELECT status FROM properties ORDER BY id")]
+    assert got == ["archived", "archived", "archived", "active",
+                   "active", "archived", "active"]
+
+
 def test_extract_detail():
     cache = json.dumps({"q": {"property": {
         "description": "Creek, views, unrestricted.",

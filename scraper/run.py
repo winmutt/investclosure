@@ -357,6 +357,18 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
         except Exception as e:
             logger.warning("GA acreage enrich failed: %s", e)
 
+    # Reap active zillow rows that no longer fit the threshold set
+    # (post-enrichment, so GIS-corrected acreage is judged too).
+    if scraper_name == "zillow":
+        try:
+            from scraper.zillow import enforce_thresholds
+            reap = enforce_thresholds()
+            if reap.get("archived"):
+                print(f"  Below/over zillow thresholds: "
+                      f"{reap['archived']} archived")
+        except Exception as e:
+            logger.warning("Zillow threshold reap failed: %s", e)
+
     # Track success
     _reset_failure_counter(scraper_name)
 

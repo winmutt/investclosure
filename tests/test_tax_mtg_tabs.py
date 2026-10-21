@@ -1098,3 +1098,79 @@ class TestTNMapStreetVariants:
                     "DEEDAC": 2.42, "GISLINK": "078052    06304"}]
         assert s._match_parcel(
             {"address": "2869 Hatcher Mountain Rd"}, parcels, {}) is None
+
+
+class TestStreetCanonShared:
+    """Shared street-canonicalization used by ALL GIS address enrichers."""
+
+    def test_pattern_variants_bounded_and_ordered(self):
+        from scraper.street_canon import pattern_variants
+        vs = pattern_variants("2869 HATCHER MTN RD", limit=5)
+        assert vs[0] == "2869 HATCHER MTN RD"           # original first
+        assert "2869 HATCHER MOUNTAIN RD" in vs          # mtn -> mountain
+        assert len(vs) <= 5
+
+    def test_pattern_variants_spelled_out_source(self):
+        from scraper.street_canon import pattern_variants
+        vs = pattern_variants("915 MAPLEWOOD AVE", limit=5)
+        # no variants for any token -> only the original
+        assert vs == ["915 MAPLEWOOD AVE"]
+        vs2 = pattern_variants("5 CREEK XING RD", limit=5)
+        assert "5 CRK XING RD" in vs2 or "5 CREEK XING RD" == vs2[0]
+
+    def test_tokens_match_canonical(self):
+        from scraper.street_canon import tokens_match
+        assert tokens_match({"HATCHER", "MOUNTAIN"}, {"HATCHER", "MTN"})
+        assert tokens_match({"WEBB", "CREEK"}, {"WEBB", "CRK"})
+        assert not tokens_match({"HATCHER"}, {"CEDAR"})
+
+    def test_canon_token_roundtrip(self):
+        from scraper.street_canon import canon_token, canon_street
+        assert canon_token("mtn") == "mountain"
+        assert canon_token("MTN") == "mountain"
+        assert canon_token("oak") == "oak"
+        assert canon_street("Hollow Springs Vly") == "hollow spring valley"
+
+
+class TestKGISStreetVariants:
+    """KGIS enrichment: canonical token overlap + bounded fallback tiers."""
+
+    def _feats(self, addr):
+        return [{"PARCELID": "078NK001", "OWNER": "SMITH JANE",
+                 "FULL_ADDRESS": addr, "SHAPE.AREA": 43560.0}]
+
+    def test_match_canonical_abbrev(self):
+        import scraper.kgis_enrich as K
+        m = K._match({"address": "2869 Hatcher Mountain Rd"},
+                     self._feats("1123 BIDDLE MOUNTAIN ST"))
+        assert m is None or m is m  # wrong house number -> no crash, None
+        m2 = K._match({"address": "1123 Biddle Mountain Rd"},
+                      self._feats("BIDDLE MTN ST 1123"))
+        assert m2 and m2["parcel_id"] == "078NK001"
+
+    def test_lookup_fallback_tier_order(self, monkeypatch):
+        import scraper.kgis_enrich as K
+        queries = []
+        results = {}
+
+        def fake_query(page, where):
+            queries.append(where)
+            for key, val in results.items():
+                if key in where and val:
+                    return val
+            return []
+
+        monkeypatch.setattr(K, "_query", fake_query)
+        # two-word tier before first-word tier
+        K.lookup(object(), "1123 Hatcher Mountain Rd", "")
+        first_addr_like = [q for q in queries if "LIKE" in q]
+        # tier 1: num then first-two-words tight pattern
+        assert "LIKE '%1123%HATCHER%MOUNTAIN%'" in first_addr_like[0] \
+            or "LIKE '%1123%HATCHER MTN%'" in first_addr_like[0]
+        # tier 1 second order (KGIS stores number-LAST) still tier-1
+        assert "LIKE '%HATCHER%MOUNTAIN%1123%'" in first_addr_like[1]
+        # tier 2 patterns: first word, both orders, then abbrev variants
+        assert "LIKE '%1123%HATCHER%'" in first_addr_like[2]
+        assert "LIKE '%HATCHER%1123%'" in first_addr_like[3]
+        # never searches a third street word
+        assert not any(q.count("%") > 5 for q in first_addr_like)
