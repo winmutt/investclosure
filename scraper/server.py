@@ -27,6 +27,8 @@ from scraper.config import config
 from scraper.nc_gis_lookup import (
     build_satellite_url,
     build_street_view_url,
+    build_google_maps_url,
+    build_google_maps_topo_url,
 )
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', str(config.data_dir)))
@@ -95,8 +97,19 @@ def _row_to_dict(row):
                 d[field] = type_fn(d[field])
             except (ValueError, TypeError):
                 d[field] = None
-    # Derive aerial/satellite + street-view photo links from coordinates/address
-    # so the dashboard can always offer a "photo" of the property.
+    # Derive map/photo links from coordinates/address so the dashboard can
+    # always offer a map + "photo" of the property (legacy rows inserted
+    # before maps URLs were stored, e.g. zillow rows).
+    if not d.get("google_maps_url"):
+        d["google_maps_url"] = build_google_maps_url(
+            d.get("longitude"), d.get("latitude"),
+            d.get("address"), d.get("city"), d.get("county"), state=d.get("state"),
+        )
+    if not d.get("google_maps_topo_url") and d.get("google_maps_url"):
+        d["google_maps_topo_url"] = build_google_maps_topo_url(
+            d.get("longitude"), d.get("latitude"),
+            d.get("address"), d.get("city"), d.get("county"), state=d.get("state"),
+        )
     if not d.get("google_maps_satellite_url"):
         d["google_maps_satellite_url"] = build_satellite_url(
             d.get("longitude"), d.get("latitude"),

@@ -26,6 +26,7 @@ from typing import Optional
 from .base import BaseScraper, PropertyData, camoufox_context
 from .config import config, QUALIFYING_COUNTIES
 from .geo_lookup import load_index
+from .nc_gis_lookup import build_google_maps_url, build_google_maps_topo_url
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,14 @@ def parse_county_page(html: str, county: str, state: str,
             "parcel_number": None,
             "property_type": home_type.lower() if home_type else "land",
             "image_url": item.get("imgSrc"),
+            "google_maps_url": build_google_maps_url(
+                lon, lat, item.get("address") or home_info.get("streetAddress"),
+                city, county_display(county_out),
+                state=actual_state or state.upper()),
+            "google_maps_topo_url": build_google_maps_topo_url(
+                lon, lat, item.get("address") or home_info.get("streetAddress"),
+                city, county_display(county_out),
+                state=actual_state or state.upper()),
         }
         properties.append(prop)
 
