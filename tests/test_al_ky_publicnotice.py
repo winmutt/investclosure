@@ -327,6 +327,17 @@ def test_ky_extract_parcel_requires_marker_window():
         page, _best_marker_pos(page.lower())) is None
 
 
+def test_ky_labeled_address_stops_at_junk():
+    # live row #895 interleave: the "Property Address:" label sits where the
+    # newspaper columns run together — capture must stop at the street
+    # suffix, not run 80 chars into the neighbouring column.
+    page = ("Parcel/Map... satisfied in full. Property Address: 10376 "
+            "Highway 26, Rockholds, Pursuant to KRS wburg.kyschools.us. KY "
+            "40759. Parcel/Map ID#: 125-00-00-054.06")
+    addr = _ky()._extract_address(page, "whitley")
+    assert addr == "10376 Highway 26"
+
+
 def test_ky_county_set_matches_config():
     from scraper.config import KY_FORECLOSURE_COUNTIES
     assert KY_FORECLOSURE_COUNTIES == [

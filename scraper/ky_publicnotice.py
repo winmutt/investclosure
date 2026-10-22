@@ -39,6 +39,8 @@ from .config import (
 from .publicnotice_base import (
     LOOKBACK_DAYS,
     MORTGAGE_FC_PATTERNS,
+    STREET_TAIL_BODY,
+    HWYN_TAIL_BODY,
     extract_pdf_text,
     normalize_notice_text,
 )
@@ -226,15 +228,19 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
             return None
         body = normalize_notice_text(text)
         marker = _best_marker_pos(body.lower())
+        # Two address shapes: "<n> <street> ... <suffix>" and "... Highway
+        # 26" (the highway word carries the number, so a suffix-ending
+        # alternation can never capture it).
+        addr_body = (
+            rf"\d{{1,5}}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){{0,4}}\s*"
+            rf"{STREET_TAIL_BODY}"
+            rf"|\d{{1,5}}\s+(?:OLD\s+)?{HWYN_TAIL_BODY}"
+        )
         anchor_re = re.compile(
-            r"((?:commonly\s+|also\s+)?known\s+as\s*[:\-]?\s*|located\s+(?:at|on|in)\s*[:\-]?\s*"
-            r"|(?:property|address|street\s+address)\s*[:-]\s*)"
-            r"?(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}\s*"
-            r"\b(?:STREET|ST|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN"
-            r"|HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|PKWY|PIKE|WAY|TRAIL"
-            r"|NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW)"
-            r"(?:\s+(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW))?"
-            r"(?:\s+#?\d{1,5})?\b\.?)",
+            rf"((?:commonly\s+|also\s+)?known\s+as\s*[:\-]?\s*"
+            rf"|located\s+(?:at|on|in)\s*[:\-]?\s*"
+            rf"|(?:property|address|street\s+address)\s*[:-]\s*)"
+            rf"?({addr_body})",
             re.IGNORECASE,
         )
         for m in anchor_re.finditer(body):
@@ -245,10 +251,14 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
                     and not is_courthouse_address(addr, county, "KY"):
                 return addr[:120]
         # labeled "Property Address:" etc. (not necessarily near the marker
-        # when the marker lands in the caption) as a looser fallback
+        # when the marker lands in the caption) as a looser fallback. The
+        # capture is suffix-anchored: the newspaper page may jam the label
+        # against unrelated column content on the same line ("Property
+        # Address: 10376 Highway 26, Rockholds, Pursuant to KRS ..." — a
+        # bare [^\n]{4,80} run once captured that whole line).
         labeled = re.search(
-            r"(?:property\s+address|address\s+of\s+(?:the\s+)?property"
-            r"|street\s+address)\s*[:-]\s*(\d{1,5}\s+[^\n]{4,80})",
+            rf"(?:property\s+address|address\s+of\s+(?:the\s+)?property"
+            rf"|street\s+address)\s*[:-]\s*({addr_body})",
             body, re.IGNORECASE)
         if labeled:
             addr = re.sub(r"\s+", " ", labeled.group(1)).strip(" ,.;")

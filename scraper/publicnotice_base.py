@@ -258,6 +258,26 @@ ADDRESS_RE = re.compile(
     r"(?:\s+#?\d{1,5})?\b\.?)",
     re.IGNORECASE,
 )
+
+
+# Suffix tail shared with the AL/KY anchor+label extractors: a
+# word-boundary-street-suffix, an optional directional ("Highway 421
+# South") and an optional trailing house number ("Old Highway 5").
+_STREET_SUFFIX_BODY = (
+    r"STREET|ST|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|"
+    r"HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|PKWY|PIKE|WAY|TRAIL"
+)
+_DIRT_BODY = r"(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW)"
+STREET_TAIL_BODY = (
+    rf"\b(?:{_STREET_SUFFIX_BODY})"
+    rf"(?:\s+{_DIRT_BODY})?(?:\s+#?\d{{1,5}})?\b\.?"
+)
+# "... Highway 26" ends in a house number, so the suffix word is not last;
+# the number-carrying highway tail covers addresses the suffix tail can't.
+HWYN_TAIL_BODY = (
+    rf"\b(?:HIGHWAY|HWY)\s*#?\d{{1,4}}\b(?:\s+{_DIRT_BODY})?\b\.?"
+)
+
 # Court/tribunal names that must not be mistaken for a street address.
 _COURT_STOPWORDS_RE = re.compile(
     r"\b(chancery|circuit|county|district|superior|federal|probate|"

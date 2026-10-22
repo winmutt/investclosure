@@ -38,6 +38,8 @@ from .publicnotice_base import (
     LOOKBACK_DAYS,
     MORTGAGE_FC_PATTERNS,
     PublicNoticeScraper,
+    STREET_TAIL_BODY,
+    HWYN_TAIL_BODY,
     _is_recent_publication,
     normalize_notice_text,
 )
@@ -219,11 +221,8 @@ class ALPublicNoticeScraper(PublicNoticeScraper):
             r"(?:property\s+(?:address|location)|street\s+address|located\s+at"
             r"|(?:(?:commonly|also)\s+)?known\s+as)"
             r"\s*[:\-]?\s*(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}\s*"
-            r"\b(?:STREET|ST|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN"
-            r"|HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|PKWY|PIKE|WAY|TRAIL"
-            r"|NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW)"
-            r"(?:\s+(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW))?"
-            r"(?:\s+#?\d{1,5})?\b\.?)",
+            rf"{STREET_TAIL_BODY}"
+            rf"|\d{{1,5}}\s+(?:OLD\s+)?{HWYN_TAIL_BODY})",
         ]
         for pat in labeled:
             m = re.search(pat, body, re.IGNORECASE)
