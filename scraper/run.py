@@ -96,6 +96,18 @@ except ImportError as e:
     logger.warning("ga_publicnotice not available: %s", e)
 
 try:
+    from scraper.al_publicnotice import ALPublicNoticeScraper
+    SCRAPER_MODULES["al_publicnotice"] = ALPublicNoticeScraper
+except ImportError as e:
+    logger.warning("al_publicnotice not available: %s", e)
+
+try:
+    from scraper.ky_publicnotice import KYPublicNoticeScraper
+    SCRAPER_MODULES["ky_publicnotice"] = KYPublicNoticeScraper
+except ImportError as e:
+    logger.warning("ky_publicnotice not available: %s", e)
+
+try:
     from scraper.rlselaw import RLSelawScraper
     SCRAPER_MODULES["rlselaw"] = RLSelawScraper
 except ImportError as e:
@@ -206,6 +218,12 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
             properties = scrape_with_enrichment(solve_captcha=True, enrich=True,
                                                lookback_days=lookback_days)
         elif scraper_name == "ga_publicnotice":
+            scraper = scraper_class(lookback_days=lookback_days)
+            properties = scraper.run()
+        elif scraper_name == "al_publicnotice":
+            scraper = scraper_class(lookback_days=lookback_days)
+            properties = scraper.run()
+        elif scraper_name == "ky_publicnotice":
             scraper = scraper_class(lookback_days=lookback_days)
             properties = scraper.run()
         elif scraper_name == "nc_publicnotice":

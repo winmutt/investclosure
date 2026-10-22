@@ -134,6 +134,11 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `logs_nc` | logs.com NC report (PowerBI) | 20 NC mountain | None | NC OneMap links |
 | `auction_com` | auction.com county + detail pages | NC/GA/TN/SC/AL mountain | None | state map links |
 | `zillow` | zillow.com county search pages (`__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile/county) | centroid guard + post-insert enrichers |
+| `nc_publicnotice` | ncnotices.com (IPA WebForms) | NC mountain (20) | Turnstile | NC OneMap statewide |
+| `tn_publicnotice` | tnpublicnotice.com (IPA WebForms) | 38 TN mountain | Turnstile | TNMap enrichment |
+| `ga_publicnotice` | georgiapublicnotice.com (IPA WebForms) | 7 GA mountain | Turnstile | qPublic acreage |
+| `al_publicnotice` | alabamapublicnotices.com (IPA WebForms) | 5 AL mountain | Turnstile | Maps links only |
+| `ky_publicnotice` | kypublicnotice.com (Newz Group) | 5 KY mountain | None | Maps links only |
 
 ### Selection Criteria
 

@@ -216,11 +216,17 @@ STRONG_TAX_FC_PATTERNS = [
 ]
 
 # --- shared street-address extraction ---------------------------------------
-# Common US street-address pattern used by TN / GA notice bodies.
+# Common US street-address pattern used by TN / GA/ AL notice bodies.
+# Word-boundary-hardened suffix (\b) so the alternation cannot match mid-word
+# ("order of sale" -> "order" produced "00 and an ord" on live KY pages);
+# directionals and a trailing house number are allowed to end the address
+# ("Highway 421 South", "Old Highway 5").
 ADDRESS_RE = re.compile(
     r"\b(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}?\s*"
-    r"(?:STREET|ST|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|"
-    r"HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|PKWY|PIKE|WAY)\.?)",
+    r"\b(?:STREET|ST|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|"
+    r"HIGHWAY|HWY|COURT|CT|CIRCLE|CIR|PKWY|PIKE|WAY)"
+    r"(?:\s+(?:NORTH|SOUTH|EAST|WEST|NE|NW|SE|SW))?"
+    r"(?:\s+#?\d{1,5})?\b\.?)",
     re.IGNORECASE,
 )
 # Court/tribunal names that must not be mistaken for a street address.

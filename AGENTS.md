@@ -67,6 +67,8 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/ga_publicnotice.py` | GA "Public Notice" foreclosure scraper — georgiapublicnotice.com (same WebForms backend), 7 N GA mountain counties |
 | `scraper/publicnotice_base.py` | Shared base for the three `*_publicnotice` scrapers (GridView parse, Turnstile gate, PDF extract, tax/mortgage classifier) |
 | `scraper/newspaper_notices.py` | Newspaper legal-notice scraper — full notice text as raw source |
+| `scraper/al_publicnotice.py` | AL public-notice foreclosure scraper — alabamapublicnotices.com (IPA WebForms: per-category select + per-county checkbox), full notice text as raw source; no statewide parcel service → Maps links only |
+| `scraper/ky_publicnotice.py` | KY public-notice scraper — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only |
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties |
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
@@ -263,6 +265,62 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-10-22 (AL + KY public-notice scrapers went live)**: Two new
+  foreclosure sources over the two *other* state legal-notice platforms:
+  - **`al_publicnotice`** (alabamapublicnotices.com — same IPA/ASP.NET
+    WebForms backend as NC/TN/GA): 5 target counties
+    (`AL_FORECLOSURE_COUNTIES`: blount, cherokee, cleburne, dekalb,
+    talladega), categories looped fresh per iteration
+    (**a category pivot needs a FRESH page load** — the 2nd
+    `ddlPopularSearches` category searched empty without it), per-county
+    checkbox search shares `_set_county_filter`/`_submit_county_search` with
+    the publicnotice base. Turnstile detail gate solves in-browser (live
+    verified; 2captcha fallback configured). On-page OCR hyphen-splits words
+    (`MORT-GAGE FORECLOS-URE`), so classification runs on both raw and
+    hyphen-stripped copies — but the **hyphen-stripper fuses statutory cites
+    ("40-10-180" → "4010180")**, so patterns must also run on the raw copy.
+    **Site-footer trap**: every detail page ends "...in accordance with the
+    Code of Alabama..." → the bare "code of alabama" tax template would
+    flip EVERY notice to tax_foreclosure; tax signals are strictly the
+    AL statutory set (`tax collecting official / delinquent tax / section
+    40-10 / tax sale / tax lien / tax redemption`), and the shared
+    TN/GA `TAX_FC_PATTERNS` are NOT used. "Delinquent Taxes" category is
+    **seasonal** (empty grid verified 2026-10-22; AL tax-foreclosure
+    notices publish in the spring window) — empty is not an error.
+  - **`ky_publicnotice`** (kypublicnotice.com — **NOT** WebForms: Newz
+    Group CodeIgniter app): plain POST search
+    (`select[name="counties"]`, hidden `page` offset), 5 target counties
+    (`KY_FORECLOSURE_COUNTIES`: bell, harlan, knox, perry, whitley), each
+    notice = a full newspaper-page PDF (`/KYLegals/<year>/<file>`, text
+    layer) whose columns interleave unrelated blocks. Classification is
+    therefore **anchored to the strongest sale marker** (Master
+    Commissioner's sale / judgment+order of sale...) with a ±700-char
+    window; addresses/parcels/dates extract only inside the window.
+    **Trap**: the Master Commissioner's own page cites "right of
+    redemption ... pursuant to KRS 426.530" and a "Commonwealth of
+    Kentucky" caption even on plain mortgage sales — bare those patterns
+    flip mortgage → tax; KY tax signals are limited to `delinquent tax(es)
+    / department of revenue / revenue cabinet / KRS 134 / ...`.
+  - Both scrapers store full notice text as `raw_source_text` and attach
+    **Google-Maps links only** (no parcel service in either state — AL/SC
+    link policy). Both register in `run.py` `SCRAPER_MODULES` and the
+    `run_scraper` per-name branch list; delay ranges (1.5–3.0s) set in
+    `config.DELAY_RANGES`.
+  - **Shared-regex fix flowing to TN/GA too**: `publicnotice_base.ADDRESS_RE`
+    needed **word-boundary-hardened suffix alternation** — the old pattern
+    matched suffixes mid-word ("order of sale" captured "00 and an ord"),
+    which live proved on interleaved KY newspaper columns; directionals and
+    a trailing house number were also added ("Highway 421 South", "Old
+    Highway 5"). AL additionally extracts addresses from labeled clauses
+    ONLY (`commonly known as` etc.) — metes-and-bounds notices yield NULL
+    addresses instead of junk ("1 and 2 of Blackstone Estates", "1944 and
+    which plat is record" were live captures); NC's CKA flow is the model.
+  - 25 new tests in `tests/test_al_ky_publicnotice.py` (classification
+    hyphen/footer/KRS traps, grid skips for bid/Domestic-Relations ads,
+    anchor-window address/parcel/date extraction, county sets); full suite
+    488 pass. Live runs: AL 34 found (24 mortgage + grid-skipped:: 8) then
+    re-verified; KY 8 pages → 1 qualifying Master-Commissioner page.
 
 - **2026-10-20 (Zillow imported from the legacy realestate app)**: Audited
   `~/src/realestate` (the pre-investclosure app) to find the best-performing

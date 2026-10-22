@@ -149,6 +149,28 @@ GAFORECLOSURES_CATEGORIES = _site_env(
     "Tax Sales,Foreclosures,Sheriff's/Marshal's Sales"
 )
 
+# AL public notices (Alabama Press Association) -- alabamapublicnotices.com
+# runs the SAME ASP.NET WebForms platform as TN/GA/NC (verified 2026-10-22:
+# (S(session))/Search.aspx + hdnPKValue grid + Turnstile detail gate). Its
+# Turnstile sitekey is identical to GA's (shared IP-way infrastructure).
+ALFORECLOSURES_BASE_URL = _site_env("ALFORECLOSURES", "BASE_URL", "https://www.alabamapublicnotices.com")
+ALFORECLOSURES_TURNSTILE_SITE_KEY = _site_env(
+    "ALFORECLOSURES", "TURNSTILE_SITE_KEY",
+    "0x4AAAAAADs-xpiU_yrMy8ZY"
+)
+# AL popular-search categories are selected by LABEL (option values are
+# site-intern numeric ids: Foreclosures=3, Delinquent Taxes=33).
+ALFORECLOSURES_CATEGORIES = _site_env(
+    "ALFORECLOSURES", "CATEGORIES",
+    "Foreclosures,Delinquent Taxes"
+)
+
+# KY public notices (Kentucky Press Association / Newz Group) --
+# kypublicnotice.com is a DIFFERENT platform (plain CodeIgniter/PHP search
+# form, no ASP.NET WebForms, no Turnstile): POST /index.php/main/search with
+# counties=<Name>; notice pages are newspaper-page PDFs under KYLegals/.
+KYFORECLOSURES_BASE_URL = _site_env("KYFORECLOSURES", "BASE_URL", "https://kypublicnotice.com")
+
 
 # ---------------------------------------------------------------------------
 # Full qualifying county lists (5-state scope)
@@ -399,6 +421,9 @@ class Config:
             "kania_law": (2.0, 4.0),
             "nc_publicnotice": (1.5, 3.0),
             "tn_publicnotice": (1.5, 3.0),
+            "ga_publicnotice": (1.5, 3.0),
+            "al_publicnotice": (1.5, 3.0),
+            "ky_publicnotice": (1.5, 3.0),
             "zls_nc": (2.0, 4.0),
             "newspaper_notices": (2.0, 4.0),
             "zillow": (2.5, 4.5),
