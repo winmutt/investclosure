@@ -5,6 +5,47 @@ Target set: `TN_FORECLOSURE_COUNTIES` (38 east-TN mountain counties, config.py:2
 ## Key finding
 Most TN counties conduct delinquent-property-tax sales **once a year** (or per court decree), usually run by the **Chancery Court Clerk & Master** (or the **County Trustee** in a few). These sales are published on the county Clerk & Master / Trustee site (often a PDF "Properties for Sale" list) — **not** on tnpublicnotice.com, and the `tn_publicnotice` scraper only reads page 1 of the statewide "Tax Sales" feed, so it misses most annual county-direct sales. Blount County (Clerk & Master, annual June sale, PDF list) is the canonical example.
 
+## County-direct tax-sale scrapers (added 2026-10-22)
+
+Two scrapers now cover the county-direct channel (`tn_publicnotice` still
+only catches whatever the statewide feed carries):
+
+- **`govease.py`** — GovEase (govease.com) is the auction platform that many
+  of our counties sell through (Sullivan, Hawkins, Washington blount-style
+  live links; Anderson/Hamblen/Greene/Johnson/Coffee listed in their C&M
+  pages as "online via GovEase"). The PUBLIC side is the master schedule
+  embedded on govease.com/auctions as a view-awesome-table.com widget
+  (`-MF6O6OFpMxeDFAjyNJg`); rows render in-page: County/City, State,
+  Registration/Pre-Bid/Sale dates+times (CT), Sale Type, Parcel-List link,
+  City. Scraper keeps State=TN rows in the 38 target counties → one
+  `tax_foreclosure` row per auction (sale date + parcel-list URL). First
+  live run 2026-10-22 caught **Sullivan (Judicial + Special Commissioners,
+  11/10/2026) + Hawkins (Redeemable Deed, 11/17/2026) = 3 rows**; Weakley/
+  Hardeman/Maury/Gibson/etc. (non-target) correctly filtered. REAP source:
+  auctions that vanish from the "Live & Upcoming" schedule auto-archive.
+  Per-parcel GovEase data is bidder-login-gated (liveauctions…
+  /auctions shows the "GovEase Log In" page without an account), which is
+  why the counties' PDF lists / tn_publicnotice still matter for the
+  per-property rows.
+- **`tn_county_tax.py`** — Blount County annual sale (Clerk & Master, June,
+  in-person at Heritage High School). Source: DocumentCenter PDF linked on
+  blounttn.gov/2033/Properties-for-Sale ("Properties for Sale (updated
+  <date>) (PDF)", goes up ~1 month pre-sale, updated weekly; e.g. View
+  26596 for Sale 33 / June 4 2026). PDF is a 30+-page scan — OCR via
+  pdftoppm+tesseract (cached per "updated" stamp; fresh stamp triggers re-
+  OCR). Parses page-1 header (sale no, "Date of Sale:", Chancery case
+  "2025-CH-44") and per-parcel blocks ("Parcel No. <pin> … assessed to
+  <owner> … total amount of $X"). June 2026's list was verified parseable
+  live (31 pages, parcels like `06-077N-A-077N-056.00` / `043-001.02`).
+  REAP with `EMPTY_REAP_ALLOWED`: stale ( sale-over) list → successful
+  empty observation → prior sale archived. Rows go in only while the sale
+  date is in the future (no historic rows).
+- Washington County confirms the GovEase pattern (their "Tax Properties for
+  Sale" link = liveauctions.govease.com/tn/tnwashington/1243). Knox
+  (trustee.knoxcounty.org/services/tax-sale, annual in-person June auction)
+  and Hamilton (CivicSource) remain unsourced — watched for future County
+  adapters if the user wants them.
+
 ## tnpublicnotice.com site-wide access (verified 2026-10-18)
 - Grid/search pages work from any egress, but **detail pages are
   IP-gated**: blocked IPs get the IPA page "You are not permitted to view

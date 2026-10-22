@@ -987,6 +987,16 @@ REAP_SOURCES = frozenset({
     "bellcarrington", "logs_nc", "auction_com",
     "buncombe_tax", "haywood_county", "macon_county",
     "mcdowell_county", "ashe_county", "swain_county",
+    "govease", "blount_tax",
+})
+
+# Full-inventory sources whose upstream page STAYS UP with stale content
+# after a sale completes (blount publishes the past list until the next
+# sale): an empty sighting set on a successful scrape therefore means
+# "sale realized — archive everything", not "outage". Never add windowed
+# feed sources here.
+EMPTY_REAP_ALLOWED = frozenset({
+    "blount_tax",
 })
 
 
@@ -1015,7 +1025,10 @@ def reap_missing_listings(
     if not seen_ids and observed_listing_ids is None:
         return 0  # never reap on an empty sighting set (outage safety)
     if observed_listing_ids is not None and not observed_listing_ids:
-        return 0  # scraper saw nothing — no signal, no reap
+        # blount-style sources whose published list survives a completed
+        # sale: a successful scrape observing nothing = everything sold.
+        if source not in EMPTY_REAP_ALLOWED:
+            return 0
     rows = conn.execute(
         "SELECT id, source_listing_id FROM properties"
         " WHERE source = ? AND status = 'active'",

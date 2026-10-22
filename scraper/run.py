@@ -173,6 +173,18 @@ try:
 except ImportError as e:
     logger.warning("mcdowell_county not available: %s", e)
 
+try:
+    from scraper.govease import GovEaseScraper
+    SCRAPER_MODULES["govease"] = GovEaseScraper
+except ImportError as e:
+    logger.warning("govease not available: %s", e)
+
+try:
+    from scraper.tn_county_tax import BlountTaxScraper
+    SCRAPER_MODULES["tn_county_tax"] = BlountTaxScraper
+except ImportError as e:
+    logger.warning("tn_county_tax not available: %s", e)
+
 
 # ---------------------------------------------------------------------------
 # Core run logic
