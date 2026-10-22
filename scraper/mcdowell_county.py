@@ -60,6 +60,10 @@ class McDowellCountyScraper(BaseScraper):
 
     def __init__(self, delay_range: tuple[float, float] = (1.0, 2.0)):
         super().__init__(delay_range=delay_range)
+        # Source-side listing ids observed this run, recorded BEFORE the
+        # pre-insert MIN_ACRES gate can drop rows: a run that saw postings
+        # but inserted none still feeds the redeem/withdrawn reap.
+        self.observed_listing_ids: set[str] = set()
 
     def scrape(self) -> list[PropertyData]:
         logger.info("Fetching McDowell County foreclosure sales ...")
@@ -122,6 +126,7 @@ class McDowellCountyScraper(BaseScraper):
         props: list[PropertyData] = []
         for parcel in parcels:
             lid = f"mcdowell_{parcel}_{(case or 'nocase')}"
+            self.observed_listing_ids.add(lid)
             if kind == "upset":
                 desc = (f"[McDowell Co] UPSET-BID parcel {parcel} — highest bid "
                         f"${price:,.2f}" if price else f"[McDowell Co] UPSET-BID parcel {parcel}")

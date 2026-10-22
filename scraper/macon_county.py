@@ -31,6 +31,10 @@ class MaconCountyScraper(BaseScraper):
 
     def __init__(self, delay_range: tuple[float, float] = (1.0, 2.0)):
         super().__init__(delay_range=delay_range)
+        # Source-side listing ids observed this run, recorded BEFORE the
+        # pre-insert MIN_ACRES gate can drop rows: a run that saw postings
+        # but inserted none still feeds the redeem/withdrawn reap.
+        self.observed_listing_ids: set[str] = set()
 
     def scrape(self) -> list[PropertyData]:
         logger.info("Checking Macon County foreclosure page ...")
@@ -51,6 +55,7 @@ class MaconCountyScraper(BaseScraper):
                     continue
                 for parcel in parcels:
                     lid = f"macon_{parcel}_{cs.content_hash(blob)[:8]}"
+                    self.observed_listing_ids.add(lid)
                     price = cs.parse_money(blob)
                     sale_iso = cs.to_iso_date(blob)
                     case = cs.find_case(blob)

@@ -71,6 +71,10 @@ class AsheCountyScraper(BaseScraper):
 
     def __init__(self, delay_range: tuple[float, float] = (1.0, 2.0)):
         super().__init__(delay_range=delay_range)
+        # Source-side listing ids observed this run, recorded BEFORE the
+        # pre-insert MIN_ACRES gate can drop rows: a run that saw postings
+        # but inserted none still feeds the redeem/withdrawn reap.
+        self.observed_listing_ids: set[str] = set()
 
     def scrape(self) -> list[PropertyData]:
         logger.info("Checking Ashe County pending foreclosures ...")
@@ -124,6 +128,7 @@ class AsheCountyScraper(BaseScraper):
             price = cs.parse_money(bid_raw)
             sale_iso = cs.to_iso_date(sale_raw)
             lid = f"ashe_{parcel}_{cs.content_hash(addr + status)[:8]}"
+            self.observed_listing_ids.add(lid)
             desc = f"[Ashe Co] parcel {parcel} {addr} — {status}"
             if price:
                 desc += f", min bid ${price:,.2f}"

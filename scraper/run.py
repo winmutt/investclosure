@@ -24,6 +24,7 @@ import argparse
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 # Ensure scraper package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -373,13 +374,26 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     _reset_failure_counter(scraper_name)
 
     # Reap listings that vanished from full-inventory sources (redeemed /
-    # sold / withdrawn). Only after a successful non-empty run with rows
-    # actually seen — an empty pull or total insert failure must never
-    # mass-archive.
-    if properties and seen_ids:
+    # sold / withdrawn). Only after a successful run: an empty pull or
+    # total insert failure must never mass-archive. County scrapers whose
+    # candidates can ALL be dropped by the pre-insert MIN_ACRES gate report
+    # observed_listing_ids (source-side) so a run that saw postings but
+    # inserted none still reaps stale rows it would otherwise never touch
+    # (legacy listing ids can never re-match).
+    observed: Optional[set[str]] = None
+    try:
+        observed = getattr(scraper, "observed_listing_ids", None)
+    except NameError:
+        observed = None
+    if observed and not isinstance(observed, set):
+        observed = set(observed)
+    if seen_ids or observed:
         try:
             from scraper.db import reap_missing_listings
-            reaped = reap_missing_listings(conn, scraper_name, seen_ids)
+            reaped = reap_missing_listings(
+                conn, scraper_name, seen_ids,
+                observed_listing_ids=observed,
+            )
             if reaped:
                 print(f"  Redeemed/withdrawn: {reaped} archived "
                       f"(gone from {scraper_name} listings)")

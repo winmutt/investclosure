@@ -225,6 +225,10 @@ class HaywoodCountyScraper(BaseScraper):
 
     def __init__(self, delay_range: tuple[float, float] = (1.0, 2.0)):
         super().__init__(delay_range=delay_range)
+        # Source-side listing ids observed this run, recorded BEFORE the
+        # pre-insert MIN_ACRES gate can drop rows: a run that saw postings
+        # but inserted none still feeds the redeem/withdrawn reap.
+        self.observed_listing_ids: set[str] = set()
 
     def scrape(self) -> list[PropertyData]:
         logger.info("Checking Haywood County bid postings ...")
@@ -304,6 +308,7 @@ class HaywoodCountyScraper(BaseScraper):
             notice_ac = _extract_acreage(notice_text or combined)
 
             lid = f"haywood_bid{bid}"
+            self.observed_listing_ids.add(lid)
             if not (title or desc_text or notice_text):
                 log_raw(
                     self.SOURCE_NAME, listing_id=lid, county=COUNTY,

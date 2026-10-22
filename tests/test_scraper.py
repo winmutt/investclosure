@@ -858,6 +858,68 @@ class TestReapMissingListings:
         ids = self._ids(conn, "hutchens_law")
         assert reap_missing_listings(conn, "nope", ids) == 0
 
+    def test_observed_listing_ids_reap_all_dropped_run(self, conn):
+        """Postings all dropped pre-insert (seen_ids empty) still reap zombies."""
+        _make_prop(conn, "haywood_bid267", 5.0, source="haywood_county")
+        _make_prop(conn, "haywood_legacy_stub", 5.0, source="haywood_county")
+        # run observed bid267 (dropped by the MIN_ACRES gate pre-insert)
+        n = reap_missing_listings(conn, "haywood_county", set(),
+                                  observed_listing_ids={"haywood_bid267"})
+        assert n == 1
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='haywood_legacy_stub'"
+        ).fetchone()["status"] == "archived"
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='haywood_bid267'"
+        ).fetchone()["status"] == "active"
+
+    def test_observed_empty_set_reaps_nothing(self, conn):
+        """Scraper saw nothing on source — outage safety preserved."""
+        _make_prop(conn, "P1", 5.0, source="haywood_county")
+        assert reap_missing_listings(
+            conn, "haywood_county", set(), observed_listing_ids=set()) == 0
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P1'"
+        ).fetchone()["status"] == "active"
+
+    def test_observed_none_keeps_legacy_seen_ids_path(self, conn):
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        _make_prop(conn, "P2", 5.0, source="hutchens_law")
+        seen = self._ids(conn, "hutchens_law")
+        seen.discard(conn.execute(
+            "SELECT id FROM properties WHERE source_listing_id='P2'"
+        ).fetchone()[0])
+        assert reap_missing_listings(
+            conn, "hutchens_law", seen, observed_listing_ids=None) == 1
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P2'"
+        ).fetchone()["status"] == "archived"
+
+    def test_observed_takes_priority_over_seen_ids(self, conn):
+        """With both signals, source-side observed ids decide membership."""
+        _make_prop(conn, "P1", 5.0, source="hutchens_law")
+        _make_prop(conn, "P2", 5.0, source="hutchens_law")
+        seen = self._ids(conn, "hutchens_law")  # both rows seen/inserted
+        n = reap_missing_listings(
+            conn, "hutchens_law", seen,
+            observed_listing_ids={"P1"})  # source-side: only P1 posted
+        assert n == 1
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P2'"
+        ).fetchone()["status"] == "archived"
+        assert conn.execute(
+            "SELECT status FROM properties WHERE source_listing_id='P1'"
+        ).fetchone()["status"] == "active"
+
+    def test_haywood_init_tracks_observed(self):
+        from scraper.haywood_county import HaywoodCountyScraper
+        from scraper.macon_county import MaconCountyScraper
+        from scraper.mcdowell_county import McDowellCountyScraper
+        from scraper.ashe_county import AsheCountyScraper
+        for cls in (HaywoodCountyScraper, MaconCountyScraper,
+                    McDowellCountyScraper, AsheCountyScraper):
+            assert cls().observed_listing_ids == set()
+
 
 class TestScrapeRun:
     """Test scrape run tracking."""

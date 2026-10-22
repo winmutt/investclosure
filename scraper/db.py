@@ -995,24 +995,38 @@ def reap_missing_listings(
     source: str,
     seen_ids: set[int],
     actor: str = "system",
+    observed_listing_ids: Optional[set[str]] = None,
 ) -> int:
     """Archive active ``source`` rows not seen in the latest run.
 
     Removal from a full-inventory listing means redeemed/sold/withdrawn.
     Only call after a SUCCESSFUL run (callers must skip empty/failed runs
     so an outage never mass-archives). Returns the archived count.
+
+    ``observed_listing_ids`` (source-side listing ids the scraper observed
+    this run, including postings later dropped by the pre-insert MIN_ACRES
+    gate) is authoritative when provided — pre-insert-dropped runs must
+    still reap zombies that the old-format rows can't self-heal from
+    (e.g. legacy listing ids in haywood for the same bid posting). When
+    None, membership falls back to the DB-row ids ``seen_ids``.
     """
     if source not in REAP_SOURCES:
         return 0
-    if not seen_ids:
+    if not seen_ids and observed_listing_ids is None:
         return 0  # never reap on an empty sighting set (outage safety)
+    if observed_listing_ids is not None and not observed_listing_ids:
+        return 0  # scraper saw nothing — no signal, no reap
     rows = conn.execute(
-        "SELECT id FROM properties WHERE source = ? AND status = 'active'",
+        "SELECT id, source_listing_id FROM properties"
+        " WHERE source = ? AND status = 'active'",
         (source,),
     ).fetchall()
     reaped = 0
-    for (pid,) in rows:
-        if pid in seen_ids:
+    for pid, lid in rows:
+        if observed_listing_ids is not None:
+            if lid in observed_listing_ids:
+                continue
+        elif pid in seen_ids:
             continue
         if archive_property(
             conn, pid,
