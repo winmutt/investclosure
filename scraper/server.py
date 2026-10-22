@@ -97,6 +97,9 @@ def _row_to_dict(row):
                 d[field] = type_fn(d[field])
             except (ValueError, TypeError):
                 d[field] = None
+    # Templates render price from `prop.price` (cents, like price_cents);
+    # db rows carry only price_cents, so derive it here (0 = no price).
+    d["price"] = d.get("price_cents") or 0
     # Derive map/photo links from coordinates/address so the dashboard can
     # always offer a map + "photo" of the property (legacy rows inserted
     # before maps URLs were stored, e.g. zillow rows).

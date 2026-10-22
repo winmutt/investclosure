@@ -114,14 +114,15 @@ class KaniaLawScraper(BaseScraper):
         return re.sub(KaniaLawScraper._HTML_STRIP, " ", text).strip()
 
     @staticmethod
-    def _price_to_cents(text: str) -> int:
+    def _price_to_dollars(text: str) -> Optional[float]:
+        """Parse a bid string like "$8,700.00" to dollars (PropertyData semantics)."""
         if not text:
-            return 0
+            return None
         clean = re.sub(r"[^\d.]", "", text)
         try:
-            return int(float(clean) * 100)
+            return float(clean) or None
         except (ValueError, TypeError):
-            return 0
+            return None
 
     @staticmethod
     def _clean_date(text: str) -> str:
@@ -142,7 +143,7 @@ class KaniaLawScraper(BaseScraper):
 
         # --- price (openingbid, fallback to currentbid) ---
         bid_text = rec.get("openingbid") or rec.get("currentbid") or ""
-        price_cents = self._price_to_cents(bid_text)
+        price_dollars = self._price_to_dollars(bid_text)
 
         # --- address / city ---
         raw_address = (rec.get("address") or "").strip()
@@ -200,7 +201,7 @@ class KaniaLawScraper(BaseScraper):
             "zip_code": None,
             "latitude": None,
             "longitude": None,
-            "price": price_cents or None,
+            "price": price_dollars,
             "acres": acres,
             "acres_source": "placeholder",
             "description": description,

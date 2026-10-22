@@ -370,7 +370,7 @@ class NCPublicNoticeScraper(PublicNoticeScraper):
             zip_code=None,
             latitude=None,
             longitude=None,
-            price=1,
+            price=None,
             acres=acres,
             description=notice[:2000],
             property_type=kind,

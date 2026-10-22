@@ -235,14 +235,15 @@ class ZLSNCScraper(BaseScraper):
         return m.group(1).capitalize() if m else None
 
     @staticmethod
-    def _parse_price(t: str) -> Optional[int]:
+    def _parse_price(t: str) -> Optional[float]:
+        """Parse a bid string into dollars (PropertyData semantics)."""
         if not t or t.strip().lower() in ("n/a", "not yet set"):
             return None
         c = re.sub(r'[^\d.]', '', t)
         if not c:
             return None
         try:
-            return int(float(c) * 100)
+            return float(c) or None
         except (ValueError, TypeError):
             return None
 

@@ -4,7 +4,7 @@ Tests:
 - config.py: Config class, helper functions, county lists, GIS URLS
 - db.py: CRUD, dedup, archive, scrape runs, stats, migrations
 - base.py: PropertyData, parser helpers
-- kania_law.py: _clean_html, _price_to_cents, _clean_date, _parse_record
+- kania_law.py: _clean_html, _price_to_dollars, _clean_date, _parse_record
 - zls_nc.py: _extract_county, _parse_price, _desc, _get_gis_url, _gm
 - nc_gis_lookup.py: _clean_features, _county_matches, _normalize_address
 - gis_urls.py: get_gis_viewer_url
@@ -1115,25 +1115,25 @@ class TestKaniaLawParsing:
         result = self._make_scraper()._clean_html("plain text")
         assert result == "plain text"
 
-    def test_price_to_cents_simple(self):
-        result = self._make_scraper()._price_to_cents("$25,000.00")
-        assert result == 2500000
+    def test_price_to_dollars_simple(self):
+        result = self._make_scraper()._price_to_dollars("$25,000.00")
+        assert result == 25000.0
 
-    def test_price_to_cents_without_dollar(self):
-        result = self._make_scraper()._price_to_cents("15000.50")
-        assert result == 1500050
+    def test_price_to_dollars_without_dollar(self):
+        result = self._make_scraper()._price_to_dollars("15000.50")
+        assert result == 15000.50
 
-    def test_price_to_cents_empty(self):
-        result = self._make_scraper()._price_to_cents("")
-        assert result == 0
+    def test_price_to_dollars_empty(self):
+        result = self._make_scraper()._price_to_dollars("")
+        assert result is None
 
-    def test_price_to_cents_none(self):
-        result = self._make_scraper()._price_to_cents(None)
-        assert result == 0
+    def test_price_to_dollars_none(self):
+        result = self._make_scraper()._price_to_dollars(None)
+        assert result is None
 
-    def test_price_to_cents_with_commas(self):
-        result = self._make_scraper()._price_to_cents("$1,234,567.89")
-        assert result == 123456788
+    def test_price_to_dollars_with_commas(self):
+        result = self._make_scraper()._price_to_dollars("$1,234,567.89")
+        assert result == 1234567.89
 
     def test_clean_date_simple(self):
         result = self._make_scraper()._clean_date("2026-01-15")
@@ -1173,7 +1173,7 @@ class TestKaniaLawParsing:
         assert prop["source"] == "kania_law"
         assert prop["county"] == "Ashe"
         assert prop["state"] == "NC"
-        assert prop["price"] == 2500000
+        assert prop["price"] == 25000.0
         assert prop["acres"] is None
         assert prop["description"] is not None
         assert "Sale: 2026-02-01" in prop["description"]
@@ -1228,7 +1228,7 @@ class TestZLSNCStaticMethods:
 
     def test_parse_price_simple(self):
         result = ZLSNCScraper._parse_price("$25,000.00")
-        assert result == 2500000
+        assert result == 25000.0
 
     def test_parse_price_n_a(self):
         result = ZLSNCScraper._parse_price("N/A")

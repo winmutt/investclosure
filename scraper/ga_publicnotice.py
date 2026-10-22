@@ -394,7 +394,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 "zip_code": None,
                 "latitude": None,
                 "longitude": None,
-                "price": 1,
+                "price": None,
                 "acres": acres,
                 "description": desc,
                 "property_type": kind,
