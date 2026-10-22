@@ -15,6 +15,9 @@ from scraper.newspaper_notices import (
     _classify_newspaper_notice,
     _is_mortgage_notice,
     _is_tax_foreclosure_notice,
+    _is_hoa_assessment_lien_notice,
+    _extract_auction_date,
+    extract_newspaper_address,
 )
 from scraper.rawlog import log_raw
 
@@ -90,15 +93,67 @@ class TestClassifyNcNotice:
             "for default in payment of the indebtedness"
         ) == "mortgage_foreclosure"
 
-    def test_both_signals_dropped(self):
+    def test_both_signals_strong_tax_wins(self):
+        # A genuine tax sale conducted by a trustee still quotes deed-of-trust
+        # machinery; the STRONG "tax foreclosure" signal keeps it on Tax.
         assert _classify_nc_notice(
             "tax foreclosure sale by Substitute Trustee under Deed of Trust"
-        ) is None
+        ) == "tax_foreclosure"
+
+    def test_both_signals_weak_tax_goes_to_mtg(self):
+        # Mortgage machinery + only a weak tax mention (surviving-lien style
+        # "delinquent tax") is a bank sale, not a tax sale: Mtg tab, not drop.
+        assert _classify_nc_notice(
+            "NOTICE OF SUBSTITUTE TRUSTEE'S SALE under Deed of Trust; the "
+            "property is subject to any delinquent tax of record"
+        ) == "mortgage_foreclosure"
 
     def test_neither_signal_dropped(self):
         assert _classify_nc_notice(
             "NOTICE OF HOA ASSESSMENT LIEN for unpaid association dues"
         ) is None
+
+
+class TestSharedClassifierTiebreak:
+    """publicnotice_base (TN/GA) dual-signal tiebreak: strong tax wins, else
+    mortgage to Mtg -- never a silent drop, never mis-tabbed."""
+
+    def test_strong_tax_with_trustee_is_tax(self):
+        from scraper.publicnotice_base import PublicNoticeScraper as P
+        text = ("T.C.A. 67-5 NOTICE OF DELINQUENT TAX SALE by the Substitute "
+                "Trustee, the County Trustee being the lienholder")
+        assert P._is_tax_foreclosure(text) is True
+        assert P._is_mortgage_foreclosure(text) is False
+
+    def test_weak_tax_aside_mortgage_not_dropped(self):
+        from scraper.publicnotice_base import PublicNoticeScraper as P
+        text = ("NOTICE OF SUBSTITUTE TRUSTEE'S SALE under a Deed of Trust. "
+                "Property may be subject to a prior tax sale of record.")
+        assert P._is_tax_foreclosure(text) is False
+        assert P._is_mortgage_foreclosure(text) is True
+
+    def test_surviving_lien_boilerplate_stripped(self):
+        from scraper.publicnotice_base import PublicNoticeScraper as P
+        text = ("NOTICE OF SALE under Deed of Trust; the sale will be made "
+                "subject to all prior sales and releases and to all deeds of "
+                "trust, liens, unpaid taxes, restrictions, easements, "
+                "assessments, leases, and other matters of record, if any.")
+        assert P._is_tax_foreclosure(text) is False
+        assert P._is_mortgage_foreclosure(text) is True
+
+    def test_ga_tax_sale_with_power_of_sale_is_tax(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper as G
+        text = ("NOTICE OF TAX SALE for the purpose of levying delinquent "
+                "taxes pursuant to the County Tax Sale law, said property to "
+                "be sold under power of sale.")
+        assert G._is_tax_foreclosure(text) is True
+
+    def test_ga_bank_power_of_sale_stays_mtg(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper as G
+        text = ("SALE UNDER POWER OF SALE under that certain Security Deed. "
+                "Sale subject to ad valorem taxes for the current year.")
+        assert G._is_tax_foreclosure(text) is False
+        assert G._is_mortgage_foreclosure(text) is True
 
 
 class TestMortgageKindTagging:
@@ -457,6 +512,81 @@ class TestNewspaperMortgageClassification:
                 "sale made subject to all prior liens, unpaid taxes of record")
         assert _is_tax_foreclosure_notice(text) is False
         assert _classify_newspaper_notice(text) is None
+
+
+class TestNewspaperHoaAndAddress:
+    """HOA/assessment liens off the Tax tab; 'Property address:' extraction."""
+
+    HOA_NOTICE = (
+        "STATE OF NORTH CAROLINA JACKSON COUNTY IN THE GENERAL COURT OF "
+        "JUSTICE BEFORE THE CLERK 25SP000352-490 IN RE: FORECLOSURE OF A "
+        "LIEN HELD BY RIVER RUN II TOWNHOUSE ASSOCIATION, INC., FOR PAST DUE "
+        "ASSESSMENTS UPON 232 RIVER RUN, UNIT 1903 SAPPHIRE, NORTH CAROLINA "
+        "NOTICE OF FORECLOSURE SALE OF REAL ESTATE. Foreclosure of Lien filed "
+        "with the Clerk of Superior Court. Under and by virtue of the power "
+        "and authority contained in that certain Declaration of Covenants, "
+        "Conditions and Restrictions for River Run II Townhouse Association, "
+        "Inc. Property address: 232 River Run, Unit 1903, Sapphire, NC 28774. "
+        "Present Owner(s): Shanequa J Elliott. The sale will be made subject "
+        "to all prior sales and releases and to all deeds of trust, liens, "
+        "unpaid taxes, restrictions, easements, assessments, leases, and "
+        "other matters of record, if any. Pursuant to N.C.G.S 45-21.10(b) "
+        "expose for sale at public auction on October 29, 2026 at 2:30 PM."
+    )
+
+    def test_hoa_assessment_lien_is_not_tax(self):
+        assert _is_tax_foreclosure_notice(self.HOA_NOTICE) is False
+        assert _is_hoa_assessment_lien_notice(self.HOA_NOTICE) is True
+
+    def test_hoa_assessment_lien_goes_to_mtg_tab(self):
+        assert _classify_newspaper_notice(self.HOA_NOTICE) == "mortgage_foreclosure"
+
+    def test_surviving_lien_boilerplate_is_not_a_tax_signal(self):
+        # The boilerplate aside alone must never qualify a notice as a tax
+        # sale (it lists SURVIVING liens; #827 hit the Tax tab via it).
+        text = ("NOTICE OF SALE. The sale will be made subject to all prior "
+                "sales and releases and to all deeds of trust, liens, unpaid "
+                "taxes, restrictions, easements, assessments, leases, and "
+                "other matters of record, if any.")
+        assert _is_tax_foreclosure_notice(text) is False
+
+    def test_genuine_tax_sale_still_wins_with_boilerplate(self):
+        text = ("NOTICE OF FORECLOSURE SALE to satisfy unpaid property taxes "
+                "under NCGS Chapter 105. The sale will be made subject to all "
+                "prior sales and releases and to all deeds of trust, liens, "
+                "unpaid taxes, restrictions, easements, assessments, leases, "
+                "and other matters of record, if any.")
+        assert _is_tax_foreclosure_notice(text) is True
+        assert _classify_newspaper_notice(text) == "public_notice"
+
+    def test_property_address_format_extracts_street_city_zip(self):
+        addr, city, zip_code = extract_newspaper_address(
+            "the following described real property Property address: "
+            "232 River Run, Unit 1903, Sapphire, NC 28774. Present Owner(s): "
+            "Jane Doe. The sale will be made", "Jackson")
+        assert addr == "232 River Run, Unit 1903"
+        assert city == "Sapphire"
+        assert zip_code == "28774"
+
+    def test_property_address_road_not_treated_as_city(self):
+        addr, city, zip_code = extract_newspaper_address(
+            "Property address: 5 Creek Ridge Road, NC 28712.", "Jackson")
+        assert addr == "5 Creek Ridge Road"
+        assert city is None
+        assert zip_code == "28712"
+
+    def test_property_address_without_zip_state_spelled(self):
+        addr, city, zip_code = extract_newspaper_address(
+            "Property address: 5 Bear Paw Trail, Sapphire, North Carolina "
+            "Subject to the foregoing", "Jackson")
+        assert addr == "5 Bear Paw Trail"
+        assert city == "Sapphire"
+        assert zip_code is None
+
+    def test_sale_date_preferred_over_publication_date(self):
+        assert _extract_auction_date(
+            "expose for sale at public auction on October 29, 2026 at 2:30 PM"
+        ) == "2026-10-29"
 
 
 class TestGisLinkRouting:

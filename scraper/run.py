@@ -375,6 +375,19 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     except Exception as e:
         logger.warning("TN enrich failed: %s", e)
 
+    # Auto-enrich Knox County (TN) rows: TNMap's statewide layer has ZERO
+    # Knox parcels (flagged disabled upstream), so TNMap can never match
+    # them there — KGIS is the parcel source there. No-op when no active
+    # Knox rows lack links.
+    try:
+        from scraper.kgis_enrich import enrich_db as enrich_kgis
+        kx_result = enrich_kgis()
+        if kx_result.get("enriched"):
+            print(f"  Knox KGIS: {kx_result['enriched']} enriched, "
+                  f"{kx_result.get('unmatched', 0)} unmatched")
+    except Exception as e:
+        logger.warning("Knox KGIS enrich failed: %s", e)
+
     # Auto-enrich GA rows lacking acreage from county qPublic reports
     # (camoufox page loads; plain HTTP is Cloudflare-403).
     if scraper_name == "ga_publicnotice":

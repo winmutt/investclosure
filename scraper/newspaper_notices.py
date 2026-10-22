@@ -108,7 +108,8 @@ _MORTGAGE_SALE_RE = re.compile(
     r"trustee'?s?\s+sale|power\s+of\s+sale|"
     r"foreclosure\s+of\s+a\s+deed|notice\s+of\s+trustee'?s?\s+sale|"
     r"pursuant\s+to\s+(?:a\s+|the\s+)?deed\s+of\s+trust|"
-    r"holder\s+of\s+the\s+(?:note|deed)",
+    r"holder\s+of\s+the\s+(?:note|deed)|"
+    r"\b45-21\b",
     re.IGNORECASE,
 )
 
@@ -164,6 +165,55 @@ _MISC_FILING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Surviving-lien boilerplate that EVERY NC power-of-sale notice recites
+# ("The sale will be made subject to all prior sales and releases and to all
+# deeds of trust, liens, unpaid taxes, restrictions, easements, assessments,
+# leases, and other matters of record, if any."). Stripped before tax/mortgage
+# classification: the "unpaid taxes" in this aside is NOT a tax-sale signal
+# (it lists liens that SURVIVE the sale), and it caused an HOA assessment-lien
+# foreclosure (#827, River Run II Townhouse Association) to be filed on the
+# Tax tab.
+_SURVIVING_LIEN_BOILERPLATE_RE = re.compile(
+    r"subject\s+to\s+all\s+prior\s+sales\s+and\s+releases\b.*?"
+    r"(?:matters\s+of\s+record(?:,\s*if\s+any)?)[.\s]*",
+    re.IGNORECASE,
+)
+
+# HOA / condominium / planned-community assessment-lien foreclosures. An
+# association foreclosing its dues lien is a private lien sale (power-of-sale
+# under the declaration, NCGS 45-21), never a county tax sale — it belongs on
+# the Mtg tab with the other lien sales, never on the Tax tab. Requires an
+# association/condo entity signal AND a dues/lien-foreclosure signal so a
+# genuine tax sale describing a condo unit stays tax.
+_HOA_ENTITY_RE = re.compile(
+    r"homeowner[s]?['\u2019]?\s+association|home\s+owner[s]?\s+association|"
+    r"property\s+owner[s]?\s+association|townhouse\s+association|"
+    r"townhome\s+association|condominium\s+association|\bcondo\b|"
+    r"planned\s+community|\bhoa\b|\bassociation\b",
+    re.IGNORECASE,
+)
+_HOA_LIEN_RE = re.compile(
+    r"past[\s\-]?due\s+assessments?|delinquent\s+assessments?|"
+    r"foreclos\w*\s+of\s+(?:a\s+)?lien\b|lien\s+held\s+by|"
+    r"declaration\s+of\s+covenants",
+    re.IGNORECASE,
+)
+
+
+def _strip_boilerplate(text: str) -> str:
+    """Remove surviving-lien boilerplate so its 'unpaid taxes' aside cannot
+    masquerade as a tax-sale signal."""
+    if not text:
+        return ""
+    return _SURVIVING_LIEN_BOILERPLATE_RE.sub(" ", text)
+
+
+def _is_hoa_assessment_lien_notice(text: str) -> bool:
+    """True for HOA/condominium/planned-community assessment-lien foreclosures."""
+    if not text:
+        return False
+    return bool(_HOA_ENTITY_RE.search(text) and _HOA_LIEN_RE.search(text))
+
 
 def _is_tax_foreclosure_notice(text: str) -> bool:
     """Return True only for a genuine NC property-tax foreclosure / sale notice.
@@ -181,13 +231,15 @@ def _is_tax_foreclosure_notice(text: str) -> bool:
     """
     if not text:
         return False
-    low = text.lower()
+    low = _strip_boilerplate(text).lower()
     # Reject deed-of-trust / mortgage foreclosures — these are loan defaults
     # sold to satisfy a debt, not unpaid property taxes.  But a notice with
     # STRONG tax-sale language (NCGS Chapter 105, "tax foreclosure", "satisfy
     # unpaid taxes") is a genuine tax sale even when a substitute trustee
     # conducts it — only a bare "unpaid taxes" surviving-lien aside in a bank
     # sale still rejects.
+    if _is_hoa_assessment_lien_notice(low) and not _STRONG_TAX_RE.search(low):
+        return False
     if _MORTGAGE_SALE_RE.search(low) and not _STRONG_TAX_RE.search(low):
         return False
     if _PROBATE_RE.search(low) and not _TAX_SALE_RE.search(low):
@@ -210,7 +262,7 @@ def _is_mortgage_notice(text: str) -> bool:
     """
     if not text:
         return False
-    low = text.lower()
+    low = _strip_boilerplate(text).lower()
     if _STRONG_TAX_RE.search(low):
         return False
     return (_MORTGAGE_SALE_RE.search(low) is not None
@@ -219,10 +271,18 @@ def _is_mortgage_notice(text: str) -> bool:
 
 def _classify_newspaper_notice(text: str) -> Optional[str]:
     """Classify a newspaper notice: ``public_notice`` (tax),
-    ``mortgage_foreclosure`` (bank sale for the Mtg tab), or None (drop)."""
+    ``mortgage_foreclosure`` (bank/lien sale for the Mtg tab), or None (drop).
+
+    HOA/condominium assessment-lien sales are private lien sales, never tax
+    sales, so they are routed to the Mtg tab even when the notice omits the
+    usual deed-of-trust language (they run under the declaration's power of
+    sale instead).
+    """
     if _is_tax_foreclosure_notice(text):
         return "public_notice"
     if _is_mortgage_notice(text):
+        return "mortgage_foreclosure"
+    if _is_hoa_assessment_lien_notice(_strip_boilerplate(text or "")):
         return "mortgage_foreclosure"
     return None
 
@@ -307,9 +367,12 @@ def _extract_notice_address(text: str, county: str = "") -> Optional[str]:
     Handles the formats seen across feeds:
       "Address of Property: 328 Wooten Cove Rd."  (Citizen-Times)
       "ADDRESS: 206 ALICIA DR MARSHALL, NC 28753"  (BlueRidgeNow/Gannett)
+      "Property address: 232 River Run, Unit 1903, Sapphire, NC 28774."
+          (Sylva Herald / BLOX one-line bodies)
       "COMMONLY KNOWN AS: 206 ALICIA DRIVE, MARSHALL, NC 28753"
-    The bare "ADDRESS:"/known-as forms require a house number + NC token so
-    road-alias clauses ("also known as Bristol Avenue") stay rejected.
+    The bare "ADDRESS:"/"known-as"/"Property address:" forms require a house
+    number + NC token so road-alias clauses ("also known as Bristol Avenue")
+    stay rejected.
     """
     from .courthouses import is_courthouse_address
     m = re.search(r"Address\s+of\s+(?:the\s+)?Property\s*:?\s*([^\n]+)", text, re.IGNORECASE)
@@ -324,6 +387,22 @@ def _extract_notice_address(text: str, county: str = "") -> Optional[str]:
         if addr and re.search(r"\d", addr) and re.search(r"\bNC\b", addr, re.IGNORECASE) \
                 and not is_courthouse_address(addr, county, "NC"):
             return addr
+    # "Property address: 232 River Run, Unit 1903, Sapphire, NC 28774" —
+    # BLOX detail pages are one long line, so the capture must end at the
+    # state token (optionally + ZIP), not at end-of-line.
+    m = re.search(
+        r"[Pp]roperty\s+(?:address|site|premises)\s*[:#]?\s*"
+        r"(\d[\w\s.,#'\-]{3,90}?\bN(?:orth)?\.?\s*C(?:arolina)?\.?,?\s*\d{5})",
+        text)
+    if not m:
+        m = re.search(
+            r"[Pp]roperty\s+(?:address|site|premises)\s*[:#]?\s*"
+            r"(\d[\w\s.,#'\-]{3,90}?,?\s*N(?:orth)?\.?\s*C(?:arolina)?\.?)(?![A-Za-z])",
+            text)
+    if m:
+        addr = re.sub(r"\s+", " ", m.group(1)).strip(" .,")
+        if addr and not is_courthouse_address(addr, county, "NC"):
+            return addr
     m = re.search(
         r"(?:commonly|also)\s+known\s+as\s*:?\s*"
         r"(\d[\w\s.,\-#']{4,90}?[,\s]\s*N(?:orth)?\s*C(?:arolina)?\.?(?:,?\s*\d{5})?)",
@@ -333,6 +412,49 @@ def _extract_notice_address(text: str, county: str = "") -> Optional[str]:
         if addr and not is_courthouse_address(addr, county, "NC"):
             return addr
     return None
+
+
+_ROAD_WORD_RE = re.compile(
+    r"\b(?:road|rd|street|st|avenue|ave|blvd|hwy|highway|route|lane|ln|"
+    r"drive|dr|circle|cir|ct|court|way|trail|trl|pl|place|ter|cres|sq|"
+    r"loop|run|gap|crest|point|pt|loop)\b",
+    re.IGNORECASE,
+)
+
+_UNIT_WORD_RE = re.compile(r"\b(?:unit|apt|ste|suite|lot|tract|lot|unit)\b", re.IGNORECASE)
+
+
+def extract_newspaper_address(text: str, county: str = "") -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Return ``(street, city, zip_code)`` for a notice's property address.
+
+    Splits "232 River Run, Unit 1903, Sapphire, NC 28774" into
+    ``('232 River Run, Unit 1903', 'Sapphire', '28774')``. The city is only
+    returned when the address tail parses as ", <Town>, NC <zip>" and the
+    candidate city word contains no road-suffix word (so "Creek Ridge Road"
+    is never treated as a city).
+    """
+    addr = _extract_notice_address(text or "", county)
+    if not addr:
+        return None, None, None
+    zip_code = None
+    rest = addr
+    zm = re.search(r",?\s*(\d{5})(?:-\d{4})?\s*$", addr)
+    if zm:
+        zip_code = zm.group(1)
+        rest = addr[:zm.start()].rstrip(" ,")
+    st_m = re.search(r",?\s*N(?:orth)?\.?\s*C(?:arolina)?\.?\s*$", rest, re.IGNORECASE)
+    if st_m:
+        rest = rest[:st_m.start()].rstrip(" ,")
+    city = None
+    street = rest
+    cm = re.search(r",\s*([^,]+)$", rest)
+    if cm:
+        cand = cm.group(1).strip()
+        if cand and not _ROAD_WORD_RE.search(cand) and not _UNIT_WORD_RE.search(cand):
+            city = cand
+            street = rest[:cm.start()].rstrip(" ,")
+    return (street or None), city, zip_code
+
 
 
 def _extract_auction_date(text: str) -> Optional[str]:
@@ -454,7 +576,8 @@ def _try_gannett_api(api_url: str, site_url: str, state_file: str,
                     case = scraper._extract_court_case(text)
                     pin = scraper._extract_pin(text)
                     deed_plat = scraper._extract_deed_plat(text)
-                    addr = _extract_notice_address(text, county or "")
+                    addr, addr_city, addr_zip = extract_newspaper_address(
+                        text, county or "")
                     auction = _extract_auction_date(text)
                     if auction is None:
                         auction = src.get("date_start")
@@ -477,10 +600,10 @@ def _try_gannett_api(api_url: str, site_url: str, state_file: str,
                         "raw_paragraph": text,
                         "url": site_url + "/",
                         "address": addr,
-                        "city": None,
+                        "city": addr_city,
                         "county": county.title(),
                         "state": "NC",
-                        "zip_code": None, "latitude": None, "longitude": None,
+                        "zip_code": addr_zip, "latitude": None, "longitude": None,
                         "price": None, "acres": None,
                         "description": f"[{label}] {' -- '.join(parts)}",
                         "property_type": kind, "image_url": None,
@@ -811,6 +934,11 @@ class NewspaperNoticesScraper(BaseScraper):
                 logger.info("TT %s skipped (not a tax/mortgage notice)", c["href"][:40])
                 continue
             ad_id = c["href"].split("/")[-1] if "/" in c["href"] else f"tt_skip"
+            detail_text = detail.get("raw_text") or ""
+            addr, addr_city, addr_zip = extract_newspaper_address(
+                detail.get("raw_text") or "", "Transylvania")
+            auction = _extract_auction_date(detail.get("raw_text") or "") \
+                or (c["posted"] or None)
             desc = f"[Transylvania Times] {base_title}"
             if c["posted"]:
                 desc += f" -- {c['posted']}"
@@ -824,13 +952,14 @@ class NewspaperNoticesScraper(BaseScraper):
                 "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"tt_{ad_id}",
                 "url": d_url,
-                "address": None, "city": "Brevard", "county": "Transylvania", "state": "NC",
-                "zip_code": None, "latitude": None, "longitude": None,
+                "address": addr, "city": addr_city or "Brevard",
+                "county": "Transylvania", "state": "NC",
+                "zip_code": addr_zip, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
                 "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
-                "auction_date": c["posted"] or None, "close_date": None,
+                "auction_date": auction, "close_date": None,
             })
             log_raw("newspaper_notices", listing_id=f"tt_{ad_id}",
                     county="Transylvania", state="NC",
@@ -885,6 +1014,10 @@ class NewspaperNoticesScraper(BaseScraper):
                         raw_text=detail.get("raw_text") or "", url=d_url)
                 logger.info("WD %s skipped (not a tax/mortgage notice)", c['slug'])
                 continue
+            addr, addr_city, addr_zip = extract_newspaper_address(
+                detail.get("raw_text") or "", "Watauga")
+            auction = _extract_auction_date(detail.get("raw_text") or "") \
+                or c["date"]
             desc = f"[Watauga Democrat] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
@@ -898,13 +1031,14 @@ class NewspaperNoticesScraper(BaseScraper):
                 "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"wd_{c['uuid']}",
                 "url": d_url,
-                "address": None, "city": "Boone", "county": "Watauga", "state": "NC",
-                "zip_code": None, "latitude": None, "longitude": None,
+                "address": addr, "city": addr_city or "Boone",
+                "county": "Watauga", "state": "NC",
+                "zip_code": addr_zip, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
                 "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
-                "auction_date": c["date"], "close_date": None,
+                "auction_date": auction, "close_date": None,
             })
             log_raw("newspaper_notices", listing_id=f"wd_{c['uuid']}",
                     county="Watauga", state="NC",
@@ -965,6 +1099,8 @@ class NewspaperNoticesScraper(BaseScraper):
             desc = f"[Sylva Herald] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
+            addr, addr_city, addr_zip = extract_newspaper_address(raw_text, "Jackson")
+            auction = _extract_auction_date(raw_text) or c["date"]
             properties.append({
                 "source": "newspaper_notices",
                 "court_case": detail.get("court_case"),
@@ -975,13 +1111,14 @@ class NewspaperNoticesScraper(BaseScraper):
                 "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"sh_{c['uid']}",
                 "url": d_url,
-                "address": None, "city": "Sylva", "county": "Jackson", "state": "NC",
-                "zip_code": None, "latitude": None, "longitude": None,
+                "address": addr, "city": addr_city or "Sylva",
+                "county": "Jackson", "state": "NC",
+                "zip_code": addr_zip, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
                 "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
-                "auction_date": c["date"], "close_date": None,
+                "auction_date": auction, "close_date": None,
             })
             log_raw("newspaper_notices", listing_id=f"sh_{c['uid']}",
                     county="Jackson", state="NC",
@@ -1038,6 +1175,10 @@ class NewspaperNoticesScraper(BaseScraper):
             desc = f"[Mitchell News] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
+            addr, addr_city, addr_zip = extract_newspaper_address(
+                detail.get("raw_text") or "", "Mitchell")
+            auction = _extract_auction_date(detail.get("raw_text") or "") \
+                or c["date"]
             properties.append({
                 "source": "newspaper_notices",
                 "court_case": detail.get("court_case"),
@@ -1048,13 +1189,14 @@ class NewspaperNoticesScraper(BaseScraper):
                 "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"mn_{c['uid']}",
                 "url": url,
-                "address": None, "city": "Spruce Pine", "county": "Mitchell", "state": "NC",
-                "zip_code": None, "latitude": None, "longitude": None,
+                "address": addr, "city": addr_city or "Spruce Pine",
+                "county": "Mitchell", "state": "NC",
+                "zip_code": addr_zip, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
                 "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
-                "auction_date": c["date"], "close_date": None,
+                "auction_date": auction, "close_date": None,
             })
             log_raw("newspaper_notices", listing_id=f"mn_{c['uid']}",
                     county="Mitchell", state="NC",
@@ -1117,6 +1259,10 @@ class NewspaperNoticesScraper(BaseScraper):
             desc = f"[Avery Journal] {base_title}"
             if c["date"]:
                 desc += f" -- {c['date']}"
+            addr, addr_city, addr_zip = extract_newspaper_address(
+                detail.get("raw_text") or "", "Avery")
+            auction = _extract_auction_date(detail.get("raw_text") or "") \
+                or c["date"]
             properties.append({
                 "source": "newspaper_notices",
                 "court_case": detail.get("court_case"),
@@ -1127,13 +1273,14 @@ class NewspaperNoticesScraper(BaseScraper):
                 "raw_paragraph": detail.get("raw_text"),
                 "source_listing_id": f"aj_{c['uuid']}",
                 "url": d_url,
-                "address": None, "city": "Newland", "county": "Avery", "state": "NC",
-                "zip_code": None, "latitude": None, "longitude": None,
+                "address": addr, "city": addr_city or "Newland",
+                "county": "Avery", "state": "NC",
+                "zip_code": addr_zip, "latitude": None, "longitude": None,
                 "price": None, "acres": None,
                 "description": desc,
                 "property_type": kind, "image_url": None,
                 "parcel_number": detail["parcel"],
-                "auction_date": c["date"], "close_date": None,
+                "auction_date": auction, "close_date": None,
             })
             log_raw("newspaper_notices", listing_id=f"aj_{c['uuid']}",
                     county="Avery", state="NC",

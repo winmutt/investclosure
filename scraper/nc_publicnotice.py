@@ -127,6 +127,19 @@ _TAX_RE = re.compile(
     r"delinquent\s+ad\s+valorem",
     re.IGNORECASE,
 )
+# Authoritative tax signals used to break a tax/mortgage dual-signal tie
+# (a real Chapter-105 tax sale conducted by a trustee still quotes deed-of-
+# trust machinery; a bare surviving-lien tax mention is not enough).
+_STRONG_TAX_RE = re.compile(
+    r"chapter\s+105|\bgs\s*105\b|ncgs\s+105|"
+    r"foreclosure\s+sale\s+to\s+satisfy\s+unpaid|"
+    r"satisfy\s+unpaid\s+(?:property\s+)?taxes|"
+    r"in\s+rem\s+foreclosure|"
+    r"delinquent\s+property\s+taxes|"
+    r"\btax\s+foreclosure\b|"
+    r"delinquent\s+ad\s+valorem",
+    re.IGNORECASE,
+)
 
 
 def _row_county(text: str) -> Optional[str]:
@@ -240,7 +253,7 @@ def _is_tax_foreclosure(notice: str) -> bool:
     """Return True only for genuine tax-foreclosure sale notices (NC)."""
     if not _TAX_RE.search(notice or ""):
         return False
-    if _MORTGAGE_RE.search(notice or ""):
+    if _MORTGAGE_RE.search(notice or "") and not _STRONG_TAX_RE.search(notice or ""):
         return False
     return True
 
@@ -248,16 +261,20 @@ def _is_tax_foreclosure(notice: str) -> bool:
 def _classify_nc_notice(notice: str) -> Optional[str]:
     """Classify an NC notice as tax sale, mortgage sale, or neither (drop).
 
-    Tax requires positive tax-sale language with no mortgage signal;
-    mortgage-only notices (deed-of-trust / substitute-trustee sales) are kept
-    for the Mtg tab; HOA/assessment/other liens (neither signal) are dropped.
+    Tax requires positive tax-sale language; a notice that ALSO carries
+    mortgage language is tax only when it has STRONG tax-sale language
+    (Chapter 105, "satisfy unpaid taxes", in-rem...), otherwise the mortgage
+    signal wins and the notice goes to the Mtg tab. Mortgage-only notices
+    (deed-of-trust / substitute-trustee sales) are kept for the Mtg tab;
+    HOA/assessment/other liens (neither signal) are dropped.
     """
     text = notice or ""
     has_tax = _TAX_RE.search(text) is not None
     has_mortgage = _MORTGAGE_RE.search(text) is not None
-    if has_tax and not has_mortgage:
+    strong_tax = _STRONG_TAX_RE.search(text) is not None
+    if has_tax and (strong_tax or not has_mortgage):
         return "tax_foreclosure"
-    if has_mortgage and not has_tax:
+    if has_mortgage and not (has_tax and _STRONG_TAX_RE.search(text)):
         return "mortgage_foreclosure"
     return None
 

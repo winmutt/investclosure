@@ -200,20 +200,49 @@ TAX_FC_PATTERNS = [
 ]
 
 # Strong, authoritative tax-sale signals. A notice that ALSO reads as a
-# mortgage/deed-of-trust (bank) sale must carry one of THESE to be accepted as
-# a genuine tax foreclosure -- a bare "T.C.A. 67" reference or "delinquent tax"
-# aside is not enough (e.g. a substitute-trustee deed-of-trust sale that merely
-# mentions taxes in its default language).
+# mortgage/deed-of-trust (bank) sale must carry one of THESE to count as a
+# genuine tax foreclosure; without one, a dual-signal notice is a mortgage
+# (lien) sale going to the Mtg tab, not a tax sale -- and never a total drop
+# (a bare "tax sale"/"delinquent tax" aside in a bank notice is NOT enough to
+# make it a tax sale, but also must not destroy a genuine tax sale that
+# quotes a deed of trust as a surviving lien).
 STRONG_TAX_FC_PATTERNS = [
     r"county\s+trustee",
     r"delinquent\s+property\s+taxes",
     r"delinquent\s+tax\s+sale",
-    r"tax\s+sale",
     r"for\s+delinquent\s+taxes",
     r"t\.?c\.?a\.?\s*[§]?\s*67-5",
     r"tennessee\s+code\s+annotated\s*[§]?\s*67-5",
     r"section\s+67-5",
+    r"chapter\s+105|\bgs\s*105\b|ncgs\s+105",
+    r"satisfy\s+unpaid\s+(?:property\s+)?taxes",
+    r"foreclosure\s+sale\s+to\s+satisfy\s+unpaid",
+    r"in\s+rem\s+foreclosure",
+    r"\btax\s+foreclosure\b",
+    r"delinquent\s+ad\s+valorem",
 ]
+
+# Surviving-lien boilerplate recited by nearly every power-of-sale notice
+# ("...subject to all prior sales and releases and to all deeds of trust,
+# liens, unpaid taxes, restrictions, easements, assessments..."). Its tax
+# words list liens that SURVIVE the sale and are NOT tax-sale signals --
+# stripped before classification (the HOA-lien foreclosure #827 was filed on
+# the Tax tab through exactly this aside).
+SURVIVING_LIEN_BOILERPLATE_RE = re.compile(
+    r"subject\s+to\s+all\s+prior\s+.*?(?:matters\s+of\s+record(?:,\s*if\s+any)?)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def strip_surviving_lien_boilerplate(text: str) -> str:
+    """Strip the 'subject to all prior ...' surviving-lien boilerplate."""
+    if not text:
+        return ""
+    return SURVIVING_LIEN_BOILERPLATE_RE.sub(" ", text)
+
+
+def _has_strong_tax_signal(low: str) -> bool:
+    return any(re.search(p, low) for p in STRONG_TAX_FC_PATTERNS)
 
 # --- shared street-address extraction ---------------------------------------
 # Common US street-address pattern used by TN / GA/ AL notice bodies.
@@ -913,25 +942,32 @@ class PublicNoticeScraper(BaseForeclosureScraper):
         """
         if not text:
             return False
-        low = normalize_notice_text(text).lower()
+        low = normalize_notice_text(
+            strip_surviving_lien_boilerplate(text)).lower()
         has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
-        has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
-        return has_mortgage and not has_tax
+        if not has_mortgage:
+            return False
+        # Mortgage signal present: a weak tax mention (surviving-lien aside,
+        # redemption warning) does not make it a tax sale -- only a STRONG
+        # tax signal does (that case belongs to _is_tax_foreclosure).
+        return not _has_strong_tax_signal(low)
 
     @staticmethod
     def _is_tax_foreclosure(text: str) -> bool:
         """Authoritative check: is *text* a tax foreclosure / tax sale notice?
 
-        Always rejects deed-of-trust / mortgage foreclosures (bank loan
-        defaults), even when the notice mentions taxes as a surviving lien.
-        Only genuine county/city tax-sale foreclosures pass through.
+        A notice with mortgage/deed-of-trust language is a tax sale only when
+        it carries STRONG tax-sale language (county trustee, delinquent
+        property taxes, T.C.A. 67-5, NCGS 105, ...); a bare surviving-lien
+        "taxes" aside never qualifies.
         """
         if not text:
             return False
-        low = normalize_notice_text(text).lower()
+        low = normalize_notice_text(
+            strip_surviving_lien_boilerplate(text)).lower()
         # Always reject deed-of-trust / mortgage foreclosures — these are
         # loan defaults sold to satisfy a debt, not unpaid property taxes.
         has_mortgage = any(re.search(p, low) for p in MORTGAGE_FC_PATTERNS)
-        if has_mortgage:
+        if has_mortgage and not _has_strong_tax_signal(low):
             return False
         return any(re.search(p, low) for p in TAX_FC_PATTERNS)

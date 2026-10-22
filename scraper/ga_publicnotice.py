@@ -28,6 +28,7 @@ from .publicnotice_base import (
     PublicNoticeScraper,
     MORTGAGE_FC_PATTERNS,
     TAX_FC_PATTERNS,
+    STRONG_TAX_FC_PATTERNS,
     ADDRESS_RE,
     _is_recent_publication,
     extract_street_address,
@@ -40,9 +41,10 @@ logger = logging.getLogger(__name__)
 COUNTY_SET = set(GA_MOUNTAIN_COUNTIES)
 
 # Parcel street address inside GA sheriff's-sale notices -- anchored on the
-# "known as" / "located on" phrasing that precedes each parcel's street.
+# "known as" / "located on" / "Property address:" phrasing that precedes each
+# parcel's street address.
 _GA_PARCEL_ADDR_RE = re.compile(
-    r"(?:known as|located on)\s+"
+    r"(?:known as|located on|property\s+address)\s*:?\s+"
     r"(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}"
     r"\s+(?:STREET|ST|AVENUE|AVE|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|HWY|"
     r"HIGHWAY|CT|CIRCLE|CIR|PKWY|PIKE|WAY|TRAIL|HEIGHTS|ESTATES|GASSE)\.?)",
@@ -123,6 +125,17 @@ def _ga_has_mortgage(low: str) -> bool:
     """True when *low* (lowercased notice) reads as a GA bank/mortgage sale."""
     return any(re.search(p, low)
                for p in MORTGAGE_FC_PATTERNS + GA_MORTGAGE_FC_PATTERNS)
+
+
+def _ga_has_strong_tax(low: str) -> bool:
+    """Strong GA tax-sale signals: the shared authoritative set plus the GA
+    statutory tax-sale language (OCGA 48-4 sheriff tax sales)."""
+    return any(re.search(p, low) for p in STRONG_TAX_FC_PATTERNS) or bool(
+        re.search(r"tax\s+sale\s+law|sale\s+(?:of\s+)?(?:real\s+property\s+)?"
+                  r"for\s+the\s+(?:purpose\s+of\s+)?.*?taxes|taxes\s+levied|"
+                  r"levied\s+(?:upon|on|against)|\b48-4\b|\bocga\b|"
+                  r"paying\s+(?:of\s+)?(?:delinquent\s+)?taxes",
+                  low))
 
 # Civil / file / case action numbers (for de-duplicating same legal case).
 _CASE_NO_RE = re.compile(
@@ -218,8 +231,10 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             return False
         if GAPublicNoticeScraper._is_post_sale(low):
             return False
-        # Always reject deed-of-trust / mortgage foreclosures (GA-aware)
-        if _ga_has_mortgage(low):
+        # Deed-of-trust / power-of-sale language sinks the notice to the Mtg
+        # tab (GA-aware) unless it carries STRONG tax-sale language (a real
+        # tax sale conducted under a power of sale).
+        if _ga_has_mortgage(low) and not _ga_has_strong_tax(low):
             return False
         return any(re.search(p, low) for p in TAX_FC_PATTERNS)
 
@@ -236,8 +251,11 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             return False
         low = normalize_notice_text(text).lower()
         has_mortgage = _ga_has_mortgage(low)
-        has_tax = any(re.search(p, low) for p in TAX_FC_PATTERNS)
-        return has_mortgage and not has_tax
+        if not has_mortgage:
+            return False
+        # A weak tax aside does not veto the Mtg tab; only STRONG tax-sale
+        # language does (that notice belongs on the Tax tab instead).
+        return not _ga_has_strong_tax(low)
 
     @staticmethod
     def _extract_address(text: str) -> Optional[str]:

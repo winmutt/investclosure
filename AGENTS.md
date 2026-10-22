@@ -67,6 +67,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/ga_publicnotice.py` | GA "Public Notice" foreclosure scraper — georgiapublicnotice.com (same WebForms backend), 7 N GA mountain counties |
 | `scraper/publicnotice_base.py` | Shared base for the three `*_publicnotice` scrapers (GridView parse, Turnstile gate, PDF extract, tax/mortgage classifier) |
 | `scraper/newspaper_notices.py` | Newspaper legal-notice scraper — full notice text as raw source |
+| `scraper/backfill_newspaper.py` | Re-derives newspaper row type/address/city/zip/auction-date from `raw_source_text` |
 | `scraper/al_publicnotice.py` | AL public-notice foreclosure scraper — alabamapublicnotices.com (IPA WebForms: per-category select + per-county checkbox), full notice text as raw source; no statewide parcel service → Maps links only |
 | `scraper/ky_publicnotice.py` | KY public-notice scraper — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only |
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties |
@@ -265,6 +266,53 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-10-22 (newspaper HOA-lien fix + cross-scraper type/address audit)**:
+  Property **#827** (Sylva Herald, source `newspaper_notices`) was on the Tax
+  tab, had no address, and no enrichment. Root causes + fixes:
+  - **Surviving-lien boilerplate was a tax signal**: every NC power-of-sale
+    notice recites "subject to all prior sales and releases and to all deeds
+    of trust, liens, unpaid taxes...matters of record, if any" — the
+    "unpaid taxes" there lists liens that SURVIVE the sale. The HOA
+    assessment-lien notice (#827 River Run II Townhouse Association) had no
+    other signal, and that aside alone flipped it to tax. Fix in
+    `newspaper_notices.py` + `publicnotice_base.py` (`SURVIVING_LIEN_BOILERPLATE_RE`)
+    + `nc_publicnotice.py` strong-tax tiebreak.
+  - **HOA/condo/POA assessment-lien foreclosures** (`_HOA_ENTITY_RE` +
+    `_HOA_LIEN_RE`, entity signal AND dues/lien signal) are private lien
+    sales: routed to the **Mtg** tab, never Tax (strong tax language still
+    wins the other way). `45-21` added to `_MORTGAGE_SALE_RE` (NC
+    power-of-sale statute cited in the notice).
+  - **Dual-signal notices no longer silently dropped** in NC/TN/GA shared
+    classifiers: mortgage-machinery + weak tax aside → mortgage (Mtg),
+    mortgage+STRONG_TAX → tax; the previously dead `STRONG_TAX_FC_PATTERNS`
+    is now the tiebreaker (bare `tax sale` removed from the strong list —
+    too weak as a tiebreaker). NC got a matching `_STRONG_TAX_RE`
+    (`_classify_nc_notice` policy tests updated).
+  - **Address extraction wired into all five BLOX/AdPerfect newspaper
+    sub-scrapers** (previously hardcoded `address=None`; Gannett API path was
+    the only one extracting). New `extract_newspaper_address()` returns
+    (street, city, zip), supports "Property address: 232 River Run, Unit
+    1903, Sapphire, NC 28774" (one-line BLOX bodies capture to the state
+    token; road words can't become city), splits city/zip, and
+    `_extract_auction_date` now supplies the real sale date instead of the
+    publication date. `scraper/backfill_newspaper.py` re-derives type,
+    address/city/zip and auction date from `raw_source_text` for existing
+    rows (live: 2 reclassified #57/#827 → Mtg, #827 address Sapphire/28774,
+    sale date 2026-10-29), then enrichment picks rows up (OneMap address
+    path). GA: `_GA_PARCEL_ADDR_RE` also accepts "Property address:".
+  - **kgis_enrich wired into `run.py`** post-run (Knox TN rows — TNMap
+    statewide layer has zero Knox parcels; KGIS was manual-only).
+  - Cross-scraper audit findings NOT changed (open, by design or larger
+    effort): trustee scrapers assert type from source identity (no per-notice
+    classifier — a firm posting a tax sale would Mtg-tab silently); rlselaw
+    rows never enrich acres (no parcel; GA enrichment is parcel-only);
+    SC/AL rows have no parcel service so never acres/viewer links; GA
+    fannin/union lack qPublic app IDs (generic qPublic link only);
+    haywood embeds the bid title in the description (a "deed of trust"
+    title could flip its tab); kania/zls price code OK (verified dollars).
+    Full suite 526 pass (container tests/ is image-copied, not volume —
+    `podman cp tests investclosure:/app/` before running).
 
 - **2026-10-22 (AL + KY public-notice scrapers went live)**: Two new
   foreclosure sources over the two *other* state legal-notice platforms:
