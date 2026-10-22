@@ -531,6 +531,45 @@ def archive_property(property_id):
     return redirect(url_for('landing'))
 
 
+@app.route('/bulk-archive', methods=['POST'])
+def bulk_archive():
+    """Bulk archive selected properties (dashboard checkboxes).
+
+    Each id goes through scraper_db.archive_property — audit-logged per
+    row, non-active/missing ids are skipped (kept visible in the flash).
+    Returns to the posting view via the optional ``return_to`` field
+    (same-site path only) so users stay where they were.
+    """
+    conn = get_conn()
+    ids: list[int] = []
+    for raw in request.form.getlist('ids'):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            return abort(400, description=f"invalid property id {raw!r}")
+    # bulk only — cap to keep a stray select-all on huge archives safe
+    if len(ids) > 500:
+        ids = ids[:500]
+    reason = (request.form.get('reason') or '').strip() \
+        or "dashboard bulk archive"
+    archived = skipped = 0
+    for property_id in ids:
+        if scraper_db.archive_property(
+            conn, property_id, reason=reason, archived_by="dashboard",
+        ):
+            archived += 1
+        else:
+            skipped += 1
+    conn.close()
+    flash(f'Bulk archive: {archived} archived'
+          + (f', {skipped} skipped (already archived or missing)'
+             if skipped else ''))
+    return_to = request.form.get('return_to') or ''
+    if return_to.startswith('/') and not return_to.startswith('//'):
+        return redirect(return_to)
+    return redirect(url_for('landing'))
+
+
 @app.route('/unarchive/<int:property_id>', methods=['POST'])
 def unarchive_property(property_id):
     conn = get_conn()

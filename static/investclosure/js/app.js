@@ -83,3 +83,52 @@ setInterval(fetchHealthIndicator, 60000);
 
 // Property notes editing lives on the property detail page (see property.html).
 
+
+// Bulk archive selection: live count, select-all (with tri-state), and a
+// confirm guard on the bulk submit. Scoped to each [data-bulk-form] so
+// dashboard state/category tabs never cross-select.
+document.querySelectorAll('[data-bulk-form]').forEach(function(form) {
+    var checks = Array.from(form.querySelectorAll('input[name="ids"]'));
+    var selAll = form.querySelector('[data-bulk-select-all]');
+    var countEl = form.querySelector('[data-bulk-count]');
+    var submitBtn = form.querySelector('[data-bulk-submit]');
+
+    function update() {
+        var checked = form.querySelectorAll('input[name="ids"]:checked').length;
+        if (countEl) countEl.textContent = String(checked);
+        if (submitBtn) {
+            submitBtn.disabled = checked === 0;
+        }
+        if (selAll) {
+            selAll.checked = checks.length > 0 && checked === checks.length;
+            selAll.indeterminate = checked > 0 && checked < checks.length;
+        }
+    }
+
+    if (selAll && checks.length) {
+        selAll.addEventListener('click', function() {
+            // resolve indeterminate: clicking it checks everything
+            selAll.checked = selAll.indeterminate ? true : selAll.checked;
+        });
+        selAll.addEventListener('change', function() {
+            checks.forEach(function(c) { c.checked = selAll.checked; });
+            update();
+        });
+    }
+    checks.forEach(function(c) { c.addEventListener('change', update); });
+
+    if (submitBtn) {
+        submitBtn.addEventListener('click', function(e) {
+            var checked = form.querySelectorAll('input[name="ids"]:checked');
+            if (!checked.length) {
+                e.preventDefault();
+                return;
+            }
+            if (!confirm('Archive ' + checked.length + ' selected propert'
+                         + (checked.length === 1 ? 'y' : 'ies') + '?')) {
+                e.preventDefault();
+            }
+        });
+    }
+    update();
+});

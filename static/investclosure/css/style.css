@@ -785,3 +785,53 @@ body {
 .prop-detail-section h3 {
     color: #475569;
 }
+
+/* Bulk selection (checkbox multi-archive) */
+.bulk-form {
+    display: block;
+}
+.bulk-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.75rem;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+.bulk-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.bulk-reason {
+    flex: 1 1 260px;
+    min-width: 220px;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+.tile-check,
+.row-check {
+    display: inline-flex;
+    align-items: center;
+}
+.tile-check input,
+.row-check input {
+    width: 1.05rem;
+    height: 1.05rem;
+    cursor: pointer;
+    accent-color: var(--accent, #b45309);
+}
+.list-item-header .row-check {
+    margin-right: 0.35rem;
+}

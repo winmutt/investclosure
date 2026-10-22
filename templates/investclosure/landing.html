@@ -4,7 +4,23 @@
 {% block topbar_title %}Dashboard{% endblock %}
 {% block topbar_subtitle %}Foreclosure properties by state{% endblock %}
 
-{% macro tile_grid(prop_list, state, category='') %}
+{% macro tile_grid(prop_list, state, category='', form_id='') %}
+
+{% set form_id = form_id or 'bulk-form-' ~ state ~ '-' ~ (category or 'all') %}
+<form id="{{ form_id }}" class="bulk-form" method="POST"
+      action="{{ url_for('bulk_archive') }}" data-bulk-form>
+    <input type="hidden" name="return_to" value="{{ request.full_path }}">
+    <div class="bulk-bar">
+        <label class="bulk-select-all">
+            <input type="checkbox" data-bulk-select-all> Select all
+        </label>
+        <input type="text" name="reason" class="bulk-reason"
+               placeholder="Archive reason (optional)">
+        <button type="submit" class="btn btn-primary" data-bulk-submit
+                title="Archive all checked tiles in this category">
+            Archive selected&nbsp;(<span data-bulk-count>0</span>)
+        </button>
+    </div>
 <div class="tiles">
     {% for prop in prop_list %}
     <div class="tile">
@@ -82,11 +98,15 @@
             </a>
             {% endif %}
             <a href="{{ url_for('property_detail', property_id=prop.id, category=category or None) }}" class="tile-action-btn">Details</a>
-            <form action="{{ url_for('archive_property', property_id=prop.id) }}" method="POST" style="display:inline; flex:1">
-                <button type="submit" class="tile-action-btn tile-action-btn-archive" onclick="return confirm('Archive this property?')">
-                    Archive
-                </button>
-            </form>
+            <label class="tile-check" title="Select for bulk archive">
+                <input type="checkbox" class="bulk-check" name="ids"
+                       value="{{ prop.id }}"         aria-label="Select {{ prop.address or prop.parcel_number or prop.id }} for bulk archive">
+            </label>
+            <button type="submit" class="tile-action-btn tile-action-btn-archive"
+                    formaction="{{ url_for('archive_property', property_id=prop.id) }}"
+                    onclick="return confirm('Archive this property?')">
+                Archive
+            </button>
         </div>
         {% if prop.notes %}
         <div class="tile-notes-display tile-notes-present">{{ prop.notes }}</div>
@@ -99,6 +119,7 @@
     </div>
     {% endfor %}
 </div>
+</form>
 
 {% if prop_list|length > 0 %}
 <div class="pagination-info">

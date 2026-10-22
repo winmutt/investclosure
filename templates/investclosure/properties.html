@@ -24,11 +24,32 @@
     </form>
 </div>
 
+<form id="bulk-form-search" class="bulk-form" method="POST"
+      action="{{ url_for('bulk_archive') }}" data-bulk-form>
+    <input type="hidden" name="return_to" value="{{ request.full_path }}">
+    <div class="bulk-bar">
+        <label class="bulk-select-all">
+            <input type="checkbox" data-bulk-select-all> Select all
+        </label>
+        <input type="text" name="reason" class="bulk-reason"
+               placeholder="Archive reason (optional)">
+        <button type="submit" class="btn btn-primary" data-bulk-submit
+                title="Archive all checked rows in this view">
+            Archive selected&nbsp;(<span data-bulk-count>0</span>)
+        </button>
+    </div>
 <div class="list">
     {% for prop in properties %}
     <div class="list-item">
         <div class="list-item-body">
             <div class="list-item-header">
+                {% if prop.status == 'active' %}
+                <label class="row-check" title="Select for bulk archive">
+                    <input type="checkbox" class="bulk-check" name="ids"
+                           value="{{ prop.id }}"
+                           aria-label="Select {{ prop.address or prop.id }} for bulk archive">
+                </label>
+                {% endif %}
                 <a href="{{ url_for('property_detail', property_id=prop.id) }}">{{ prop.address or 'No address' }}</a>
                 <span class="badge badge-blue">{{ prop.source }}</span>
             </div>
@@ -58,13 +79,13 @@
         </div>
         <div class="list-item-actions">
             <a href="{{ url_for('property_detail', property_id=prop.id) }}" class="tile-action-btn">View</a>
-             <form action="{{ url_for('archive_property', property_id=prop.id) }}" method="POST" style="display:inline">
-                <button type="submit" class="btn btn-sm">Archive</button>
-            </form>
+            {% if prop.status == 'active' %}
+            <button type="submit" class="btn btn-sm"
+                    formaction="{{ url_for('archive_property', property_id=prop.id) }}">Archive</button>
+            {% endif %}
             {% if prop.status == 'archived' %}
-            <form action="{{ url_for('unarchive_property', property_id=prop.id) }}" method="POST" style="display:inline">
-                <button type="submit" class="btn btn-sm">Unarchive</button>
-            </form>
+            <button type="submit" class="btn btn-sm"
+                    formaction="{{ url_for('unarchive_property', property_id=prop.id) }}">Unarchive</button>
             {% endif %}
         </div>
     </div>
@@ -74,6 +95,7 @@
     </div>
     {% endfor %}
 </div>
+</form>
 
 {% if properties|length > 0 %}
 <div class="pagination">

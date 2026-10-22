@@ -18,11 +18,30 @@
     </form>
 </div>
 
+<form id="bulk-form-new" class="bulk-form" method="POST"
+      action="{{ url_for('bulk_archive') }}" data-bulk-form>
+    <input type="hidden" name="return_to" value="{{ request.full_path }}">
+    <div class="bulk-bar">
+        <label class="bulk-select-all">
+            <input type="checkbox" data-bulk-select-all> Select all
+        </label>
+        <input type="text" name="reason" class="bulk-reason"
+               placeholder="Archive reason (optional)">
+        <button type="submit" class="btn btn-primary" data-bulk-submit
+                title="Archive all checked rows in this view">
+            Archive selected&nbsp;(<span data-bulk-count>0</span>)
+        </button>
+    </div>
 <div class="list">
     {% for prop in properties[:100] %}
     <div class="list-item">
         <div class="list-item-body">
             <div class="list-item-header">
+                <label class="row-check" title="Select for bulk archive">
+                    <input type="checkbox" class="bulk-check" name="ids"
+                           value="{{ prop.id }}"
+                           aria-label="Select {{ prop.address or prop.id }} for bulk archive">
+                </label>
                 <a href="{{ url_for('property_detail', property_id=prop.id) }}">{{ prop.address or 'No address' }}</a>
                 <span class="badge badge-blue">{{ prop.source }}</span>
             </div>
@@ -42,6 +61,7 @@
     </div>
     {% endfor %}
 </div>
+</form>
 
 {% if properties|length > 100 %}
 <div class="pagination">
