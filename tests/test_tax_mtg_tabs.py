@@ -278,6 +278,57 @@ class TestTNExtractFixes:
         from scraper.tn_publicnotice import _tn_parse_acres
         assert _tn_parse_acres("does not encumber (.95 acres)") is None
 
+
+class TestNCAuctionDateDeedRecitals:
+    """#899/#785/#897 regressions: NC auction date vs deed-recital dates.
+
+    HUD-style notices open "on December 7, 2009, a certain Deed of Trust was
+    executed" — the deed anchor TRAILS the date, so the pre-fix extractor
+    (which only searched the 60 chars BEFORE a candidate) stored the loan
+    date as the auction date. The true HUD auction is anchored after the
+    date ("notice is hereby given that on Thursday, November 12, 2026
+    ...will be sold at public auction")."""
+
+    HUD_NOTICE = (
+        "NOTICE OF DEFAULT AND FORECLOSURE SALE WHEREAS, on December 7, "
+        "2009, a certain Deed of Trust was executed by Daniel H. Chisholm "
+        "and was recorded on December 14, 2009 in Book 00380 at Page 0303; "
+        "and WHEREAS, pursuant to an assignment dated May 21, 2018 ... the "
+        "entire amount delinquent as of October 5, 2026 was $677,436.94 ... "
+        "notice is hereby given that on Thursday, November 12, 2026 at "
+        "11:00 A.M. local time, all real and personal property ... will be "
+        "sold at public auction to the highest bidder."
+    )
+
+    def test_hud_trailing_deed_anchor_rejected_and_auction_wins(self):
+        from scraper.nc_publicnotice import _find_auction_date
+        assert _find_auction_date(self.HUD_NOTICE) == "November 12, 2026"
+
+    def test_weekday_prefixed_on_date_matches(self):
+        from scraper.nc_publicnotice import _find_auction_date
+        # A weekday prefix used to make the whole "on <date>" match fail.
+        assert _find_auction_date(
+            "notice is hereby given that on Thursday, November 12, 2026 "
+            "at 11:00 A.M. local time, the property will be sold at public "
+            "auction.") == "November 12, 2026"
+
+    def test_labeled_date_of_sale_field(self):
+        from scraper.nc_publicnotice import _find_auction_date
+        text = (
+            "the undersigned Trustee will offer for sale at public auction "
+            "... This conveyance is made subject to the Declaration of "
+            "Restrictive Covenants. DATE OF SALE: Friday, October 30, 2026 "
+            "TIME OF SALE: 12:00 Noon"
+        )
+        assert _find_auction_date(text) == "October 30, 2026"
+
+    def test_bare_deed_recital_still_rejected(self):
+        from scraper.nc_publicnotice import _find_auction_date
+        # Pre-fix case (anchor precedes the date) must stay rejected.
+        assert _find_auction_date(
+            "deed of trust recorded on October 14, 2021"
+        ) is None
+
     def test_attorney_footer_address_rejected(self):
         from scraper.tn_publicnotice import _tn_extract_address
         assert _tn_extract_address(

@@ -270,7 +270,12 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
     @classmethod
     def _extract_sale_date(cls, text: str) -> Optional[str]:
         """Auction date: prefer sale-anchored mentions; ties go to the later
-        date; deed-recital anchors are rejected (mirrors the TN extractor)."""
+        date; deed-recital anchors are rejected (mirrors the TN extractor).
+
+        Deed anchors are checked BEFORE and AFTER a candidate: HUD-style
+        recitals read "on December 7, 2009, a certain Deed of Trust was
+        executed" — the anchor trails the date.
+        """
         if not text:
             return None
         flat = normalize_notice_text(text)
@@ -285,9 +290,11 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
                 continue
             before = flat[max(0, m.start() - 70):m.start()].lower()
             anchored = any(a in before for a in _KY_SALE_ANCHORS)
-            if not anchored and any(
-                    a in flat[max(0, m.start() - 45):m.start()].lower()
-                    for a in _KY_DEED_ANCHORS):
+            after = flat[m.end():m.end() + 45].lower()
+            if not anchored and (
+                    any(a in flat[max(0, m.start() - 45):m.start()].lower()
+                        for a in _KY_DEED_ANCHORS)
+                    or any(a in after for a in _KY_DEED_ANCHORS)):
                 continue
             if best is None or (anchored, iso) >= best:
                 best = (anchored, iso)

@@ -51,7 +51,12 @@ _MONTHS = (
 )
 _DATE_CORE = r"(?:" + _MONTHS + r")\s+\d{1,2},\s*\d{4}"
 _SALE_DATE_RE = re.compile(
-    r"\bon(?=[:\s])[:\s]*\s*\n?\s*(" + _DATE_CORE +
+    r"\bon(?=[:\s])[:\s]*\s*\n?\s*"
+    # HUD-style notices prefix the date with a weekday ("on Thursday,
+    # November 12, 2026 at 11:00 A.M."); without this the match fails and
+    # the auction date is lost entirely.
+    r"(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*)?"
+    r"(" + _DATE_CORE +
     r"(?:\s+AT\s+\d{1,2}:\d{2}(?:\s*[AP]\.?M\.?)?)?)",
     re.IGNORECASE,
 )
@@ -69,6 +74,26 @@ _SALE_ANCHOR_RE = re.compile(
     r"offer\s+for\s+sale|offered\s+for\s+sale|will\s+sell|exposed\s+to\s+"
     r"public\s+sale|date\s+of\s+sale|sale\s+date|notice\s+of\s+sale|"
     r"will\s+offer",
+    re.IGNORECASE,
+)
+# HUD-style sale intent that trails the date instead of preceding it:
+# "notice is hereby given that on Thursday, November 12, 2026 at 11:00 A.M.
+# local time, ... will be sold at public auction" — the "will be sold"
+# clause sits ~100-200 chars AFTER the date, so a before-window-only anchor
+# check ranks this the true auction date as an unanchored weak candidate.
+_SALE_AFTER_ANCHOR_RE = re.compile(
+    r"sell\s+at\s+public|sold\s+at\s+public|offered\s+for\s+sale|"
+    r"will\s+be\s+sold|will\s+offer\s+for\s+sale|offer\s+for\s+sale",
+    re.IGNORECASE,
+)
+# "DATE OF SALE: Friday, October 30, 2026" / "Sale Date: ..." — the labeled
+# sale field is the most authoritative date slot and avoids the deed-recital
+# ambiguity entirely (the bare "on <date>" regex cannot see it).
+_SALE_DATE_LABELED_RE = re.compile(
+    r"(?:date\s+of\s+sale|sale\s+date|sale\s+to\s+be\s+made\s+on|"
+    r"sale\s+will\s+be\s+held\s+on)\s*[:\-]?\s*"
+    r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?,?\s*"
+    r"(" + _DATE_CORE + r")",
     re.IGNORECASE,
 )
 # Deed-recital anchors: a date here is the loan/deed date, never the auction.
@@ -151,16 +176,23 @@ def _row_county(text: str) -> Optional[str]:
 def _find_auction_date(text: str) -> Optional[str]:
     """Find the sale/auction date in notice text.
 
-    The old first-``on <date>`` match grabbed deed recitals ("recorded on
-    October 14, 2021") instead of the auction ("offer for sale ... on
-    September 22, 2026"). Now: skip candidates with a deed anchor
-    (dated/recorded/executed) in the preceding 60 chars, prefer candidates
-    with sale intent in the preceding 200 chars (continuances read later,
-    so the last strong candidate wins), and fall back to the first
+    The old first-``on <date>`` match grabbed deed recitals instead of the
+    auction. Now: skip candidates with a deed anchor (dated/recorded/
+    executed) in the preceding 60 chars OR immediately following the date
+    (HUD-style recitals read "on December 7, 2009, a certain Deed of Trust
+    was executed" — the anchor trails the date), prefer candidates with
+    sale intent in the preceding 200 chars or sale intent ("will be sold
+    at public auction") in the following 200 chars (continuances read
+    later, so the last strong candidate wins), and fall back to the first
     surviving bare "on <date>" (preserves tax-notice behavior).
     """
     if not text:
         return None
+    # A labeled "DATE OF SALE:" / "Sale Date:" field outranks every bare
+    # "on <date>" candidate (no deed-recital ambiguity possible).
+    lm = _SALE_DATE_LABELED_RE.search(text)
+    if lm:
+        return _clean_date(lm.group(1))
     strong: list[tuple[int, str]] = []
     weak: list[tuple[int, str]] = []
     for m in _SALE_DATE_RE.finditer(text):
@@ -168,15 +200,25 @@ def _find_auction_date(text: str) -> Optional[str]:
         before = text[max(0, start - 200):start]
         if _DEED_ANCHOR_RE.search(before[-60:]):
             continue
-        if _SALE_ANCHOR_RE.search(before):
+        if _DEED_ANCHOR_RE.search(text[m.end():m.end() + 60]):
+            continue
+        if (_SALE_ANCHOR_RE.search(before)
+                or _SALE_AFTER_ANCHOR_RE.search(text[m.end():m.end() + 200])):
             strong.append((start, m.group(1).strip()))
         else:
             weak.append((start, m.group(1).strip()))
     if strong:
-        return strong[-1][1]
+        return _clean_date(strong[-1][1])
     if weak:
-        return weak[0][1]
+        return _clean_date(weak[0][1])
     return None
+
+
+def _clean_date(value: str) -> str:
+    """Normalize a matched date value: single-spaced, time clause dropped."""
+    value = re.sub(r"\s+", " ", value or "").strip()
+    return re.sub(r"\s+at\s+\d{1,2}:.*$", "", value,
+                  flags=re.IGNORECASE).strip()
 
 
 def _extract_county(text: str, all_counties: set[str]) -> Optional[str]:

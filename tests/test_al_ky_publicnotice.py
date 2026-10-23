@@ -177,6 +177,35 @@ def test_al_extract_parcel():
     assert _scraper()._extract_parcel("no parcel info available") is None
 
 
+def test_al_extract_sale_date_rejects_trailing_deed_anchor():
+    """#885 regression: "on February 7, 2005, said mortgage recorded ..." —
+    the deed anchor trails the date, and the on-page OCR hyphen-splits the
+    true auction month ("Novem- ber 19, 2026")."""
+    text = (
+        "Default having been made in the payment of the indebtedness "
+        "secured by that certain mortgage executed by Kelly Ray Dobbins "
+        "originally in favor of Ameriquest Mortgage Company, on February "
+        "7, 2005, said mortgage recorded in the Office of the Judge of "
+        "Probate of DeKalb County; the undersigned under and by virtue of "
+        "the power of sale contained in said mortgage, will sell at public "
+        "outcry to the highest bidder for cash, in front of the main "
+        "entrance of the Courthouse at Fort Payne, DeKalb County, Alabama, "
+        "on Novem- ber 19, 2026, during the legal hours of sale."
+    )
+    assert _scraper()._extract_sale_date(text) == "2026-11-19"
+
+
+def test_al_extract_sale_date_hud_notice_leaves_recitals_only():
+    from datetime import date as _d
+    # No sale-anchored date at all -> no date (never a deed-loan date)
+    text = (
+        "NOTICE OF FORECLOSURE SALE Default having been made... mortgage "
+        "executed on January 15, 2012, recorded January 22, 2012 in Mlg "
+        "Book 2012 Page 45."
+    )
+    assert _scraper()._extract_sale_date(text) is None
+
+
 def test_al_row_county_from_grid_text():
     row = ("Fort Payne Times-Journal Wednesday, October 21, 2026 "
            "County: DeKalb NOTICE OF MORT-GAGE FORECLOS-URE SALE...")
@@ -317,6 +346,19 @@ def test_ky_extract_address_anchor_window():
 def test_ky_extract_sale_date_anchors():
     assert _ky()._extract_sale_date(KY_MORTGAGE_PAGE) == "2026-11-17"
     assert _ky()._extract_sale_date(KY_TAX_PAGE) == "2026-11-09"
+
+
+def test_ky_extract_sale_date_rejects_trailing_deed_anchor():
+    """Anchor-trails-date recitals: "on March 3, 2014, a certain Mortgage
+    was executed" is the loan date, never the auction."""
+    text = (
+        "NOTICE OF SALE Default having been made, ... on March 3, 2014, "
+        "a certain Mortgage was executed by JOHN DOE; the undersigned "
+        "Master Commissioner will offer for sale at public auction on "
+        "Tuesday, November 17, 2026, at 11:00, the following described "
+        "real property."
+    )
+    assert _ky()._extract_sale_date(text) == "2026-11-17"
 
 
 def test_ky_extract_parcel_requires_marker_window():

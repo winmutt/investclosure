@@ -244,13 +244,20 @@ class ALPublicNoticeScraper(PublicNoticeScraper):
         AL sale notices anchor the auction with "will sell ... on <date>",
         "sell at public outcry ... the <date>"; deed/loan recitals carry
         older "dated/recorded/executed" dates. Candidates inside a sale-
-        anchored window win; ties go to the later date.
+        anchored window win; ties go to the later date. Deed anchors are
+        checked BEFORE and AFTER a candidate: HUD-style recitals read
+        "on February 7, 2005, said mortgage recorded ..." — the anchor
+        trails the date. The on-page OCR also hyphen-splits words
+        ("Novem- ber 19"), so the date scan runs on a dehyphenated copy
+        (statutory-cite fusing from a full hyphen-strip is harmless here —
+        no AL date contains hyphens).
         """
         if not text:
             return None
         flat = normalize_notice_text(text)
+        date_flat = re.sub(r"([A-Za-z])-\s+(\w)", r"\1\2", flat)
         best = None  # (anchored, iso)
-        for m in _AL_DATE_RE.finditer(flat):
+        for m in _AL_DATE_RE.finditer(date_flat):
             mon = _AL_MONTHS.get(m.group(1).title())
             day = int(re.sub(r"(st|nd|rd|th)$", "", m.group(2), flags=re.I))
             if not mon:
@@ -261,9 +268,16 @@ class ALPublicNoticeScraper(PublicNoticeScraper):
                 iso = _date(int(m.group(3)), mon, day).isoformat()
             except (TypeError, ValueError):
                 continue
-            before = flat[max(0, m.start() - 70):m.start()].lower()
+            before = date_flat[max(0, m.start() - 70):m.start()].lower()
             anchored = any(a in before for a in _AL_SALE_ANCHORS)
-            if not anchored and _AL_DEED_ANCHOR_RE.search(flat[max(0, m.start() - 45):m.start()]):
+            # Unanchored candidates near a BEFORE or AFTER deed anchor
+            # ("on February 7, 2005, said mortgage recorded ...") are
+            # deed/recital dates, not the auction.
+            if not anchored and (
+                    _AL_DEED_ANCHOR_RE.search(
+                        date_flat[max(0, m.start() - 45):m.start()])
+                    or _AL_DEED_ANCHOR_RE.search(
+                        date_flat[m.end():m.end() + 45])):
                 continue
             if best is None or (anchored, iso) >= best:
                 best = (anchored, iso)
