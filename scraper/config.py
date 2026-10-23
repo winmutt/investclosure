@@ -253,6 +253,26 @@ TARGET_COUNTIES: List[str] = [
 ]
 
 # =============================================================================
+# Verticals (product lines above the per-state Tax/Mtg/Re category tabs)
+# -----------------------------------------------------------------------------
+# A *vertical* is a top-level product/brand with its own county scope and
+# qualification rules. Today the app ships one active vertical:
+#   mountains — mountain foreclosures (elevation >= 1700ft baked into the
+#               county lists above, plus MIN_ACRES / MAX_ACRES / MAX_PRICE).
+# 'beach' is a registered STUB: the beach-front / lake-front vertical, scoped
+# to water-frontage counties and qualified by a *minimum distance-to-water*
+# instead of acreage/elevation. Its water county map + distance-to-water data
+# source land in a later pass; for now it renders as a stub in the dashboard.
+# =============================================================================
+
+VERTICALS: Dict[str, Dict[str, str]] = {
+    "mountains": {"label": "Mountains", "status": "active"},
+    "beach": {"label": "Beach", "status": "stub"},
+}
+
+DEFAULT_VERTICAL = "mountains"
+
+# =============================================================================
 # NC County GIS Parcel URLs for Kania Law enrichment
 # =============================================================================
 

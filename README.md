@@ -1,7 +1,29 @@
-# investclosure
+# Mountains
 
-NC & TN foreclosure property scraper — scrapes public foreclosure notices,
-enriches with county GIS parcel data, saves to SQLite with dashboard.
+Mountain foreclosure property scraper + dashboard. Scrapes public foreclosure
+notices, enriches with county GIS parcel data, saves to SQLite, and serves a
+multi-category dashboard. Working/project name is `investclosure`.
+
+> **Branding:** the dashboard is branded **Mountains**. Internal identifiers
+> are unchanged — container/service `investclosure`, DB `data/investclosure.db`,
+> and `INVESTCLOSURE_*` env vars.
+
+## Verticals
+
+The dashboard is multi-category. A **vertical** is a top-level product line
+with its own county scope and qualification rules (above the per-state
+Tax/Mtg/Re tabs). Registry lives in `scraper/config.py` (`VERTICALS`); rows are
+bucketed by `property_vertical()` in `scraper/server.py`.
+
+| Vertical | Status | Scope | Qualification |
+|---|---|---|---|
+| **Mountains** | active | mountain counties (elevation ≥1700ft, ≤250mi of Atlanta) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` |
+| **Beach** | stub (UI only) | ocean/lake-frontage counties (mapping upcoming) | **min distance-to-water** (no acreage/elevation) |
+
+The mountains|beach switch renders on the dashboard tab bar; **beach is a stub**
+— the water-front county map, the minimum-distance-to-water rule (a water GIS
+source: coastline + lake polygons), and any `properties` schema additions
+(`water_type`, `distance_to_water_m`) land in a later pass.
 
 ## Current Status
 

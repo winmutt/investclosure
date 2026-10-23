@@ -8,7 +8,8 @@ import math
 import pytest
 from datetime import datetime, timezone
 
-from scraper.server import property_category
+from scraper.server import property_category, property_vertical, BEACH_SOURCES
+from scraper.config import VERTICALS, DEFAULT_VERTICAL
 from scraper.tn_publicnotice import TNPublicNoticeScraper, _tn_parse_parcels
 from scraper.nc_publicnotice import _classify_nc_notice, _extract_address
 from scraper.newspaper_notices import (
@@ -1304,3 +1305,32 @@ class TestKGISStreetVariants:
         assert "LIKE '%HATCHER%1123%'" in first_addr_like[3]
         # never searches a third street word
         assert not any(q.count("%") > 5 for q in first_addr_like)
+
+
+class TestVerticals:
+    """Top-level product verticals: mountains (active) vs beach (stub)."""
+
+    def test_config_registers_two_verticals(self):
+        assert set(VERTICALS) == {"mountains", "beach"}
+        assert VERTICALS["mountains"]["status"] == "active"
+        assert VERTICALS["beach"]["status"] == "stub"
+        assert DEFAULT_VERTICAL == "mountains"
+
+    def test_no_beach_sources_yet(self):
+        # The beach scrapers have not landed; the registry stays empty.
+        assert BEACH_SOURCES == set()
+
+    def test_all_current_sources_are_mountains(self):
+        for source in ("nc_publicnotice", "tn_publicnotice", "ga_publicnotice",
+                       "al_publicnotice", "ky_publicnotice", "kania_law",
+                       "zls_nc", "newspaper_notices", "zillow"):
+            assert property_vertical({"source": source}) == "mountains"
+
+    def test_beach_source_maps_to_beach(self):
+        # Claiming a source (once beach scrapers register) flips its vertical.
+        BEACH_SOURCES.add("zillow_beach")
+        try:
+            assert property_vertical({"source": "Zillow_Beach"}) == "beach"
+            assert property_vertical({"source": "nc_publicnotice"}) == "mountains"
+        finally:
+            BEACH_SOURCES.discard("zillow_beach")

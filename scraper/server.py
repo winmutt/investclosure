@@ -23,7 +23,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
                      jsonify, send_file, flash, abort, Response, g)
 
 from scraper import db as scraper_db
-from scraper.config import config
+from scraper.config import config, VERTICALS, DEFAULT_VERTICAL
 from scraper.nc_gis_lookup import (
     build_satellite_url,
     build_street_view_url,
@@ -83,6 +83,25 @@ def property_category(prop: dict) -> str:
             or "deed of trust" in desc):
         return "mtg"
     return "tax"
+
+
+# Sources that belong to the beach (water-frontage) vertical. Empty until the
+# beach-front / lake-front scrapers land; every source today is a mountain
+# source, so every row falls through to the 'mountains' vertical.
+BEACH_SOURCES: set[str] = set()
+
+
+def property_vertical(prop: dict) -> str:
+    """Bucket a property into a top-level vertical ('mountains' or 'beach').
+
+    Mirrors :func:`property_category` — derived from the row rather than a
+    dedicated column. All current sources belong to the mountains vertical;
+    the beach vertical is claimed only by the (not yet live) water-frontage
+    sources registered in ``BEACH_SOURCES``.
+    """
+    if (prop.get("source") or "").strip().lower() in BEACH_SOURCES:
+        return "beach"
+    return "mountains"
 
 
 def _row_to_dict(row):
@@ -152,7 +171,7 @@ _PUBLIC_ENDPOINTS = {"health", "static"}
 def _unauthorized():
     return Response(
         "Login required", 401,
-        {"WWW-Authenticate": 'Basic realm="InvestClosure"'},
+        {"WWW-Authenticate": 'Basic realm="Mountains"'},
     )
 
 
@@ -207,14 +226,22 @@ def landing():
     conn.close()
     props = _rows_to_dicts(props)
 
-    # Group active properties by state, then by tab (tax / mtg)
-    states: dict[str, dict[str, list]] = {}
+    # Group active properties by vertical -> state -> tab (tax / mtg / re).
+    # 'mountains' holds all current sources; 'beach' stays empty until the
+    # water-frontage sources land (it renders as a stub meanwhile).
+    by_vertical: dict[str, dict[str, dict[str, list]]] = {k: {} for k in VERTICALS}
+    vertical_counts: dict[str, int] = {k: 0 for k in VERTICALS}
     for p in props:
+        v = property_vertical(p)  # 'mountains' or 'beach'
         st = (p.get("state") or "UNKNOWN").strip().upper()
         cat = property_category(p)  # 'tax', 'mtg', or 're'
-        if st not in states:
-            states[st] = {"tax": [], "mtg": [], "re": []}
-        states[st][cat].append(p)
+        if st not in by_vertical[v]:
+            by_vertical[v][st] = {"tax": [], "mtg": [], "re": []}
+        by_vertical[v][st][cat].append(p)
+        vertical_counts[v] = vertical_counts.get(v, 0) + 1
+
+    # The mountains board (the default vertical) keeps the flat state view.
+    states = by_vertical.get(DEFAULT_VERTICAL, {})
 
     # Order states: priority markets first, then alphabetically
     states_order = sorted(
@@ -222,9 +249,23 @@ def landing():
         key=lambda s: (STATE_PRIORITY.index(s) if s in STATE_PRIORITY else 99, s),
     )
 
+    # Ordered vertical tab metadata (label / active-stub / count) for the
+    # mountains|beach switch.
+    verticals = [
+        {
+            "key": k,
+            "label": meta["label"],
+            "status": meta["status"],
+            "count": vertical_counts.get(k, 0),
+        }
+        for k, meta in VERTICALS.items()
+    ]
+
     return render_template('landing.html',
                             states=states,
-                            states_order=states_order)
+                            states_order=states_order,
+                            verticals=verticals,
+                            default_vertical=DEFAULT_VERTICAL)
 
 
 @app.route('/properties')

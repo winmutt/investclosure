@@ -362,6 +362,38 @@ body {
     padding: 0.4rem 0.85rem;
 }
 
+/* Top-level vertical switch (Mountains | Beach) — sits above state tabs */
+.tabs-vertical {
+    margin-bottom: 1.5rem;
+    gap: 0.5rem;
+}
+
+.tabs-vertical .tab-btn {
+    font-size: 1.05rem;
+    padding: 0.6rem 1.1rem;
+}
+
+.tab-soon {
+    margin-left: 0.4rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+}
+
+.vertical-pane {
+    padding-top: 0.25rem;
+}
+
+.muted {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
 .empty-state {
     text-align: center;
     padding: 3rem 1rem;

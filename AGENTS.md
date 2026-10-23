@@ -74,7 +74,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
-| `scraper/server.py` | Flask dashboard — port 5001, HTTP Basic Auth, Admin page |
+| `scraper/server.py` | Flask dashboard (branded **Mountains**) — port 5001, HTTP Basic Auth, Admin page, mountains|beach verticals |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
 | `scraper/geo_lookup.py` + `town_county.json` | town/ZIP→county cross-reference (4,917 ZIPs / 3,625 USPS towns, 6 states, from Census ZIP→county) — resolves town-only listings |
 | `nc_county_summary.md` | Per-county NC property/tax/GIS lookup systems + verified portal URLs |
@@ -109,6 +109,21 @@ links). All rows are mortgage/deed-of-trust sales for the Mtg tab.
 inventory as `bank_owned`, also Mtg-tabbed.
 
 All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Notice" backend (see `scraper/publicnotice_base.py`). They download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (nc_publicnotice) or when PDF exists (tn_publicnotice), it is used as the canonical source; otherwise the on-page notice text falls back. `ga_publicnotice` scrapes Georgia Press Association tax-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF).
+
+## Product Verticals (branding)
+
+The dashboard is **multi-category**. A *vertical* is a top-level product line
+with its own county scope and qualification rules, sitting **above** the
+per-state Tax/Mtg/Re category tabs (`property_category()`).
+
+| Vertical | Status | Scope | Qualification |
+|---|---|---|---|
+| **Mountains** | active | mountain counties (elevation ≥1700ft, within 250mi of Atlanta — the whole current product) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` |
+| **Beach** | **stub (UI only)** | ocean-front + lake-front counties (water-county map upcoming) | **minimum distance-to-water** — *no* acreage/elevation |
+
+- **Branding is UI-only.** The dashboard is branded **Mountains** (titles, sidebar brand, footer, auth realm, GIS viewer). Internal identifiers are **unchanged**: container/service `investclosure`, DB `data/investclosure.db`, `INVESTCLOSURE_*` env vars, `templates/investclosure/` + `static/investclosure/` dirs.
+- Verticals are a `config.py` registry (`VERTICALS` + `DEFAULT_VERTICAL`). The mountains|beach switch is the **outer** tab group in `templates/investclosure/landing.html` (`data-tab-group="vertical"`, reuses the existing tab JS). A vertical is claimed per row by `property_vertical()` in `scraper/server.py`, which claims only `BEACH_SOURCES` (empty until beach scrapers land) — so every current row is `mountains`.
+- **Beach is a stub**: `status='stub'`, no water-county map, no distance-to-water data source, and no `properties` schema change yet. When it goes live it will add `water_type` + `distance_to_water_m` (+ a `MIN_DISTANCE_TO_WATER` threshold and a water GIS source: coastline + lake polygons).
 
 ## Qualified Counties
 
@@ -266,6 +281,31 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-10-23 (rebrand to "Mountains" + beach vertical scaffold)**: The
+  dashboard is now **multi-vertical** and branded **Mountains**.
+  - **Branding-only rename** InvestClosure → **Mountains**: page `<title>`s
+    (base/landing/properties/new/admin), sidebar brand (icon ⛰️ + word),
+    footer, the GIS viewer title/header (`static/gis_viewer.html`), and the
+    HTTP Basic Auth realm (`Basic realm="Mountains"`). **Nothing internal
+    changed** — container/service `investclosure`, DB `investclosure.db`,
+    `INVESTCLOSURE_*` env, and the `templates/investclosure/` +
+    `static/investclosure/` dirs all stay (zero prod/data risk).
+  - **New `VERTICALS` registry** in `config.py` (`mountains`=active,
+    `beach`=stub) + `DEFAULT_VERTICAL`. `property_vertical()` in `server.py`
+    derives a row's vertical (mirrors `property_category()`; source-based via
+    `BEACH_SOURCES`, empty for now, so every current row is `mountains`).
+    `landing()` now groups vertical→state→category and passes ordered vertical
+    metadata; `landing.html` gained a **mountains|beach tab bar** above the
+    state tabs (reuses the existing nested `[data-tab-group]` tab JS — no JS
+    change) with beach rendering a "coming soon" stub. CSS: `.tabs-vertical` /
+    `.tab-soon` / `.muted` in `style.css`.
+  - **Deferred (next pass, not built):** the beach/lake-front **water-county
+    map**, the **minimum-distance-to-water** rule (+ `MIN_DISTANCE_TO_WATER`
+    and a water GIS source: coastline + lake polygons), and any `properties`
+    schema additions (`water_type`, `distance_to_water_m`). Beach scrapers
+    register in `BEACH_SOURCES` when they land. 4 tests in
+    `TestVerticals` (`tests/test_tax_mtg_tabs.py`); full suite 531 pass.
 
 - **2026-10-22 (newspaper HOA-lien fix + cross-scraper type/address audit)**:
   Property **#827** (Sylva Herald, source `newspaper_notices`) was on the Tax

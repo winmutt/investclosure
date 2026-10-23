@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}InvestClosure — Foreclosure Properties{% endblock %}
+{% block title %}Mountains — Foreclosure Properties{% endblock %}
 {% block topbar_title %}Dashboard{% endblock %}
 {% block topbar_subtitle %}Foreclosure properties by state{% endblock %}
 
@@ -129,6 +129,18 @@
 {% endmacro %}
 
 {% block content %}
+<div class="tabs tabs-vertical" data-tab-group="vertical">
+    {% for v in verticals %}
+    <button type="button" class="tab-btn{% if v.key == default_vertical %} active{% endif %}"
+            data-tab="{{ v.key }}" aria-selected="{% if v.key == default_vertical %}true{% else %}false{% endif %}">
+        {{ v.label }}{%- if v.status == 'active' %} <span class="tab-count">{{ v.count }}</span>{%- else %} <span class="tab-soon">soon</span>{% endif %}
+    </button>
+    {% endfor %}
+</div>
+
+{% for v in verticals %}
+<div class="tab-pane vertical-pane" data-tab-pane="{{ v.key }}" data-tab-pane-group="vertical"{% if v.key != default_vertical %} hidden{% endif %}>
+{% if v.key == 'mountains' %}
 {% if states_order %}
 <div class="tabs tabs-states" data-tab-group="state">
     {% for st in states_order %}
@@ -171,4 +183,12 @@
     <a href="{{ url_for('run_scraper') }}" class="btn btn-primary">Run Scrapers</a>
 </div>
 {% endif %}
+{% else %}
+<div class="empty-state">
+    <p>🏖️ {{ v.label }} is coming soon.</p>
+    <p class="muted">Water-frontage listings (beach-front and lake-front, qualified by minimum distance-to-water) will appear here.</p>
+</div>
+{% endif %}
+</div>
+{% endfor %}
 {% endblock %}
