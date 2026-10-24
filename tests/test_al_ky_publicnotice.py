@@ -369,6 +369,64 @@ def test_ky_extract_parcel_requires_marker_window():
         page, _best_marker_pos(page.lower())) is None
 
 
+def test_ky_address_time_court_junk_rejected():
+    """#904 regression: on an interleaved newspaper page the marker window
+    opens on column debris — "5 p.m ET / 4 p.m. CT. KNOX CIRCUIT COURT",
+    whose '4' + 'CT.' matched the house-number + Court-suffix address
+    shape. That capture (and any "<X> court"-headed one) must not become
+    the property address."""
+    junk_page = (
+        "MASTER COMMISSIONER SALES "
+        "5 p.m ET / 4 p.m. CT. KNOX CIRCUIT COURT "
+        "TERMS OF SALE: CASH or 10% DOWN DAY OF SALE. "
+        "Pennymac Loan Services, LLC VS. Charles William Smith "
+        "STATEWIDE CIVIL ACTION NO.: 20-CI-109"
+    )
+    assert _ky()._extract_address(junk_page, "knox") is None
+
+
+KY_INTERLEAVED_PAGE = (
+    "THE MOUNTAIN ADVOCATE — OCTOBER 21, 2026 — A6 "
+    "RECURRING CALENDAR Al-Anon meets weekly on Redemption & Recovery. "
+    "Call Priority Tax now 1-855-671-3565 urville, KY 40906 at "
+    "MASTER COMMISSIONER SALES "
+    "5 p.m ET / 4 p.m. CT. KNOX CIRCUIT COURT "
+    "The Local Planning Committee Meeting PUBLIC NOTICE "
+    "Commonwealth of Kentucky Knox County FRIDAY, OCTOBER 30, 2026 — "
+    "1:00PM KNOX COUNTY COURT HOUSE TERMS OF SALE: CASH or 10% DOWN "
+    "DAY OF SALE — BALANCE PAID IN THIRTY (30) DAYS "
+    "Pennymac Loan Services, LLC VS. Charles William Smith "
+    "STATEWIDE CIVIL ACTION NO.: 20-CI-109 "
+    "STREET ADDRESS: 575 Leo Hampton Road, Barbourville, KY 40906 "
+    "MAP #: 068-00-00-029.02 "
+    "WENDELL L. HAMMONS, SR. PO BOX 1869 "
+    "Vanderbilt Mortgage and Finance, Inc. VS. Harvey Isreal Lowe "
+    "CLASSIFIEDS BATHROOM REMODEL SAN DIEGO"
+)
+
+
+def test_ky_904_labeled_address_wins():
+    """#904: the labeled STREET ADDRESS line must beat interleaved junk."""
+    assert _ky()._extract_address(KY_INTERLEAVED_PAGE, "knox") \
+        == "575 Leo Hampton Road"
+
+
+def test_ky_904_description_windowed_to_sale_content():
+    """#904: the description was text[:2000] — the page's recurring
+    community calendar — so the row read as unrelated to any sale. The
+    description must lead with the Master-Commissioner sale block."""
+    from scraper.publicnotice_base import normalize_notice_text
+    marker = _best_marker_pos(normalize_notice_text(KY_INTERLEAVED_PAGE).lower())
+    card = {"filename": "70105-2026-10-21_1003.pdf"}
+    prop = _ky()._build_property(
+        card, KY_INTERLEAVED_PAGE, "mortgage_foreclosure", "knox",
+        marker, "https://kypublicnotice.com/KYLegals/x.pdf")
+    desc = prop["description"]
+    assert "MASTER COMMISSIONER SALES" in desc
+    assert "Pennymac" in desc
+    assert desc.find("Pennymac") < 700  # sale content, not page chrome
+
+
 def test_ky_labeled_address_stops_at_junk():
     # live row #895 interleave: the "Property Address:" label sits where the
     # newspaper columns run together — capture must stop at the street

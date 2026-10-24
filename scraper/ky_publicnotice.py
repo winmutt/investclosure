@@ -132,6 +132,14 @@ _ANCHOR_WINDOW = 700
 # PDF-extraction junk ("...SUNSet ocuntoy" runs) — no real street name has a
 # 20+ letter run (same rule the shared extractor uses).
 _LONG_RUN_RE = re.compile(r"[A-Za-z]{20,}")
+# Interleaved newspaper columns in the marker window carry time-of-day and
+# court-heading fragments that an address-shaped capture can glom onto
+# ("5 p.m ET / 4 p.m. CT. KNOX CIRCUIT COURT" -> house 4, street "p.m.",
+# 'CT' as the Court suffix). No real street address contains either.
+_ADDR_JUNK_RE = re.compile(
+    r"[ap]\.?\s?\.?\s?m\.|(?:chancery|circuit|county|district|superior|"
+    r"probate|juvenile|municipal|federal|general)\s+court\b",
+    re.IGNORECASE)
 
 
 def _best_marker_pos(text: str) -> Optional[int]:
@@ -228,6 +236,7 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
             return None
         body = normalize_notice_text(text)
         marker = _best_marker_pos(body.lower())
+        bare_addr: Optional[str] = None
         # Two address shapes: "<n> <street> ... <suffix>" and "... Highway
         # 26" (the highway word carries the number, so a suffix-ending
         # alternation can never capture it).
@@ -247,9 +256,22 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
             if not _in_anchor_window(m.start(), marker):
                 continue
             addr = re.sub(r"\s+", " ", m.group(2).strip())
-            if addr and not _LONG_RUN_RE.search(addr) \
-                    and not is_courthouse_address(addr, county, "KY"):
+            # Interleave junk ("4 p.m. CT.") — its time fragment and the
+            # "<X> court" heading mark it as column debris, never an address.
+            if not addr or _ADDR_JUNK_RE.search(addr) \
+                    or _LONG_RUN_RE.search(addr) \
+                    or is_courthouse_address(addr, county, "KY"):
+                continue
+            # An explicitly labeled capture ("STREET ADDRESS: 575 Leo
+            # Hampton Road") is ~always the property; bare captures from the
+            # interleaved columns can still be debris, so labeled wins over
+            # the first bare match regardless of document order.
+            if m.group(1):
                 return addr[:120]
+            if bare_addr is None:
+                bare_addr = addr
+        if bare_addr:
+            return bare_addr[:120]
         # labeled "Property Address:" etc. (not necessarily near the marker
         # when the marker lands in the caption) as a looser fallback. The
         # capture is suffix-anchored: the newspaper page may jam the label
@@ -543,7 +565,16 @@ class KYPublicNoticeScraper(BaseForeclosureScraper):
         key = parcel or address or card["filename"].replace(".pdf", "")
         log = None
         src = self.SOURCE_NAME
-        desc = text[:2000]
+        # Newspaper pages interleave sale notices with ads, calendars and
+        # unrelated classifieds, so the page BEGINNING often has nothing to
+        # do with the sale (#904: a recurring community calendar). Describe
+        # the notice with the text AROUND the strongest sale marker instead.
+        desc_src = normalize_notice_text(text)
+        if marker is not None:
+            lo = max(0, marker - 300)
+            desc = re.sub(r"\s+", " ", desc_src[lo:marker + 2300]).strip()
+        else:
+            desc = desc_src[:2000]
         prop: PropertyData = {
             "source": src,
             "source_listing_id": card["filename"].replace(".pdf", ""),
