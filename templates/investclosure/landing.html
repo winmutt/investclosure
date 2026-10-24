@@ -54,7 +54,12 @@
                 </span>
                 {% if prop.price %}
                 <span class="tile-meta-divider">·</span>
-                <span>${{ "%.0f"|format(prop.price / 100) }}</span>
+                {% if prop.opening_price %}
+                <span class="tile-bid-prog" title="Starting bid ${{ '%.0f'|format(prop.opening_price / 100) }}; current bid above">
+                    ${{ "%.0f"|format(prop.opening_price / 100) }} <span class="tile-bid-arrow">→</span>
+                </span>
+                {% endif %}
+                <span title="{{ 'Current upset bid' if prop.opening_price else 'Price' }}">${{ "%.0f"|format(prop.price / 100) }}</span>
                 {% endif %}
             </div>
             {% set sale_date = prop.auction_date|clean_date %}

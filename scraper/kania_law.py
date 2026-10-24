@@ -141,9 +141,19 @@ class KaniaLawScraper(BaseScraper):
         if "commercial" in property_type:
             return None
 
-        # --- price (openingbid, fallback to currentbid) ---
-        bid_text = rec.get("openingbid") or rec.get("currentbid") or ""
-        price_dollars = self._price_to_dollars(bid_text)
+        # --- price (freshest bid wins; opening bid as base) ---
+        # The tile/display price must reflect what a buyer would actually
+        # pay NOW. A row past its opening-bid stage shows NC upset-bid
+        # escalation (#37 Cook Creek Rd: tile pinned at the $14,200 opening
+        # bid while the current bid sat above $75k), so when the source's
+        # currentbid parses above the openingbid it becomes the price.
+        opening_dollars = self._price_to_dollars(rec.get("openingbid"))
+        current_dollars = self._price_to_dollars(rec.get("currentbid"))
+        if current_dollars and (not opening_dollars
+                                or current_dollars > opening_dollars):
+            price_dollars = current_dollars
+        else:
+            price_dollars = opening_dollars
 
         # --- address / city ---
         raw_address = (rec.get("address") or "").strip()

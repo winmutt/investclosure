@@ -15,6 +15,7 @@ import sys
 import threading
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 # Ensure scraper package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -104,9 +105,26 @@ def property_vertical(prop: dict) -> str:
     return "mountains"
 
 
+def _bid_to_cents(text) -> Optional[int]:
+    """Parse a bid string ("$78,750.00") into cents; None when not a dollar
+    amount ("TBD", prose). Used for the upset/current-bid price display."""
+    if not text:
+        return None
+    m = re.search(r"\$?\s*([\d][\d,]*(?:\.\d+)?)", str(text))
+    if not m:
+        return None
+    try:
+        dollars = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    if dollars <= 0:
+        return None
+    return int(round(dollars * 100))
+
+
 def _row_to_dict(row):
     """Convert a sqlite3.Row to a plain dict for template rendering.
-    
+
     Ensures numeric fields are properly typed (float/int).
     """
     d = dict(row)
@@ -118,7 +136,21 @@ def _row_to_dict(row):
                 d[field] = None
     # Templates render price from `prop.price` (cents, like price_cents);
     # db rows carry only price_cents, so derive it here (0 = no price).
-    d["price"] = d.get("price_cents") or 0
+    # A stored opening bid goes stale the moment a sale enters the upset-
+    # bid period (#37 Cook Creek Rd: tile showed the $14,200 opening bid
+    # while the current bid sat above $75k). The price shown is therefore
+    # the freshest bid: the stored upset/current bid whenever it parses
+    # and exceeds the opening bid, else the opening bid. The original
+    # opening bid is kept in ``opening_price`` so templates can show the
+    # progression ($14,200 → $78,750).
+    opening = d.get("price_cents") or 0
+    upset = _bid_to_cents(d.get("upset_bid"))
+    if upset and upset > opening:
+        d["price"] = upset
+        d["opening_price"] = opening or None
+    else:
+        d["price"] = opening
+        d["opening_price"] = None
     # Derive map/photo links from coordinates/address so the dashboard can
     # always offer a map + "photo" of the property (legacy rows inserted
     # before maps URLs were stored, e.g. zillow rows).

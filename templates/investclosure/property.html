@@ -101,7 +101,13 @@
                 <div class="prop-detail-section">
                     <h3>Property Info</h3>
                     {% if prop.price %}
+                    {% if prop.opening_price %}
+                    <p><strong>Current Bid:</strong> ${{ "%.2f"|format(prop.price / 100) }}
+                       <span class="muted">(opening ${{ "%.2f"|format(prop.opening_price / 100) }})</span>
+                    </p>
+                    {% else %}
                     <p><strong>Price:</strong> ${{ "%.2f"|format(prop.price / 100) }}</p>
+                    {% endif %}
                     {% endif %}
                     <p><strong>Acreage:</strong>
         {% if prop.manual_acres_set %}

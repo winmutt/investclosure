@@ -1173,11 +1173,28 @@ class TestKaniaLawParsing:
         assert prop["source"] == "kania_law"
         assert prop["county"] == "Ashe"
         assert prop["state"] == "NC"
-        assert prop["price"] == 25000.0
+        # currentbid above openingbid -> the freshest bid is the price
+        assert prop["price"] == 26000.0
         assert prop["acres"] is None
         assert prop["description"] is not None
         assert "Sale: 2026-02-01" in prop["description"]
         assert "Upset bid: $26,000" in prop["description"]
+
+    def test_parse_record_price_falls_back_to_opening_bid(self):
+        """No/low/invalid currentbid -> the opening bid prices the row."""
+        scraper = self._make_scraper()
+        # TBD currentbid (post-sale completion) stays at the opening bid
+        rec = {"county": "Ashe", "propertytype": "residential",
+               "openingbid": "$25,000", "currentbid": "TBD",
+               "address": "100 Main St, Asheville, NC", "courtfile": "CF001"}
+        prop = scraper._parse_record(rec)
+        assert prop["price"] == 25000.0
+        # currentbid below openingbid (outlier) -> opening bid wins
+        rec2 = {"county": "Ashe", "propertytype": "residential",
+                "openingbid": "$25,000", "currentbid": "$900",
+                "address": "100 Main St, Asheville, NC", "courtfile": "CF002"}
+        prop2 = scraper._parse_record(rec2)
+        assert prop2["price"] == 25000.0
 
     def test_parse_record_skips_commercial(self):
         scraper = self._make_scraper()
@@ -1857,6 +1874,30 @@ class TestRowToDict:
              "manual_acres_override": None, "id": 1, "source": "test"}
         # _row_to_dict works on sqlite3.Row but dict conversion is simple
         assert d["id"] == 1
+
+    def test_price_prefers_higher_upset_bid(self):
+        """#37 Cook Creek Rd regression: a $14,200 opening bid must not
+        mask a $78,750 current/upset bid on tiles or the detail page."""
+        from scraper.server import _row_to_dict
+        d = _row_to_dict({"price_cents": 1420000, "upset_bid": "$78,750.00",
+                          "id": 37, "source": "kania_law"})
+        assert d["price"] == 7875000
+        assert d["opening_price"] == 1420000
+
+    def test_price_keeps_price_when_upset_not_higher_or_junk(self):
+        from scraper.server import _row_to_dict
+        # junk / TBD upset text: price stays the opening bid
+        d = _row_to_dict({"price_cents": 1420000, "upset_bid": "TBD"})
+        assert d["price"] == 1420000 and d["opening_price"] is None
+        # upset below the opening bid: no progression, no price change
+        d2 = _row_to_dict({"price_cents": 5000000, "upset_bid": "$1,000.00"})
+        assert d2["price"] == 5000000 and d2["opening_price"] is None
+
+    def test_price_of_upset_only_row(self):
+        from scraper.server import _row_to_dict
+        # no opening bid stored; a real current bid still prices the row
+        d = _row_to_dict({"price_cents": None, "upset_bid": "78,750"})
+        assert d["price"] == 7875000 and d["opening_price"] is None
 
     def test_empty_properties(self):
         from scraper.server import _rows_to_dicts

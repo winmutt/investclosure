@@ -481,6 +481,17 @@ body {
     color: var(--border);
 }
 
+/* Opening -> current bid progression on tiles (rows past the opening-bid
+   stage show "starting -> current" instead of a stale starting price). */
+.tile-bid-prog {
+    color: var(--text-quiet);
+}
+
+.tile-bid-arrow {
+    color: #16a34a;
+    font-weight: 600;
+}
+
 .tile-meta-label {
     font-size: 0.7rem;
 }
