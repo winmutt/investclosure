@@ -40,47 +40,65 @@ class ZLSNCScraper(BaseScraper):
             if agree_btn.count():
                 logger.info("Accepting consent ...")
                 agree_btn.click()
-                page.wait_for_timeout(5000)
+                page.wait_for_timeout(3000)
 
-            # Set page size to All (single page load)
-            dropdown_btn = page.locator('button[aria-label="Open or close the drop-down window"]').first
-            if dropdown_btn.count():
-                logger.info("Setting page size to All ...")
-                dropdown_btn.click()
-                page.wait_for_timeout(2000)
-                all_opt = page.get_by_role("option", name="All").first
-                if all_opt.count():
-                    all_opt.click()
-                    page.wait_for_timeout(2000)
-                else:
-                    logger.warning("Could not find 'All' option in dropdown")
-            else:
-                logger.warning("Could not find page size dropdown")
-
-            # Verify table exists
+            # The Blazor grid hydrates asynchronously after consent; wait for
+            # it explicitly (a fixed sleep sometimes returned before the table
+            # rendered, which read as "no data grid found").
             table = page.locator("table:has(th:has-text('Parcel #'))")
-            if not table.count():
+            try:
+                table.first.wait_for(state="visible", timeout=45000)
+            except Exception:
                 logger.warning("No data grid found on %s", self.BASE_URL)
                 return []
+            page.wait_for_timeout(1000)
 
-            rows = table.locator("tbody tr")
-            total = 0
-            try:
+            # Set page size to All (single page load); falls back to paging
+            # below when the dropdown offers no All/100/50 option.
+            self._set_page_size(page)
+
+            # Walk every grid page: "All" usually collapses the grid to one
+            # page, but the upstream page-size dropdown changes shape without
+            # notice (2026-10-18: 'All' still offered but rendered as plain
+            # <li>s, so the old role=option lookup silently missed it and the
+            # scraper only ever saw page 1's 11 rows). Next-page walking keeps
+            # coverage even when no large page size is selectable.
+            seen_ids: set[str] = set()
+            parsed = 0
+            page_no = 0
+            first_cell_prev = None
+            while page_no < 50:
+                page_no += 1
+                rows = table.locator("tbody tr")
                 total = rows.count()
-            except Exception:
-                pass
-            logger.info("Found %d total rows", total)
-
-            for i in range(total):
-                try:
-                    prop = self._parse_row(rows.nth(i))
+                logger.info("Page %d: %d rows", page_no, total)
+                if not total:
+                    break
+                for i in range(total):
+                    try:
+                        prop = self._parse_row(rows.nth(i))
+                    except Exception as exc:
+                        logger.warning("Row %d error: %s", i, exc)
+                        prop = None
                     if prop:
                         all_properties.append(prop)
-                except Exception as exc:
-                    logger.warning("Row %d error: %s", i, exc)
-                page.wait_for_timeout(200)
-                if (i + 1) % 50 == 0:
-                    self._random_delay()
+                        parsed += 1
+                    page.wait_for_timeout(200)
+                    if (i + 1) % 50 == 0:
+                        self._random_delay()
+
+                nxt = page.locator('button[aria-label="Next page"]').first
+                if not nxt.count() or not nxt.is_enabled():
+                    break
+                first_cell = rows.first.locator("td").first.inner_text().strip()[:60]
+                if first_cell == first_cell_prev:
+                    logger.warning("Next page did not advance (row %r); stopping", first_cell)
+                    break
+                first_cell_prev = first_cell
+                nxt.click()
+                page.wait_for_timeout(2500)
+
+            logger.info("Parsed %d rows across %d page(s)", parsed, page_no)
 
         # Deduplicate
         seen: set[str] = set()
@@ -97,6 +115,38 @@ class ZLSNCScraper(BaseScraper):
 
         logger.info("ZLS-NC: %d raw -> %d unique after county filter", len(all_properties), len(unique))
         return unique
+
+    # Page-size choices to try, in preference order. DevExpress Blazor 26.x
+    # renders them as plain <li> items (no role="option"), so they must be
+    # matched by exact visible text — get_by_role("option") finds nothing.
+    PAGE_SIZE_LABELS = ("All", "100", "50")
+
+    def _set_page_size(self, page) -> None:
+        """Select the largest available page size in the grid dropdown."""
+        dropdown_btn = page.locator(
+            'button[aria-label="Open or close the drop-down window"]'
+        ).first
+        for _ in range(5):
+            if dropdown_btn.count():
+                break
+            page.wait_for_timeout(1000)
+        if not dropdown_btn.count():
+            logger.warning("Could not find page size dropdown")
+            return
+        dropdown_btn.click()
+        page.wait_for_timeout(1500)
+        for label in self.PAGE_SIZE_LABELS:
+            opt = page.locator("li:visible").filter(
+                has_text=re.compile(rf"^{re.escape(label)}$")
+            )
+            if opt.count():
+                logger.info("Setting page size to %s ...", label)
+                opt.first.click()
+                page.wait_for_timeout(2500)
+                return
+        logger.warning("No page-size option (All/100/50) found; using pager walk")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
 
     def _filter_counties(self, properties: list[PropertyData]) -> list[PropertyData]:
         """Filter to NC mountain counties only."""

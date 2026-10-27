@@ -282,6 +282,34 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-10-27 (UI density pass + zls_nc grid fix)**: Two follow-ups from the
+  scraper health audit.
+  - **zls_nc page-size regression fixed.** The DevExpress Blazor grid's
+    page-size choices now render as plain `<li>` elements (no
+    `role="option"`), so `get_by_role("option", name="All")` matched nothing
+    and the scraper silently parsed only page 1 (11 rows, was 241). New
+    `_set_page_size()` matches the visible `<li>` by exact text
+    (All → 100 → 50) and a next-page walk was added as a fallback
+    (`button[aria-label="Next page"]`, max 50 pages, no-op detection), plus
+    an explicit `wait_for` on the grid table instead of a fixed sleep
+    (consent → grid hydration raced the old 5s sleep and intermittently
+    read as "no data grid found"). Verified live: 202 rows parsed in one
+    page. **Note**: ZLS currently posts no mountain-county inventory at all
+    (all 202 listings are piedmont/eastern NC — Guilford, Scotland,
+    Cabarrus, Forsyth, …), so `found=0` for zls_nc is legitimate until they
+    list a mountain county again; the pager fix means those rows will now be
+    seen when they appear.
+  - **Dashboard density pass** ("too much white space — this is a data
+    app"): global tightening of `style.css` (body line-height 1.6 → 1.45,
+    content/topbar/sidebar/tab/table/card paddings, 300px → 225px tile
+    min-width, 0.45rem tile gaps, list rows 1rem → 0.28rem padding, smaller
+    action buttons). Tiles are now flex columns so action rows bottom-align
+    (ragged card bottoms gone) and `Map` no longer wraps. The property
+    detail page switched from a single 800px column to a
+    `repeat(auto-fill, minmax(300px, 1fr))` grid on the active tab pane —
+    all Overview data (Location/Maps/IDs/Info/Sale/Timeline) fits in four
+    columns with no scrolling. Sidebar "By Source" now renders as one
+    compact row per source instead of a joined tuple repr.
 - **2026-10-23 (rebrand to "Mountains" + beach vertical scaffold)**: The
   dashboard is now **multi-vertical** and branded **Mountains**.
   - **Branding-only rename** InvestClosure → **Mountains**: page `<title>`s
