@@ -33,7 +33,7 @@
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    line-height: 1.6;
+    line-height: 1.45;
     color: var(--text);
     background: var(--bg-card-alt);
 }
@@ -59,7 +59,7 @@ body {
 }
 
 .sidebar-brand {
-    padding: 1.5rem 1.25rem;
+    padding: 0.7rem 1rem;
     border-bottom: 1px solid var(--sidebar-border);
 }
 
@@ -85,15 +85,15 @@ body {
 }
 
 .sidebar-nav {
-    padding: 1rem 0;
+    padding: 0.4rem 0;
     flex: 1;
 }
 
 .sidebar-nav a {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.65rem 1.25rem;
+    gap: 0.6rem;
+    padding: 0.4rem 1rem;
     color: var(--sidebar-text);
     text-decoration: none;
     font-size: 0.9rem;
@@ -116,23 +116,23 @@ body {
 }
 
 .sidebar-stats {
-    padding: 1rem 1.25rem;
+    padding: 0.7rem 1rem;
     border-top: 1px solid var(--sidebar-border);
     font-size: 0.85rem;
 }
 
 .sidebar-stats-title {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--text-quiet);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.3rem;
 }
 
 .stat-item {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.2rem;
 }
 
 .stat-item-label {
@@ -153,7 +153,16 @@ body {
 }
 
 .stat-item-value.small {
-    font-size: 0.75rem;
+    font-size: 0.66rem;
+    line-height: 1.3;
+}
+
+.stat-item-source {
+    margin-bottom: 0.05rem;
+}
+
+.stat-item-source .stat-item-label {
+    font-size: 0.72rem;
 }
 
 /* Main Content */
@@ -167,7 +176,7 @@ body {
 .topbar {
     background: var(--bg-card);
     border-bottom: 1px solid var(--border);
-    padding: 1rem 2rem;
+    padding: 0.3rem 0.8rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -177,30 +186,30 @@ body {
 }
 
 .topbar-title {
-    font-size: 1.25rem;
+    font-size: 1.05rem;
     font-weight: 700;
 }
 
 .topbar-subtitle {
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     color: var(--text-muted);
 }
 
 .content {
     flex: 1;
-    padding: 2rem;
+    padding: 0.45rem 0.8rem;
 }
 
 .flash-messages {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.5rem;
 }
 
 .flash-message {
     background: var(--info-light);
     color: var(--info);
-    padding: 0.75rem 1rem;
+    padding: 0.4rem 0.7rem;
     border-radius: var(--radius-sm);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.35rem;
     border-left: 3px solid var(--info);
 }
 
@@ -231,16 +240,16 @@ body {
 }
 
 .btn-sm {
-    padding: 0.25rem 0.75rem;
-    font-size: 0.8rem;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.75rem;
 }
 
 /* Badges */
 .badge {
     display: inline-block;
-    padding: 0.15rem 0.5rem;
+    padding: 0.1rem 0.4rem;
     border-radius: 999px;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
 }
 
@@ -271,26 +280,26 @@ body {
 
 /* Search Bar */
 .search-bar {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.5rem;
 }
 
 .search-bar form {
     display: flex;
-    gap: 0.75rem;
+    gap: 0.4rem;
     flex-wrap: wrap;
 }
 
 .search-input {
     flex: 1;
     min-width: 200px;
-    padding: 0.5rem 0.75rem;
+    padding: 0.35rem 0.55rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
 }
 
 .filter-select, .filter-input {
-    padding: 0.5rem 0.75rem;
+    padding: 0.35rem 0.55rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
@@ -302,12 +311,12 @@ body {
     display: flex;
     gap: 0.25rem;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.25rem;
     flex-wrap: wrap;
 }
 
 .tab-btn {
-    padding: 0.5rem 1rem;
+    padding: 0.3rem 0.7rem;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
@@ -329,12 +338,12 @@ body {
 }
 
 .tab-count {
-    margin-left: 0.4rem;
-    font-size: 0.75rem;
+    margin-left: 0.35rem;
+    font-size: 0.7rem;
     font-weight: 500;
     background: var(--bg-soft);
     color: var(--text-muted);
-    padding: 0.1rem 0.5rem;
+    padding: 0.05rem 0.4rem;
     border-radius: 999px;
 }
 
@@ -354,7 +363,7 @@ body {
 
 .tabs-cat {
     border-bottom-style: dashed;
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.25rem;
 }
 
 .tabs-cat .tab-btn {
@@ -364,13 +373,13 @@ body {
 
 /* Top-level vertical switch (Mountains | Beach) — sits above state tabs */
 .tabs-vertical {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.3rem;
     gap: 0.5rem;
 }
 
 .tabs-vertical .tab-btn {
-    font-size: 1.05rem;
-    padding: 0.6rem 1.1rem;
+    font-size: 0.95rem;
+    padding: 0.35rem 0.8rem;
 }
 
 .tab-soon {
@@ -396,7 +405,7 @@ body {
 
 .empty-state {
     text-align: center;
-    padding: 3rem 1rem;
+    padding: 1.25rem 1rem;
     color: var(--text-muted);
 }
 
@@ -407,8 +416,8 @@ body {
 /* Tiles Layout */
 .tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(225px, 1fr));
+    gap: 0.45rem;
 }
 
 .tile {
@@ -416,6 +425,8 @@ body {
     border-radius: var(--radius);
     border: 1px solid var(--border);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
     transition: box-shadow 0.2s, transform 0.2s;
 }
 
@@ -438,43 +449,44 @@ body {
 }
 
 .tile-body {
-    padding: 0 1rem;
+    padding: 0 0.55rem;
+    flex: 1;
 }
 
 .tile-address {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    margin: 0.5rem 0 0.25rem;
+    margin: 0.18rem 0 0.08rem;
     word-break: break-word;
 }
 
 .tile-county {
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     color: var(--text-muted);
 }
 
 .tile-parcel-line {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.35rem;
     align-items: center;
-    margin-top: 0.25rem;
+    margin-top: 0.1rem;
 }
 
 .tile-parcel-tag {
     font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    font-size: 0.8rem;
+    font-size: 0.72rem;
     background: var(--bg-soft);
     color: #ffffff;
-    padding: 0.1rem 0.4rem;
+    padding: 0.05rem 0.3rem;
     border-radius: 4px;
 }
 
 .tile-meta {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-quiet);
-    margin-top: 0.5rem;
+    margin-top: 0.15rem;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.4rem;
 }
 
 .tile-meta-divider {
@@ -497,25 +509,26 @@ body {
 }
 
 .tile-action-actions {
-    padding: 0.75rem 1rem;
+    padding: 0.35rem 0.5rem;
     border-top: 1px solid var(--border);
     display: flex;
-    gap: 0.5rem;
+    gap: 0.3rem;
 }
 
 .tile-action-btn {
-    padding: 0.35rem 0.75rem;
+    padding: 0.12rem 0.3rem;
     border-radius: var(--radius-sm);
     text-decoration: none;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     font-weight: 500;
     border: 1px solid var(--border);
     background: var(--bg-card);
     color: var(--text);
     cursor: pointer;
     transition: background 0.2s;
-    flex: 1;
+    flex: 1 1 auto;
     text-align: center;
+    white-space: nowrap;
 }
 
 .tile-action-btn:hover {
@@ -535,15 +548,15 @@ body {
 }
 
 .tile-badge-badge {
-    padding: 0.5rem 1rem;
+    padding: 0.3rem 0.55rem;
     display: flex;
-    gap: 0.25rem;
+    gap: 0.2rem;
     flex-wrap: wrap;
 }
 
 .tile-empty {
     grid-column: 1 / -1;
-    padding: 3rem;
+    padding: 1.25rem;
     text-align: center;
     color: var(--text-muted);
 }
@@ -552,18 +565,18 @@ body {
 .list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.3rem;
 }
 
 .list-item {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 1rem;
+    padding: 0.28rem 0.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: 0.4rem;
 }
 
 .list-item:hover {
@@ -587,21 +600,22 @@ body {
 }
 
 .list-item-row {
-    font-size: 0.85rem;
+    font-size: 0.76rem;
     color: var(--text-muted);
     display: flex;
-    gap: 1rem;
-    margin-top: 0.25rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.05rem;
 }
 
 .list-item-enriched {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--accent);
-    margin-top: 0.25rem;
+    margin-top: 0.1rem;
 }
 
 .list-empty {
-    padding: 2rem;
+    padding: 1.25rem;
     text-align: center;
     color: var(--text-muted);
 }
@@ -614,8 +628,8 @@ body {
 
 /* Pagination */
 .pagination {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    margin-top: 0.6rem;
+    padding-top: 0.4rem;
     border-top: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
@@ -623,8 +637,8 @@ body {
 }
 
 .pagination-info {
-    margin-top: 1rem;
-    padding: 0.5rem 0;
+    margin-top: 0.3rem;
+    padding: 0.2rem 0;
     text-align: center;
     color: var(--text-muted);
     font-size: 0.85rem;
@@ -632,36 +646,36 @@ body {
 
 /* Property Detail */
 .property-detail {
-    max-width: 800px;
+    max-width: none;
 }
 
 .prop-header h1 {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
+    font-size: 1.25rem;
+    margin-bottom: 0.2rem;
 }
 
 .prop-badges {
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
 }
 
 .prop-details {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 0.4rem;
 }
 
 .prop-detail-section h3 {
-    font-size: 1rem;
-    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.2rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .prop-detail-section p {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.15rem;
 }
 
 .prop-description {
@@ -669,9 +683,9 @@ body {
     font-size: 0.9rem;
     background: var(--bg-soft);
     color: #ffffff;
-    padding: 1rem;
+    padding: 0.6rem;
     border-radius: var(--radius-sm);
-    max-height: 300px;
+    max-height: 420px;
     overflow-y: auto;
 }
 
@@ -685,16 +699,16 @@ body {
     font-size: 0.9em;
 }
 .prop-actions {
-    margin-top: 2rem;
+    margin-top: 0.8rem;
     display: flex;
-    gap: 1rem;
+    gap: 0.6rem;
 }
 
 /* Footer */
 .footer {
-    padding: 1rem 2rem;
+    padding: 0.3rem 1rem;
     text-align: center;
-    font-size: 0.8rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
     border-top: 1px solid var(--border);
 }
@@ -703,13 +717,14 @@ body {
 .tile-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: 0.25rem;
+    padding: 0.3rem 0.45rem;
+    margin-top: auto;
     border-top: 1px solid var(--border);
 }
 
 .tile-notes {
-    padding: 0 1rem 0.75rem;
+    padding: 0 0.55rem 0.4rem;
     border-top: 1px solid var(--border);
 }
 
@@ -721,7 +736,7 @@ body {
 
 .tile-notes-editor,
 .list-notes-editor {
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
 }
 
 .tile-notes-input,
@@ -739,8 +754,8 @@ body {
 .list-notes-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.4rem;
+    gap: 0.4rem;
+    margin-top: 0.25rem;
 }
 
 .tile-notes-status,
@@ -751,13 +766,13 @@ body {
 
 .tile-notes-display,
 .list-notes-display {
-    margin-top: 0.5rem;
+    margin-top: 0.2rem;
     font-size: 0.85rem;
     color: var(--text);
     white-space: pre-wrap;
     background: var(--bg-card-alt);
     border-left: 3px solid var(--accent);
-    padding: 0.5rem 0.75rem;
+    padding: 0.35rem 0.5rem;
     border-radius: var(--radius-sm);
 }
 
@@ -766,7 +781,7 @@ body {
 }
 
 .list-item-notes {
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
 }
 
 .list-item-notes .btn-sm {
@@ -798,9 +813,9 @@ body {
 .tile-dates {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-    font-size: 0.8rem;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+    font-size: 0.74rem;
     color: #475569;
 }
 
@@ -812,6 +827,12 @@ body {
 .tile-date strong {
     color: var(--text);
     font-weight: 600;
+}
+
+.tile-seen {
+    font-size: 0.68rem;
+    color: var(--text-quiet);
+    margin-top: 0.1rem;
 }
 
 /* Improve grey-on-white readability (raise contrast on light cards) */
@@ -837,9 +858,9 @@ body {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    padding: 0.6rem 1rem;
-    margin-bottom: 0.75rem;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    margin-bottom: 0.35rem;
     background: var(--surface, #fff);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -858,7 +879,7 @@ body {
 .bulk-reason {
     flex: 1 1 260px;
     min-width: 220px;
-    padding: 0.45rem 0.6rem;
+    padding: 0.3rem 0.5rem;
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 0.9rem;

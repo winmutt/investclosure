@@ -67,10 +67,15 @@
                     <span class="stat-item-value">{{ global_stats.scrape_runs or 0 }}</span>
                 </div>
                 {% if global_stats.get('by_source') %}
-                <div class="stat-item">
+                <div class="stat-item stat-item-source">
                     <span class="stat-item-label">By Source</span>
-                    <span class="stat-item-value small">{{ global_stats.by_source | join(', ') }}</span>
                 </div>
+                {% for src, cnt in global_stats.by_source %}
+                <div class="stat-item stat-item-source">
+                    <span class="stat-item-label">{{ src }}</span>
+                    <span class="stat-item-value small">{{ cnt }}</span>
+                </div>
+                {% endfor %}
                 {% endif %}
             </div>
             {% endif %}
