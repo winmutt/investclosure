@@ -284,3 +284,42 @@ def test_live_end_to_end(conn, name):
         "SELECT COUNT(*) FROM properties WHERE status='active'"
     ).fetchone()[0]
     assert active > 0
+
+
+# ===========================================================================
+# 4. Parcel-number variants (county PIN normalization)
+# ===========================================================================
+class TestParcelVariants:
+    """NC OneMap stores different parcel formats per county; the printed
+    notice PIN must normalize to every known storage shape (mirroring the
+    JS variants in static/gis_viewer.html)."""
+
+    def test_buncombe_parent_pin_gets_trailing_zero_suffix(self):
+        # Notices print the parent PIN "9634-43-5464"; OneMap stores the
+        # 15-digit form with a 5-digit sub-parcel suffix.
+        variants = nc_gis_lookup._parcel_variants("9634-43-5464")
+        assert variants == [
+            "9634-43-5464", "9634435464", "963400435464", "963443546400000",
+        ]
+
+    def test_mcdowell_variants_still_present(self):
+        variants = nc_gis_lookup._parcel_variants("0668-15-3806")
+        assert "066800153806" in variants      # middle-padded 12-digit
+        assert "066815380600000" in variants    # trailing suffix (harmless miss)
+
+    def test_full_dashed_buncombe_pin_no_double_suffix(self):
+        # A notice printing the full 4-2-4-5 PIN already carries the suffix.
+        # The trailing-zero variant must NOT fire (the 3-group regex never
+        # matches and the dash-stripped form already ends in '0000').
+        variants = nc_gis_lookup._parcel_variants("9775-39-2342-00000")
+        assert variants == ["9775-39-2342-00000", "977539234200000"]
+
+    def test_letter_parcels_unaffected(self):
+        variants = nc_gis_lookup._parcel_variants("1234-AB-5678")
+        assert variants == ["1234-AB-5678", "1234AB5678"]
+
+    def test_plain_digit_parcel_no_trailing_change(self):
+        # A parcel already ending in '0000' is left alone (suffixing more
+        # zeros could form a different parcel).
+        variants = nc_gis_lookup._parcel_variants("977539234200000")
+        assert variants == ["977539234200000"]

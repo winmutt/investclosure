@@ -370,6 +370,19 @@ def _parcel_variants(parcel: str) -> list[str]:
         padded = m.group(1) + m.group(2).zfill(4) + m.group(3)
         if padded not in variants:
             variants.append(padded)
+        # Buncombe County notices print just the PARENT PIN in the same
+        # NNNN-NN-NNNN shape ("9634-43-5464") while NC OneMap stores the
+        # 15-digit form with a 5-digit sub-parcel suffix ("963443546400000")
+        # — so also try the de-dashed digits plus a 5-zero sub-parcel suffix
+        # (added last; every earlier variant still fails the lookup first,
+        # and any match remains county-filtered). Digits already ending in
+        # '0000' are left alone — suffixing more zeros could form a
+        # different parcel.
+        digits = m.group(1) + m.group(2) + m.group(3)
+        if not digits.endswith("0000"):
+            trailing = digits + "00000"
+            if trailing not in variants:
+                variants.append(trailing)
     return variants
 
 
