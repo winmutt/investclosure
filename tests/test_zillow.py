@@ -43,7 +43,13 @@ def test_slugs():
     assert county_slug("De Kalb") == "de-kalb"
     assert county_display("van_buren") == "Van Buren"
     assert build_county_url("van_buren", "TN") == \
-        "https://www.zillow.com/homes/van-buren-tn/"
+        "https://www.zillow.com/homes/van-buren-county-tn/"
+    # County/city name collisions must resolve to the COUNTY (madison-nc
+    # serves the town of Madison, Rockingham Co., not Madison County).
+    assert build_county_url("madison", "NC") == \
+        "https://www.zillow.com/homes/madison-county-nc/"
+    assert build_county_url("Buncombe", "nc") == \
+        "https://www.zillow.com/homes/buncombe-county-nc/"
 
 
 def test_lot_acres_units():
@@ -133,7 +139,7 @@ def test_enforce_thresholds_archives_strays(monkeypatch, tmp_path):
         id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, status TEXT,
         price_cents INTEGER, acres REAL)""")
     rows = [
-        ("zillow", "active", 25_000_000, 10.0),   # over $200k -> archive
+        ("zillow", "active", 26_000_000, 10.0),   # over $250k -> archive
         ("zillow", "active", 15_000_000, 3.0),    # under min acres -> archive
         ("zillow", "active", 15_000_000, 2000.0),  # over max acres -> archive
         ("zillow", "active", 15_000_000, 10.0),   # keeps

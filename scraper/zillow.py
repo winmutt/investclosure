@@ -8,9 +8,9 @@ same server-rendered ``__NEXT_DATA__`` JSON payload.
 
 Strategy: one Camoufox session loops the qualifying county sets
 (config.QUALIFYING_COUNTIES), loads
-``https://www.zillow.com/homes/<county>-<state>/`` per county, extracts
-listings from the embedded Next.js searchResults JSON, applies the price /
-acreage filters, and rejects Zillow's cross-state name collisions
+``https://www.zillow.com/homes/<county>-county-<state>/`` per county,
+extracts listings from the embedded Next.js searchResults JSON, applies the
+price / acreage filters, and rejects Zillow's cross-state name collisions
 (e.g. "Perry, KS" served for a Perry County, KY search). Detail-page
 enrichment (description + parcel number) is opt-in via ``fetch_details``.
 """
@@ -59,8 +59,22 @@ def county_display(county: str) -> str:
 
 
 def build_county_url(county: str, state: str) -> str:
-    """Build a Zillow search URL targeting a single county."""
-    return f"https://www.zillow.com/homes/{county_slug(county)}-{state.lower()}/"
+    """Build a Zillow search URL targeting a single county.
+
+    Always uses the ``<county>-county-<state>`` form. The shorter
+    ``<county>-<state>`` form is ambiguous whenever a county shares its
+    name with a city/town, and Zillow resolves it to the CITY: ``madison-nc``
+    served Madison the town (Rockingham Co., ZIP 27025), so every Hot
+    Springs / Marshall / Mars Hill listing in Madison COUNTY was absent from
+    the results and the centroid guard silently discarded what remained
+    ("Madison, NC: 0 listings"). The same collision exists for macon-nc
+    (served Macon city, ZIP 27551 in Warren Co.), mitchell, jackson,
+    washington, greene and perry. The ``-county-`` form resolves correctly
+    for all county shapes verified live — single- and multi-word names
+    (``van-buren-county-tn``) and every name collision above.
+    """
+    return (f"https://www.zillow.com/homes/"
+            f"{county_slug(county)}-county-{state.lower()}/")
 
 
 def lot_acres(home_info: dict) -> Optional[float]:
