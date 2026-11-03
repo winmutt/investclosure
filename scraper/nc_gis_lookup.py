@@ -730,7 +730,8 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
 
 
 def enrich_properties(source: Optional[str] = None,
-                      status: str = "active") -> dict:
+                      status: str = "active",
+                      min_id: Optional[int] = None) -> dict:
     """Enrich properties in DB with GIS data.
 
     Queries NC OneMap for all properties that have a parcel_number but no GIS acres.
@@ -740,6 +741,11 @@ def enrich_properties(source: Optional[str] = None,
         source: Optional source filter (e.g., "kania_law"). Defaults to all.
         status: Row status to process (default "active" — archived rows are
             skipped to avoid burning API calls; use "all" for every row).
+        min_id: Optional "only rows inserted after this id" filter. Each
+            lookup costs ~10s, so a scraper that just inserted thousands of
+            rows (zillow after pagination) must not replay the whole
+            backlog every run — pass the highest id from before the
+            insert to enrich only this run's new rows.
 
     Returns:
         dict with counts: enriched, skipped_no_parcel, skipped_already_gis, failed
@@ -783,6 +789,9 @@ def enrich_properties(source: Optional[str] = None,
     if status and status != "all":
         where += " AND status = ?"
         params.append(status)
+    if min_id is not None:
+        where += " AND id > ?"
+        params.append(int(min_id))
 
     # Get properties (with a parcel OR an address) that need GIS enrichment
     rows = conn.execute(

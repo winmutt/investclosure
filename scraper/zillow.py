@@ -6,13 +6,20 @@ every other source). The original fetched with curl_cffi; this version
 fetches through Camoufox (stealth Firefox) per project policy, parsing the
 same server-rendered ``__NEXT_DATA__`` JSON payload.
 
-Strategy: one Camoufox session loops the qualifying county sets
-(config.QUALIFYING_COUNTIES), loads
-``https://www.zillow.com/homes/<county>-county-<state>/`` per county,
-extracts listings from the embedded Next.js searchResults JSON, applies the
-price / acreage filters, and rejects Zillow's cross-state name collisions
-(e.g. "Perry, KS" served for a Perry County, KY search). Detail-page
-enrichment (description + parcel number) is opt-in via ``fetch_details``.
+Strategy: loops the qualifying county sets (config.QUALIFYING_COUNTIES),
+walks every page of each county's search (see
+:func:`build_paged_county_url`), extracts listings from the embedded Next.js
+searchResults JSON, applies the price / acreage filters, and rejects
+Zillow's cross-state name collisions (e.g. "Perry, KS" served for a Perry
+County, KY search). Detail-page enrichment (description + parcel number) is
+opt-in via ``fetch_details``.
+
+Pagination matters: a county search renders only 41 listings per page, so
+before 2026-11-02 the scraper saw the first 41 of e.g. Macon NC's 820 and
+silently missed qualifying properties ordered onto later pages (491 Otter
+Mountain Rd — $235k/20.75ac — sat on page 12). Each page is loaded in a
+*fresh* Camoufox profile because Zillow walls a session's second
+same-origin navigation.
 """
 from __future__ import annotations
 import json
@@ -77,6 +84,37 @@ def build_county_url(county: str, state: str) -> str:
             f"{county_slug(county)}-county-{state.lower()}/")
 
 
+_FOR_SALE_ROOT = "https://www.zillow.com/homes/for_sale/"
+
+
+def build_paged_county_url(county: str, state: str, page: int = 1,
+                           max_price: int = 0) -> str:
+    """Build a *paged* county search URL (legacy ``/homes/for_sale/`` form).
+
+    Only this legacy form accepts an inline filter AND pagination. The modern
+    ``/homes/<county>-county-<state>/`` page always renders 41 listings with
+    ``filterState: null`` and honours neither ``?searchQueryState=`` nor
+    ``filterState``, while
+
+        /homes/for_sale/macon-county-nc/0-250000_price/3_p/
+
+    applies the price cap server-side and returns page 3 *of that filtered
+    set* (verified live 2026-11-02: unfiltered page 1 lacks 491 Otter
+    Mountain Rd; the price-filtered page 3 has it). Zillow accepts no working
+    acreage token on this path, so acreage bounds stay local to
+    :func:`parse_county_page`.
+    """
+    parts = [f"{county_slug(county)}-county-{state.lower()}/"]
+    if max_price:
+        parts.append(f"0-{int(max_price)}_price/")
+    if page > 1:
+        parts.append(f"{page}_p/")
+    return _FOR_SALE_ROOT + "".join(parts)
+
+
+
+
+
 def lot_acres(home_info: dict) -> Optional[float]:
     """Lot size in acres from Zillow's lotAreaValue/lotAreaUnit pair."""
     lot_val = home_info.get("lotAreaValue")
@@ -94,6 +132,27 @@ def lot_acres(home_info: dict) -> Optional[float]:
     return None
 
 
+def extract_list_results(html: str) -> Optional[list]:
+    """Raw ``listResults`` array from a search page, or None when absent.
+
+    Distinguishing "page has no payload" (bot page / layout change) from
+    "page has zero results" (past the last page) is what lets the county
+    walk stop for the right reason.
+    """
+    match = _NEXT_DATA_RE.search(html or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1).strip())
+    except json.JSONDecodeError:
+        return None
+    try:
+        return data["props"]["pageProps"]["searchPageState"]["cat1"][
+            "searchResults"]["listResults"]
+    except (KeyError, TypeError):
+        return None
+
+
 def parse_county_page(html: str, county: str, state: str,
                       max_price: int = 0,
                       min_acres: float = 0.0,
@@ -109,22 +168,20 @@ def parse_county_page(html: str, county: str, state: str,
     Returns [] when the page carries no parseable search results (robot
     page, layout change, ...).
     """
-    match = _NEXT_DATA_RE.search(html or "")
-    if not match:
-        return []
-    try:
-        data = json.loads(match.group(1).strip())
-    except json.JSONDecodeError:
-        return []
+    return parse_listings(extract_list_results(html) or [], county, state,
+                          max_price=max_price, min_acres=min_acres,
+                          centroids=centroids, max_acres=max_acres, geo=geo,
+                          targets=targets)
 
-    try:
-        list_results = (
-            data["props"]["pageProps"]["searchPageState"]
-            ["cat1"]["searchResults"]["listResults"]
-        )
-    except (KeyError, TypeError):
-        return []
 
+def parse_listings(list_results: list, county: str, state: str,
+                   max_price: int = 0,
+                   min_acres: float = 0.0,
+                   centroids: Optional[dict] = None,
+                   max_acres: float = 0.0,
+                   geo=None,
+                   targets: Optional[set] = None) -> list[PropertyData]:
+    """Filter one page's raw ``listResults`` items into property records."""
     properties: list[PropertyData] = []
     seen_zpids: set[str] = set()
 
@@ -142,9 +199,16 @@ def parse_county_page(html: str, county: str, state: str,
             continue
 
         acres = lot_acres(home_info)
-        if acres is not None and acres < min_acres:
+        if acres is None:
+            # Acreage is required to qualify: with no lot size in the
+            # payload the 5-acre minimum cannot be verified, and a full
+            # paginated county sweep yields thousands of such rows — far
+            # more than the post-insert enricher can backfill (2026-11-02:
+            # 4,604 harvested, 1,244 with no acreage).
             continue
-        if acres is not None and max_acres and acres > max_acres:
+        if acres < min_acres:
+            continue
+        if max_acres and acres > max_acres:
             continue
 
         # Zillow county URLs leak same-named counties from other states
@@ -252,8 +316,16 @@ class ZillowScraper(BaseScraper):
     BASE_URL = "https://www.zillow.com"
     PAGE_TIMEOUT_MS = 60000
     DELAY_BETWEEN_DETAIL_PAGES = (1.0, 2.0)
+    DELAY_BETWEEN_SEARCH_PAGES = (1.0, 2.0)
     BOT_PAGE_COOLDOWN = (10.0, 18.0)
     MAX_CONSECUTIVE_CHALLENGES = 12
+    # Zillow renders up to 41 listings per search page; a short page is
+    # therefore the last page (saves a wasted request in small counties).
+    PAGE_SIZE = 41
+    # Zillow's own search caps out at 20 pages of 41 listings; the price
+    # filter keeps almost every county below that (Macon NC: 20 pages
+    # unfiltered -> 12 with max_price=250k).
+    MAX_PAGES_PER_COUNTY = 20
 
     def __init__(self, fetch_details: bool = False,
                  states: Optional[list[str]] = None):
@@ -270,10 +342,11 @@ class ZillowScraper(BaseScraper):
         """Scrape all qualifying counties, state by state.
 
         Zillow's PerimeterX flags a browser session after a handful of
-        same-origin navigations, so each county gets a FRESH Camoufox
+        same-origin navigations, so every search page gets a FRESH Camoufox
         profile (matching the legacy curl_cffi-per-request recipe that
         produced 57 listings/run). A circuit breaker aborts the sweep when
-        Zillow starts serving bot pages consecutively (IP-level flag).
+        Zillow starts serving bot pages for consecutive counties (IP-level
+        flag).
         """
         all_props: list[PropertyData] = []
         state_map = {s: c for s, c in QUALIFYING_COUNTIES.items()
@@ -304,9 +377,12 @@ class ZillowScraper(BaseScraper):
         logger.info("── %s (%d counties) ──", state, len(counties))
         consecutive = 0
         for county in counties:
-            props, challenged = self._scrape_county(county, state)
-            logger.info("  %s, %s: %d listings%s", county_display(county),
-                        state, len(props),
+            props, challenged, returned, pages = self._scrape_county(county,
+                                                                     state)
+            logger.info("  %s, %s: %d returned / %d qualifying "
+                        "(%d page%s)%s", county_display(county), state,
+                        returned, len(props), pages,
+                        "" if pages == 1 else "s",
                         " [bot page]" if challenged else "")
             all_props.extend(props)
             consecutive = consecutive + 1 if challenged else 0
@@ -319,12 +395,91 @@ class ZillowScraper(BaseScraper):
         return False
 
     def _scrape_county(self, county: str, state: str,
-                       attempts: int = 2) -> tuple[list[PropertyData], bool]:
-        """Fetch + parse one county in a fresh Camoufox profile.
+                       attempts: int = 2
+                       ) -> tuple[list[PropertyData], bool, int, int]:
+        """Walk every page of one county's search.
 
-        Returns (properties, challenged) — challenged means the page
-        carried no __NEXT_DATA__ (bot page / layout change)."""
-        url = build_county_url(county, state)
+        Returns ``(properties, challenged, returned, pages)``: qualifying
+        records, whether page 1 was a bot page, the raw listing count seen
+        across all pages (so short/failed walks are visible in the log), and
+        the number of pages walked.
+
+        A fresh Camoufox profile is launched per page — Zillow walls the
+        second same-origin navigation in a session, so reusing one browser
+        caps a county at 41 listings.
+        """
+        props: list[PropertyData] = []
+        seen: set[str] = set()
+        seen_raw: set[str] = set()
+        returned = 0
+        pages = 0
+        challenged = False
+        targets = set(QUALIFYING_COUNTIES.get(state.upper(), []))
+        page_no = 1
+
+        while page_no <= self.MAX_PAGES_PER_COUNTY:
+            url = build_paged_county_url(county, state, page_no,
+                                         self.max_price)
+            html = self._fetch_page(url, county, state, page_no,
+                                    attempts if page_no == 1 else 1)
+            if html is None:
+                if page_no == 1:
+                    challenged = True
+                    logger.warning(
+                        "No __NEXT_DATA__ for %s (%s) after %d attempts — "
+                        "bot page or layout change?", county, state, attempts)
+                else:
+                    logger.info(
+                        "  %s, %s: page %d unavailable — keeping %d "
+                        "listing(s) from %d page(s)",
+                        county_display(county), state, page_no, len(props),
+                        pages)
+                break
+
+            items = extract_list_results(html)
+            if not items:
+                break  # past the last page (or a payload-less page)
+
+            page_props = parse_listings(
+                items, county, state,
+                max_price=self.max_price, min_acres=self.min_acres,
+                centroids=self.centroids, max_acres=self.max_acres,
+                geo=self.geo, targets=targets)
+
+            new_raw = 0
+            for item in items:
+                zpid = str(item.get("zpid", ""))
+                if zpid and zpid not in seen_raw:
+                    seen_raw.add(zpid)
+                    new_raw += 1
+            for prop in page_props:
+                pid = prop.get("source_listing_id", "")
+                if pid and pid not in seen:
+                    seen.add(pid)
+                    props.append(prop)
+            returned += len(items)
+            pages += 1
+
+            if not new_raw:
+                # The same 41 zpids again: Zillow ignored the page offset.
+                logger.info("  %s, %s: page %d repeated earlier results — "
+                            "stopping", county_display(county), state, page_no)
+                break
+            if len(items) < self.PAGE_SIZE:
+                break  # short page == last page
+            page_no += 1
+            time.sleep(random.uniform(*self.DELAY_BETWEEN_SEARCH_PAGES))
+
+        if pages >= self.MAX_PAGES_PER_COUNTY and returned >= (
+                self.PAGE_SIZE * self.MAX_PAGES_PER_COUNTY):
+            logger.warning(
+                "  %s, %s: hit the %d-page cap — some listings unreachable",
+                county_display(county), state, self.MAX_PAGES_PER_COUNTY)
+        return props, challenged, returned, pages
+
+    def _fetch_page(self, url: str, county: str, state: str, page_no: int,
+                    attempts: int = 1) -> Optional[str]:
+        """Load *url* in a fresh Camoufox profile; return HTML or None."""
         for attempt in range(1, attempts + 1):
             self._random_delay()
             html = ""
@@ -335,24 +490,16 @@ class ZillowScraper(BaseScraper):
                                      timeout=self.PAGE_TIMEOUT_MS)
                     html = resp.text() if resp else ""
             except Exception as exc:
-                logger.warning("County page fetch failed (%s, %s): %s",
-                               county, state, exc)
+                logger.warning("County page fetch failed (%s, %s page %d): %s",
+                               county, state, page_no, exc)
             if "__NEXT_DATA__" in (html or ""):
-                return parse_county_page(
-                    html, county, state,
-                    max_price=self.max_price, min_acres=self.min_acres,
-                    centroids=self.centroids,
-                    max_acres=self.max_acres,
-                    geo=self.geo,
-                    targets=set(QUALIFYING_COUNTIES.get(state.upper(), []))), False
+                return html
             if attempt < attempts:
                 cooldown = random.uniform(*self.BOT_PAGE_COOLDOWN)
                 logger.info("Bot page for %s (%s) — cooling down %.0fs, "
                             "retrying", county, state, cooldown)
                 time.sleep(cooldown)
-        logger.warning("No __NEXT_DATA__ for %s (%s) after %d attempts — "
-                       "bot page or layout change?", county, state, attempts)
-        return [], True
+        return None
 
     def _enrich_details(self, props: list[PropertyData]) -> None:
         logger.info("Fetching %d detail pages", len(props))
@@ -397,9 +544,10 @@ def enforce_thresholds() -> dict:
 
     Thresholds can tighten after rows were scraped (and enrichment can
     overwrite listing acreage with smaller survey values), so every zillow
-    run reaps stragglers: price above the cap, or known (non-NULL) acreage
-    outside [min_acres, max_acres]. NULL-acreage rows stay for the
-    enrichers. Returns archived/kept counts."""
+    run reaps stragglers: price above the cap, acreage outside
+    [min_acres, max_acres], or NULL acreage (unverifiable, and the scrape
+    itself now requires a lot size). Writes the audit fields the dashboard
+    uses, so reaped rows are traceable. Returns archived/kept counts."""
     import sqlite3
     min_acres = config.get_min_acres("zillow")
     max_price = config.get_max_price("zillow")
@@ -416,10 +564,12 @@ def enforce_thresholds() -> dict:
         if max_acres:
             acres_cond += " OR acres > ?"
             params_a.append(max_acres)
-        conds.append(f"(acres IS NOT NULL AND ({acres_cond}))")
+        conds.append(f"(acres IS NULL OR {acres_cond})")
         params += params_a
         cur = conn.execute(
-            "UPDATE properties SET status = 'archived' "
+            "UPDATE properties SET status = 'archived', "
+            "archived_at = datetime('now'), archived_by = 'system', "
+            "archive_reason = 'threshold_reap' "
             "WHERE source = 'zillow' AND status = 'active' AND ("
             + " OR ".join(conds) + ")", params)
         conn.commit()

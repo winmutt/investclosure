@@ -98,7 +98,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `bellcarrington` | bellcarrington.com (Google Sheet CSV) | GA/NC/SC/AL/TN mountain | None | state map links |
 | `logs_nc` | logs.com NC report (PowerBI table visual) | 20 NC mountain | None | NC OneMap links |
 | `auction_com` | auction.com county pages + details | NC/GA/TN/SC/AL mountain | None | state map links |
-| `zillow` | zillow.com county search pages (`__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile/county) | centroid guard + post-insert enrichers |
+| `zillow` | zillow.com county search pages (legacy `/homes/for_sale/…/<n>_p/`, `__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile per page) | centroid guard + post-insert enrichers |
 
 The five trustee-sale scrapers (`rlselaw`, `brockandscott`,
 `foreclosuretennessee`, `bellcarrington`, `logs_nc`) share
@@ -281,6 +281,50 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-11-03 (zillow pagination — 26x more inventory + acreage-required
+  policy)**: Zillow's county search renders only **41 listings per page**, and
+  the scraper read page 1 only. Macon NC alone has 20 pages, so qualifying
+  inventory ordered onto later pages was invisible — e.g. **491 Otter
+  Mountain Rd** ($235k / 20.75ac) sits on filtered page 12 and was never
+  harvested. Fixes:
+  - **Legacy `for_sale` URL form is the only one that filters *and*
+    paginates**: `/homes/for_sale/<county>-county-<state>/0-<maxprice>_price/<n>_p/`
+    (`build_paged_county_url()`). Verified by probe: the modern
+    `/homes/<county>-county-<state>/` page always renders 41 listings with
+    `filterState: null` and honours neither `?searchQueryState=` nor the
+    price path segments; the legacy form applies the price cap server-side
+    (price range 17,000–250,000) and `/N_p/` pages *that* filtered set. No
+    URL **acreage** token works (`5-1000_acres` / `5-_acres` both ignored),
+    so acreage bounds stay local in `parse_listings()`.
+  - **Fresh Camoufox profile per page.** Zillow walls a session's second
+    same-origin navigation ("Access to this page has been denied"), and
+    clicking "Next page" does not paginate (SPA intercept, list unchanged).
+    A `goto` to `/N_p/` in a new profile works every time.
+  - **Stop rules** (`_scrape_county()`): empty/absent payload, a page with
+    no new zpids (offset ignored → repeat), a **short page (<41 = last
+    page)**, or `MAX_PAGES_PER_COUNTY = 20`. The pager markup is
+    client-rendered, so "Last page" links can't be trusted from SSR HTML
+    (page 1 has no pager at all, page 2 claims `last_page=2`).
+  - **Acreage is now required** (`parse_listings()` skips `acres is None`):
+    a 5-acre minimum can't be verified without a lot size, and pagination
+    surfaced 1,244 unverifiable NULL-acre rows in one run.
+    `enforce_thresholds()` reaps `acres IS NULL` too and now writes
+    `archived_at` / `archived_by='system'` / `archive_reason='threshold_reap'`
+    so the reap shows in dashboard History. Live: **1,243 NULL-acre actives
+    archived → 3,275 active zillow rows**, all with known acreage in
+    5–1000ac and ≤$250k.
+  - **Enrichment scoped to this run's new rows.**
+    `enrich_properties(source, status, min_id)` adds `AND id > ?`; `run.py`
+    captures `before_max_id` before the insert loop and passes it. Each NC
+    OneMap lookup costs ~10s, so a 4,208-row run under the old unscoped call
+    finished the scrape in 96 min then stalled for 2h having linked 12 rows
+    (4,240 still unlinked). `--enrich` still does the full backlog.
+  - Live run #1107 (full 88-county sweep): **found=4,604, new=4,208,
+    dups=396** (vs 177 found pre-pagination — ~26x), one Macon NC county
+    walking 12 pages / 488 raw / 63 qualifying. 491 Otter Mountain Rd is
+    row **#2801**, active. 21 tests in `tests/test_zillow.py`; full suite
+    568 pass.
 
 - **2026-10-27 (UI density pass + zls_nc grid fix)**: Two follow-ups from the
   scraper health audit.

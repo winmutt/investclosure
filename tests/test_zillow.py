@@ -77,16 +77,30 @@ def test_parse_filters_price_and_acres():
     items = [
         _listing(1, 500000, lot=10.0),        # over max price
         _listing(2, 100000, lot=0.5),         # below min acres
-        _listing(3, 100000, lot=None),        # unknown acreage kept
+        _listing(3, 100000, lot=None),        # no acreage -> can't verify
         _listing(3, 120000, lot=8.0),         # dup zpid
         _listing(4, 90000, lot=87120, unit="sqft"),  # 2 acres via sqft
     ]
     props = parse_county_page(_page(items), "ashe", "NC",
                               max_price=400000, min_acres=1.1)
     ids = [p["source_listing_id"] for p in props]
-    assert ids == ["3", "4"]
-    assert props[0]["acres"] is None
-    assert props[1]["acres"] == 2.0
+    assert ids == ["4"]
+    assert props[0]["acres"] == 2.0
+
+
+def test_parse_requires_known_acreage():
+    """Unknown lot size is not enough to qualify (2026-11-02 policy).
+
+    A paginated county sweep returns thousands of listings with no acreage;
+    the 5-acre rule can't be verified for them and the GIS enricher can't
+    backfill that volume.
+    """
+    items = [
+        _listing(1, 100000, lot=None),
+        _listing(2, 100000, lot=5.0),
+    ]
+    props = parse_county_page(_page(items), "ashe", "NC", min_acres=5.0)
+    assert [p["source_listing_id"] for p in props] == ["2"]
 
 
 def test_parse_rejects_cross_state():
@@ -128,6 +142,122 @@ def test_parse_applies_max_acres():
     assert [p["source_listing_id"] for p in props] == ["2"]
 
 
+def test_build_paged_county_url():
+    from scraper.zillow import build_paged_county_url
+    root = "https://www.zillow.com/homes/for_sale/"
+    # page 1 has no _p/ segment; the -county- slug is preserved
+    assert build_paged_county_url("macon", "NC") == \
+        root + "macon-county-nc/"
+    assert build_paged_county_url("van_buren", "TN", page=3) == \
+        root + "van-buren-county-tn/3_p/"
+    # price cap becomes the legacy inline filter (the only form that works)
+    assert build_paged_county_url("macon", "NC", page=12, max_price=250000) == \
+        root + "macon-county-nc/0-250000_price/12_p/"
+    # no cap -> no price segment (0 means "no cap", never "0-0")
+    assert build_paged_county_url("ashe", "NC", max_price=0) == \
+        root + "ashe-county-nc/"
+
+
+def test_extract_list_results_distinguishes_wall_from_empty():
+    from scraper.zillow import extract_list_results
+    assert extract_list_results("") is None
+    assert extract_list_results("<html>Access to this page has been denied"
+                                "</html>") is None
+    assert extract_list_results(_next_data({"props": {}})) is None
+    assert extract_list_results(_page([])) == []
+    assert len(extract_list_results(_page([_listing(1, 100000)]))) == 1
+
+
+def _many(start, count, lot=10.0):
+    return [_listing(start + i, 100000, lot=lot) for i in range(count)]
+
+
+def _scraper(monkeypatch, fetch):
+    from scraper import zillow as zl
+    scraper = zl.ZillowScraper()
+    scraper.max_price = 250000
+    scraper.min_acres = 5.0
+    scraper.centroids = {}          # fixtures aren't at Macon's coordinates
+    scraper.geo = None
+    scraper.DELAY_BETWEEN_SEARCH_PAGES = (0, 0)
+    monkeypatch.setattr(scraper, "_fetch_page", fetch)
+    return scraper
+
+
+def test_county_walk_paginates_until_short_page(monkeypatch):
+    """The county walk must follow the pager and union every page.
+
+    Regression: zillow read only page 1 of 41 listings, so 491 Otter
+    Mountain Rd (Macon NC, $235k/20.75ac) — which sits on page 12 — was
+    never harvested.
+    """
+    pages = {
+        1: _many(1000, 41),                        # full page -> keep going
+        2: _many(2000, 41, lot=20.75),             # full page -> keep going
+        3: _many(3000, 7),                         # short page -> last page
+    }
+
+    def fake_fetch(url, county, state, page_no, attempts=1):
+        assert "0-250000_price" in url, url
+        assert (f"/{page_no}_p/" in url) == (page_no > 1), url
+        return _page(pages[page_no]) if page_no in pages else None
+
+    scraper = _scraper(monkeypatch, fake_fetch)
+    props, challenged, returned, n_pages = scraper._scrape_county("macon", "NC")
+    assert challenged is False
+    assert n_pages == 3
+    assert returned == 89                      # 41 + 41 + 7 raw listings
+    assert len(props) == 89
+    assert "2000" in {p["source_listing_id"] for p in props}
+    assert props[41]["acres"] == 20.75
+
+
+def test_county_walk_short_first_page_does_not_fetch_page_two(monkeypatch):
+    """A page with fewer than 41 listings is the whole county."""
+    calls = []
+
+    def fake_fetch(url, county, state, page_no, attempts=1):
+        calls.append(page_no)
+        return _page(_many(1000, 3))
+
+    scraper = _scraper(monkeypatch, fake_fetch)
+    props, challenged, returned, n_pages = scraper._scrape_county("ashe", "NC")
+    assert calls == [1]
+    assert (n_pages, returned, len(props)) == (1, 3, 3)
+
+
+def test_county_walk_stops_on_bot_page(monkeypatch):
+    """A walled later page keeps what was already harvested."""
+    def fake_fetch(url, county, state, page_no, attempts=1):
+        if page_no == 1:
+            return _page(_many(1000, 41))
+        return None
+
+    scraper = _scraper(monkeypatch, fake_fetch)
+    props, challenged, returned, n_pages = scraper._scrape_county("ashe", "NC")
+    assert challenged is False            # page 1 was fine
+    assert n_pages == 1
+    assert returned == 41
+    assert len(props) == 41
+
+
+def test_county_walk_stops_on_repeated_page(monkeypatch):
+    """If Zillow ignores the offset and replays page 1, stop (no loops)."""
+    same = _page(_many(1000, 41))
+    calls = []
+
+    def fake_fetch(url, county, state, page_no, attempts=1):
+        calls.append(page_no)
+        return same
+
+    scraper = _scraper(monkeypatch, fake_fetch)
+    props, challenged, returned, n_pages = scraper._scrape_county("ashe", "NC")
+    assert calls == [1, 2]
+    assert n_pages == 2
+    assert len(props) == 41               # duplicates not re-added
+    assert returned == 82
+
+
 def test_enforce_thresholds_archives_strays(monkeypatch, tmp_path):
     """Post-enrichment reap: price cap + acreage bounds on active rows."""
     import sqlite3
@@ -137,13 +267,14 @@ def test_enforce_thresholds_archives_strays(monkeypatch, tmp_path):
     conn = sqlite3.connect(db)
     conn.execute("""CREATE TABLE properties (
         id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, status TEXT,
-        price_cents INTEGER, acres REAL)""")
+        price_cents INTEGER, acres REAL, archived_at TEXT,
+        archived_by TEXT, archive_reason TEXT)""")
     rows = [
         ("zillow", "active", 26_000_000, 10.0),   # over $250k -> archive
         ("zillow", "active", 15_000_000, 3.0),    # under min acres -> archive
         ("zillow", "active", 15_000_000, 2000.0),  # over max acres -> archive
         ("zillow", "active", 15_000_000, 10.0),   # keeps
-        ("zillow", "active", 15_000_000, None),   # NULL acres keeps (enricher)
+        ("zillow", "active", 15_000_000, None),   # NULL acres -> archive
         ("zillow", "archived", 99_000_000, 1.0),  # already archived
         ("kania_law", "active", 99_000_000, 1.0),  # other source untouched
     ]
@@ -154,13 +285,19 @@ def test_enforce_thresholds_archives_strays(monkeypatch, tmp_path):
 
     monkeypatch.setattr(zl.config, "db_path", str(db))
     result = zl.enforce_thresholds()
-    assert result == {"archived": 3, "kept": 2}
+    assert result == {"archived": 4, "kept": 1}
 
     conn = sqlite3.connect(db)
     got = [r[0] for r in conn.execute(
         "SELECT status FROM properties ORDER BY id")]
     assert got == ["archived", "archived", "archived", "active",
-                   "active", "archived", "active"]
+                   "archived", "archived", "active"]
+    # the reap leaves an audit trail (dashboard History)
+    by, reason, at = conn.execute(
+        "SELECT archived_by, archive_reason, archived_at FROM properties "
+        "WHERE id = 5").fetchone()
+    assert (by, reason) == ("system", "threshold_reap")
+    assert at
 
 
 def test_geo_lookup_index():

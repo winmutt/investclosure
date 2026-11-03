@@ -251,6 +251,15 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     new_count = 0
     dup_count = 0
     seen_ids: set[int] = set()
+    # Highest row id before this insert batch, so the post-run enricher can
+    # scope itself to THIS run's rows. Each GIS lookup costs ~10s; without
+    # the bound a source that inserts thousands of rows (zillow after
+    # pagination landed) makes every run a multi-hour backlog replay.
+    try:
+        before_max_id = conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM properties").fetchone()[0]
+    except sqlite3.Error:
+        before_max_id = 0
 
     for prop in properties:
         try:
@@ -349,7 +358,8 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     # Auto-enrich newly-found properties with NC OneMap GIS data
     try:
         from scraper.nc_gis_lookup import enrich_properties
-        enrich_result = enrich_properties(source=scraper_name)
+        enrich_result = enrich_properties(source=scraper_name,
+                                          min_id=before_max_id)
         if isinstance(enrich_result, dict):
             print(f"  Enriched: {enrich_result.get('enriched', 0)}, "
                   f"skipped(no parcel): {enrich_result.get('skipped_no_parcel', 0)}, "
