@@ -115,6 +115,24 @@ def build_paged_county_url(county: str, state: str, page: int = 1,
 
 
 
+def bed_bath_counts(home_info: dict) -> tuple[Optional[int], Optional[float]]:
+    """(bedrooms, bathrooms) from Zillow's ``homeInfo``.
+
+    Zillow only carries these for improved properties; land/lot listings
+    omit them, in which case both are None. Non-positive values are treated
+    as absent so a card never renders "0 bd".
+    """
+    def _num(value, cast):
+        try:
+            num = cast(value)
+        except (TypeError, ValueError):
+            return None
+        return num if num > 0 else None
+
+    return (_num(home_info.get("bedrooms"), int),
+            _num(home_info.get("bathrooms"), float))
+
+
 def lot_acres(home_info: dict) -> Optional[float]:
     """Lot size in acres from Zillow's lotAreaValue/lotAreaUnit pair."""
     lot_val = home_info.get("lotAreaValue")
@@ -250,6 +268,7 @@ def parse_listings(list_results: list, county: str, state: str,
                 continue
             county_out = resolved
         home_type = home_info.get("homeType", "")
+        bedrooms, bathrooms = bed_bath_counts(home_info)
         prop: PropertyData = {
             "source": "zillow",
             "source_listing_id": zpid,
@@ -264,6 +283,8 @@ def parse_listings(list_results: list, county: str, state: str,
             "longitude": lon,
             "price": float(price),
             "acres": round(acres, 2) if acres else None,
+            "bedrooms": bedrooms,
+            "bathrooms": bathrooms,
             "description": None,
             "parcel_number": None,
             "property_type": home_type.lower() if home_type else "land",

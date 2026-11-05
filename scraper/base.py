@@ -29,6 +29,8 @@ class PropertyData(TypedDict, total=False):
     longitude: Optional[float]
     price: Optional[float]
     acres: Optional[float]
+    bedrooms: Optional[int]
+    bathrooms: Optional[float]
     description: Optional[str]
     property_type: Optional[str]
     image_url: Optional[str]

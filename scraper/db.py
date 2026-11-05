@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS properties (
     longitude         REAL,
     price_cents       INTEGER,
     acres             REAL,
+    bedrooms          INTEGER,
+    bathrooms         REAL,
     description       TEXT,
     property_type     TEXT DEFAULT 'foreclosure',
     listing_date      TEXT,
@@ -179,6 +181,8 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         ("acres_source", "ALTER TABLE properties ADD COLUMN acres_source TEXT"),
         ("gis_county", "ALTER TABLE properties ADD COLUMN gis_county TEXT"),
         ("land_use", "ALTER TABLE properties ADD COLUMN land_use TEXT"),
+        ("bedrooms", "ALTER TABLE properties ADD COLUMN bedrooms INTEGER"),
+        ("bathrooms", "ALTER TABLE properties ADD COLUMN bathrooms REAL"),
     ]
     for col, sql in col_migrations:
         if col not in existing:
@@ -283,6 +287,8 @@ def _upsert_property(
     longitude: Optional[float],
     price_cents: Optional[int],
     acres: Optional[float] = None,
+    bedrooms: Optional[int] = None,
+    bathrooms: Optional[float] = None,
     description: Optional[str] = None,
     property_type: Optional[str] = "foreclosure",
     listing_date: Optional[str] = None,
@@ -394,6 +400,14 @@ def _upsert_property(
         values.extend([
             price_cents, description,
         ])
+        # Bed/bath counts come from the source; never clobber a known value
+        # with an absent one (land listings carry none).
+        if bedrooms is not None:
+            updates.append("bedrooms = ?")
+            values.append(bedrooms)
+        if bathrooms is not None:
+            updates.append("bathrooms = ?")
+            values.append(bathrooms)
         # Repair degraded raw text: a first sighting that fell back to the
         # 1,000-char on-page HTML (PDF missing/scanned at scrape time) must
         # not pin that truncation forever. Upgrade it once a full-text
@@ -514,16 +528,16 @@ def _upsert_property(
     cur = conn.execute(
         """INSERT INTO properties
            (source, source_listing_id, url, address, city, county, state, zip_code,
-            latitude, longitude, price_cents, acres, description, property_type,
+            latitude, longitude, price_cents, acres, bedrooms, bathrooms, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
             parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
             initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
              extracted_deed_plat, extracted_pin,
              first_seen, last_seen, seen_count, dedup_hash, status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             source, source_listing_id, url, address, city, county, state, zip_code,
-            latitude, longitude, price_cents, acres, description, property_type,
+            latitude, longitude, price_cents, acres, bedrooms, bathrooms, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
             parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
             initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
@@ -604,6 +618,8 @@ def insert_property(
     longitude: Optional[float],
     price_cents: Optional[int],
     acres: Optional[float] = None,
+    bedrooms: Optional[int] = None,
+    bathrooms: Optional[float] = None,
     description: Optional[str] = None,
     property_type: Optional[str] = "foreclosure",
     listing_date: Optional[str] = None,
@@ -635,6 +651,7 @@ def insert_property(
     return _upsert_property(
         conn, source, source_listing_id, url, address, city, county, state,
         zip_code, latitude, longitude, price_cents, acres,
+        bedrooms=bedrooms, bathrooms=bathrooms,
         extracted_deed_plat=extracted_deed_plat,
         extracted_pin=extracted_pin,
         description=description, property_type=property_type,

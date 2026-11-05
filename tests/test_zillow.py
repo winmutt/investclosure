@@ -3,7 +3,7 @@ import json
 
 from scraper.zillow import (
     build_county_url, county_slug, county_display, lot_acres,
-    parse_county_page, extract_detail,
+    bed_bath_counts, parse_county_page, extract_detail,
 )
 
 
@@ -13,12 +13,17 @@ def _next_data(payload: dict) -> str:
 
 def _listing(zpid, price, lot=None, unit="acres", state="NC",
              address="1 Empty Road, Sparta, NC 28675", home_type="LOT",
-             lat=36.5, lon=-81.1, city="Sparta", zipcode="28675"):
+             lat=36.5, lon=-81.1, city="Sparta", zipcode="28675",
+             bedrooms=None, bathrooms=None):
     home_info = {"price": price, "state": state, "homeType": home_type,
                  "streetAddress": address}
     if lot is not None:
         home_info["lotAreaValue"] = lot
         home_info["lotAreaUnit"] = unit
+    if bedrooms is not None:
+        home_info["bedrooms"] = bedrooms
+    if bathrooms is not None:
+        home_info["bathrooms"] = bathrooms
     return {
         "zpid": zpid,
         "address": address,
@@ -57,6 +62,30 @@ def test_lot_acres_units():
     assert lot_acres({"lotAreaValue": 43560, "lotAreaUnit": "sqft"}) == 1.0
     assert lot_acres({}) is None
     assert lot_acres({"lotAreaValue": "junk", "lotAreaUnit": "acres"}) is None
+
+
+def test_bed_bath_counts():
+    assert bed_bath_counts({"bedrooms": 3, "bathrooms": 2}) == (3, 2.0)
+    assert bed_bath_counts({"bedrooms": 4, "bathrooms": 2.5}) == (4, 2.5)
+    assert bed_bath_counts({}) == (None, None)
+    # Absent/nonsense/zero values must not render as "0 bd".
+    assert bed_bath_counts({"bedrooms": 0, "bathrooms": 0}) == (None, None)
+    assert bed_bath_counts({"bedrooms": "junk", "bathrooms": None}) == \
+        (None, None)
+
+
+def test_parse_bed_bath_present_and_absent():
+    items = [
+        _listing(1, 150000, lot=12.5, home_type="SINGLE_FAMILY",
+                 bedrooms=3, bathrooms=2),
+        _listing(2, 100000, lot=8.0),  # land: no bed/bath in payload
+    ]
+    props = parse_county_page(_page(items), "ashe", "NC")
+    by_id = {p["source_listing_id"]: p for p in props}
+    assert by_id["1"]["bedrooms"] == 3
+    assert by_id["1"]["bathrooms"] == 2.0
+    assert by_id["2"]["bedrooms"] is None
+    assert by_id["2"]["bathrooms"] is None
 
 
 def test_parse_county_page_basic():

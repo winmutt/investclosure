@@ -380,6 +380,25 @@ class TestUpsertProperty:
         assert row["seen_count"] == 1
         assert row["status"] == "active"
 
+    def test_upsert_persists_bed_bath_and_never_clobbers(self, conn):
+        status, row = _upsert_property(
+            conn, "zillow", "Z1", "http://example.com", "100 Main St",
+            "City", "Ashe", "NC", "28709", None, None, 100000, 25.0,
+            bedrooms=3, bathrooms=2.5,
+        )
+        assert status == "new"
+        assert row["bedrooms"] == 3
+        assert row["bathrooms"] == 2.5
+
+        # A land-style re-sighting (no bed/bath payload) must not wipe them.
+        status, row = _upsert_property(
+            conn, "zillow", "Z1", "http://example.com", "100 Main St",
+            "City", "Ashe", "NC", "28709", None, None, 110000, 25.0,
+        )
+        assert status == "duplicate"
+        assert row["bedrooms"] == 3
+        assert row["bathrooms"] == 2.5
+
     def test_update_same_source_listing(self, conn):
         _upsert_property(
             conn, "test", "P1", "http://example.com", "100 Main St",

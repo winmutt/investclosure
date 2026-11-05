@@ -126,6 +126,8 @@
                     {% if prop.get('tnmap_calculated_acres') %}
                     <p><strong>Calculated Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_calculated_acres) }} acres</p>
                     {% endif %}
+                    {% if prop.bedrooms %}<p><strong>Bedrooms:</strong> {{ prop.bedrooms }}</p>{% endif %}
+                    {% if prop.bathrooms %}<p><strong>Bathrooms:</strong> {{ prop.bathrooms|fmt_num }}</p>{% endif %}
                 </div>
 
                 <div class="prop-detail-section">

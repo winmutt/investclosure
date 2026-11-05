@@ -45,6 +45,16 @@ app.secret_key = os.environ.get('SECRET_KEY', 'investclosure-secret-key-change-i
 app.jinja_env.auto_reload = True
 
 
+@app.template_filter('fmt_num')
+def fmt_num(value):
+    """Format a stored number for display: 2.0 -> '2', 2.5 -> '2.5'."""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return value
+    return f"{num:g}"
+
+
 @app.template_filter('clean_date')
 def clean_date(value):
     """Clean a stored date field for safe display on cards / detail pages.

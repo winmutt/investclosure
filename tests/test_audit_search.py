@@ -53,6 +53,57 @@ class TestAuditLog:
 
 
 
+class TestBedBathDisplay:
+    """Zillow cards show beds/baths only when the source carried them."""
+
+    def _client(self, monkeypatch, tmp_path):
+        import base64
+        import scraper.server as server
+        db_path = tmp_path / "beds.db"
+
+        def _conn():
+            return scraper_db._ensure_db(db_path)
+
+        token = base64.b64encode(b"winmutt:1234asdf").decode()
+        _orig_client = server.app.test_client
+
+        def _authed_client(*args, **kwargs):
+            client = _orig_client(*args, **kwargs)
+            client.environ_base["HTTP_AUTHORIZATION"] = f"Basic {token}"
+            return client
+
+        monkeypatch.setattr(server.app, "test_client", _authed_client)
+        conn = _conn()
+        _insert(conn, source="zillow", source_listing_id="Z1",
+                property_type="single_family", address="1 Home Rd",
+                parcel_number=None, bedrooms=3, bathrooms=2.5)
+        _insert(conn, source="zillow", source_listing_id="Z2",
+                property_type="lot", address="2 Land Rd",
+                parcel_number=None)
+        conn.close()
+        monkeypatch.setattr(server, "get_conn", _conn)
+        return server.app.test_client()
+
+    def test_bed_bath_shown_only_when_present(self, monkeypatch, tmp_path):
+        c = self._client(monkeypatch, tmp_path)
+        body = c.get("/properties").get_data(as_text=True)
+        assert "1 Home Rd" in body and "2 Land Rd" in body
+
+        def row_block(address):
+            # Anchor on the row's link text, then take the metadata row that
+            # follows it (beds/baths render there, not in the header).
+            idx = body.index(f">{address}</a>")
+            start = body.index('<div class="list-item-row">', idx)
+            return body[start:body.index('</div>', start)]
+
+        assert "3 bd" in row_block("1 Home Rd")
+        assert "2.5 ba" in row_block("1 Home Rd")
+        # Land row has no bed/bath payload: no placeholder junk is rendered.
+        assert " bd" not in row_block("2 Land Rd")
+        assert " ba" not in row_block("2 Land Rd")
+        assert "None bd" not in body and "N/A ba" not in body
+
+
 class TestBulkArchive:
     """Dashboard checkbox multi-archive POST /bulk-archive."""
 

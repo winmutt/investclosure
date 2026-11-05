@@ -52,6 +52,14 @@
                         N/A ac
                     {% endif %}
                 </span>
+                {% if prop.bedrooms or prop.bathrooms %}
+                <span class="tile-meta-divider">·</span>
+                <span class="tile-beds-baths" title="Bedrooms / bathrooms">
+                    {% if prop.bedrooms %}{{ prop.bedrooms }} bd{% endif %}
+                    {% if prop.bedrooms and prop.bathrooms %} / {% endif %}
+                    {% if prop.bathrooms %}{{ prop.bathrooms|fmt_num }} ba{% endif %}
+                </span>
+                {% endif %}
                 {% if prop.price %}
                 <span class="tile-meta-divider">·</span>
                 {% if prop.opening_price %}

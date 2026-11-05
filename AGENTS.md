@@ -282,6 +282,21 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-11-05 (beds/baths on property cards)**: Zillow search payloads carry
+  `hdpData.homeInfo.bedrooms` / `bathrooms` for improved properties (land
+  listings omit them), but the scraper discarded both. Added `bedrooms`
+  INTEGER + `bathrooms` REAL columns (`properties` schema + incremental
+  migration), parsed via `zillow.bed_bath_counts()` (non-positive/nonsense
+  values become NULL), persisted through `insert_property()` /
+  `_upsert_property()` (a later land-style re-sighting never clobbers a known
+  value), and rendered conditionally as `3 bd / 2.5 ba` on landing tiles,
+  search list rows, and the property detail Overview. A new `fmt_num` Jinja
+  filter drops trailing `.0` (2.0 → 2, 2.5 → 2.5). Rows with no bed/bath
+  payload render nothing — no "N/A"/"0 bd" placeholders. Existing rows stay
+  NULL until the next zillow sweep refreshes them (156 of 3,362 active rows
+  are improved types; the rest are land). Tests: parse/absence + upsert
+  no-clobber + dashboard render (572 pass).
+
 - **2026-11-03 (zillow pagination — 26x more inventory + acreage-required
   policy)**: Zillow's county search renders only **41 listings per page**, and
   the scraper read page 1 only. Macon NC alone has 20 pages, so qualifying

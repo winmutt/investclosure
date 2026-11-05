@@ -62,6 +62,13 @@
                     <span title="Manually set on {{ prop.manual_acres_set }}" style="color:#f59e0b">&#128274;</span>
                     {% endif %}
                 </span>
+                {% if prop.bedrooms or prop.bathrooms %}
+                <span>
+                    {% if prop.bedrooms %}{{ prop.bedrooms }} bd{% endif %}
+                    {% if prop.bedrooms and prop.bathrooms %} / {% endif %}
+                    {% if prop.bathrooms %}{{ prop.bathrooms|fmt_num }} ba{% endif %}
+                </span>
+                {% endif %}
                 <span>First seen: {{ prop.first_seen }}</span>
                 {% set sale_date = prop.auction_date|clean_date %}
                 {% set upset_date = prop.upset_bid_end|clean_date %}
