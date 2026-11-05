@@ -1677,6 +1677,49 @@ class TestServerFlask:
             assert "scrapers" in data
             assert "timestamp" in data
 
+    @staticmethod
+    def _detail_row(conn, lid, **kw):
+        base = dict(
+            source="zillow", source_listing_id=lid, url="https://example.com",
+            address=f"{lid} Road", city="Topton", county="Macon", state="NC",
+            zip_code="28781", latitude=35.248915, longitude=-83.612368,
+            price_cents=23500000, acres=20.75, description=None,
+            property_type="lot",
+        )
+        base.update(kw)
+        return insert_property(conn=conn, **base)[1]["id"]
+
+    def test_detail_embeds_nc_map_and_desktop_panes(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        pid = self._detail_row(conn, "NC1")
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(f"/property/{pid}").get_data(as_text=True)
+        # Coordinate-only NC rows still get an inline, same-origin map.
+        assert 'class="prop-map-embed"' in html
+        assert "/static/gis_viewer.html" in html
+        assert "<iframe" in html
+        # Desktop layout: labelled panes + tabless responsive grid.
+        assert '<h2 class="prop-pane-title">Details</h2>' in html
+        assert '<h2 class="prop-pane-title">Maps &amp; GIS</h2>' in html
+        assert "repeat(auto-fit, minmax(320px, 1fr))" in html
+
+    def test_detail_does_not_embed_third_party_map(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        pid = self._detail_row(
+            conn, "TN1", county="Knox", state="TN", zip_code="37902",
+            latitude=35.96, longitude=-83.92,
+            gis_url="https://tnmap.tn.gov/assessment/?lat=35.96&lng=-83.92")
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(f"/property/{pid}").get_data(as_text=True)
+        # TNMap blocks framing: no iframe, but the link list still shows.
+        assert 'class="prop-map-embed"' not in html
+        assert "<iframe" not in html
+        assert "tnmap.tn.gov" in html
+
     def test_api_stats(self, app, tmp_dir):
         conn = _ensure_db(tmp_dir / "test.db")
         _make_prop(conn, "P1", 25.0)

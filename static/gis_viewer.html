@@ -90,7 +90,9 @@
             color: [226, 119, 40], size: "12px",
             outline: { color: [255, 255, 255], width: 2 }
           }),
-          popupTemplate: { title: "Parcel", content: "PIN: <b>" + parcel + "</b>" }
+          popupTemplate: parcel
+            ? { title: "Parcel", content: "PIN: <b>" + parcel + "</b>" }
+            : { title: "Property location", content: "Centered on listing coordinates" }
         });
         view.graphics.add(g);
         view.popup.open({ features: [g], location: g.geometry });
@@ -172,6 +174,10 @@
             showCard([["PIN", parcel], ["Status", "Not found in NC OneMap"]], "Parcel lookup");
           }
         });
+      } else {
+        // Coordinate-only viewer links (most Zillow rows carry no parcel)
+        // still get a marker so the embedded map shows the property.
+        addCenterMarker();
       }
     });
   </script>

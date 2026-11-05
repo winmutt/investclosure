@@ -282,6 +282,35 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-11-05 (desktop detail view: details + map + source at once)**: The
+  property detail page hid the map and source behind tabs, so a desktop user
+  had to click through panes to see one property. The page now keeps the tabs
+  for narrow screens but at `@media (min-width: 1100px)` hides the tab bar and
+  lays every pane out in a `repeat(auto-fit, minmax(320px, 1fr))` grid, so
+  details, map and source are visible together. Each pane gained a visible
+  `<h2 class="prop-pane-title">` on desktop (tabs supply the label below the
+  breakpoint) and a `has-content` class so empty panes (no source, no related)
+  are not rendered as blank columns; the Overview "Maps & Links" list is
+  dropped on desktop because the Maps pane duplicates it.
+  - **Inline map** is an `<iframe>` of the hosted same-origin viewer only
+    (`static/gis_viewer.html`), with "Open full map" underneath and the
+    existing Maps & GIS link list below it. New
+    `server._detail_map_embed_url(prop)` returns the stored
+    `/static/gis_viewer.html` link, or builds one from coordinates/parcel for
+    NC rows whose enrichment never produced a `gis_url` (most Zillow rows), so
+    they get a map too. GA qPublic / TN TPAD links are third-party pages that
+    block framing, so those rows keep the link list with no iframe.
+  - `static/gis_viewer.html` now always drops the center marker: previously a
+    coordinate-only link (no parcel) rendered no marker at all, leaving the
+    embedded map empty of the property; the marker popup reads "Property
+    location" when no PIN is supplied.
+  - Live verified: `/property/1027` (Zillow, no `gis_url` → on-the-fly viewer
+    from coords) and `/property/596` (stored viewer link) embed the map;
+    `/property/476` (TNMap) renders no iframe and keeps its TNMap link. The
+    `/gis/proxy` layer metadata endpoint still resolves through the embedded
+    viewer. Tests: 2 in `tests/test_scraper.py::TestServerFlask`
+    (embedded NC map + desktop pane markup, TN no-iframe); full suite 581 pass.
+
 - **2026-11-05 (beds/baths on property cards)**: Zillow search payloads carry
   `hdpData.homeInfo.bedrooms` / `bathrooms` for improved properties (land
   listings omit them), but the scraper discarded both. Added `bedrooms`

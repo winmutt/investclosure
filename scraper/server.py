@@ -31,6 +31,7 @@ from scraper.nc_gis_lookup import (
     build_google_maps_url,
     build_google_maps_topo_url,
 )
+from scraper.gis_urls import get_nconemap_viewer_url
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', str(config.data_dir)))
 REPORTS_DIR = Path(os.environ.get('REPORTS_DIR', str(config.data_dir / "reports")))
@@ -581,6 +582,31 @@ def property_navigation(property_id):
     })
 
 
+def _detail_map_embed_url(prop: dict) -> Optional[str]:
+    """Same-origin map URL that can be embedded in an <iframe>.
+
+    Only the hosted ``/static/gis_viewer.html`` viewer is embeddable — the
+    GA qPublic / TN TPAD links are third-party pages that block framing.
+    NC rows get a viewer URL derived from their stored GIS link, or built
+    from coordinates when enrichment never produced one (e.g. most Zillow
+    rows), so the desktop detail view can show the parcel in place.
+    """
+    gis = (prop.get("gis_url") or "").strip()
+    if gis.startswith("/static/gis_viewer.html"):
+        return gis
+    if (prop.get("state") or "").upper() == "NC":
+        lat = prop.get("latitude")
+        lon = prop.get("longitude")
+        parcel = (prop.get("parcel_number") or "").strip() or None
+        if lat is not None and lon is not None:
+            return get_nconemap_viewer_url(lon, lat, parcel,
+                                           prop.get("county"))
+        if parcel:
+            return get_nconemap_viewer_url(None, None, parcel,
+                                           prop.get("county"))
+    return None
+
+
 @app.route('/property/<int:property_id>')
 def property_detail(property_id):
     conn = get_conn()
@@ -595,7 +621,9 @@ def property_detail(property_id):
     cross_links = scraper_db.get_property_links(conn, property_id)
     audit_log = scraper_db.get_audit_log(conn, property_id)
     conn.close()
-    return render_template('property.html', prop=_row_to_dict(row),
+    prop = _row_to_dict(row)
+    return render_template('property.html', prop=prop,
+                           map_embed_url=_detail_map_embed_url(prop),
                            same_case=[_row_to_dict(r) for r in same_case],
                            cross_links=cross_links,
                            audit_log=audit_log)

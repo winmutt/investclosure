@@ -35,21 +35,53 @@
         .prop-tab-pane.active { display:grid;
                                 grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
                                 gap: 0.4rem 1.4rem; align-items: start; }
+        .prop-pane-title { display:none; margin:0 0 0.35rem; font-size:0.95rem;
+                           color:#111827; }
+        .prop-map-embed iframe { display:block; width:100%; height:320px;
+                                 border:1px solid #e5e7eb; border-radius:8px;
+                                 background:#0b1220; }
+        .prop-map-hint { margin-top:0.3rem; font-size:0.78rem; }
+        .prop-raw-source { max-height:480px; overflow:auto; }
+
+        /* Desktop: drop the tabs and show details, map and source together. */
+        @media (min-width: 1100px) {
+            .prop-tabs { display:none; }
+            .prop-details {
+                display:grid;
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                gap: 1rem 1.5rem;
+                align-items:start;
+            }
+            .prop-tab-pane, .prop-tab-pane.active {
+                display:grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 0.35rem 1.2rem;
+                align-items:start;
+            }
+            .prop-tab-pane:not(.has-content) { display:none; }
+            .prop-pane-title { display:block; }
+            .prop-map-embed iframe { height:360px; }
+            /* The maps pane sits beside the overview; its links are duplicated
+               there, so drop the overview's link list on desktop. */
+            .prop-links-section { display:none; }
+        }
         </style>
 
         <div class="prop-tabs" role="tablist">
             <button type="button" class="prop-tab-btn active" onclick="showPropTab('overview', this)">Overview</button>
-            {% set _show_maps = prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.get('tnmap_owner') or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink or prop.tnmap_gislink or prop.get('tnmap_address') %}
+            {% set _show_maps = map_embed_url or prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.get('tnmap_owner') or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink or prop.tnmap_gislink or prop.get('tnmap_address') %}
             {% if _show_maps %}<button type="button" class="prop-tab-btn" onclick="showPropTab('maps', this)">Maps &amp; GIS</button>{% endif %}
-            {% set _show_source = (prop.url and prop.source in ('newspaper_notices', 'ncforeclosures', 'tnforeclosures', 'ganotices', 'zillow')) or prop.url or prop.raw_source_text or prop.description %}
+            {% set _show_source = prop.url or prop.raw_source_text or prop.description %}
             {% if _show_source %}<button type="button" class="prop-tab-btn" onclick="showPropTab('source', this)">Source</button>{% endif %}
-            {% if same_case or cross_links %}<button type="button" class="prop-tab-btn" onclick="showPropTab('related', this)">Related</button>{% endif %}
+            {% set _show_related = same_case or cross_links %}
+            {% if _show_related %}<button type="button" class="prop-tab-btn" onclick="showPropTab('related', this)">Related</button>{% endif %}
             <button type="button" class="prop-tab-btn" onclick="showPropTab('notes', this)">Notes</button>
         </div>
 
         <div class="prop-details">
             <!-- OVERVIEW -->
-            <div class="prop-tab-pane active" id="tab-overview">
+            <div class="prop-tab-pane active has-content" id="tab-overview">
+                <h2 class="prop-pane-title">Details</h2>
                 <div class="prop-detail-section">
                     <h3>Location</h3>
                     <p><strong>County:</strong> {{ prop.county or 'N/A' }} {{ prop.state }}</p>
@@ -62,7 +94,7 @@
                     {% endif %}
                 </div>
 
-                <div class="prop-detail-section">
+                <div class="prop-detail-section prop-links-section">
                     <h3>Maps &amp; Links</h3>
                     {% if prop.address and prop.county %}
                     <p><a href="{{ prop.google_maps_url }}" target="_blank" rel="noopener">Google Maps</a></p>
@@ -150,7 +182,21 @@
             </div>
 
             <!-- MAPS & GIS -->
-            <div class="prop-tab-pane" id="tab-maps">
+            <div class="prop-tab-pane{% if _show_maps %} has-content{% endif %}" id="tab-maps">
+                <h2 class="prop-pane-title">Maps &amp; GIS</h2>
+                {% if map_embed_url %}
+                <div class="prop-detail-section prop-map-section">
+                    <div class="prop-map-embed">
+                        <iframe src="{{ map_embed_url }}"
+                                title="Map for {{ prop.address or prop.parcel_number or prop.id }}"
+                                loading="lazy" referrerpolicy="no-referrer"></iframe>
+                    </div>
+                    <p class="prop-map-hint muted">
+                        <a href="{{ map_embed_url }}" target="_blank" rel="noopener">Open full map</a>
+                    </p>
+                </div>
+                {% endif %}
+                {% if prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink %}
                 <div class="prop-detail-section">
                     <h3>Maps &amp; GIS Links</h3>
                     {% if prop.address and prop.county %}
@@ -175,6 +221,7 @@
                     <p><strong>GIS Link:</strong> {{ prop.gislink }}</p>
                     {% endif %}
                 </div>
+                {% endif %}
 
                 {% if prop.get('tnmap_owner') %}
                 <div class="prop-detail-section">
@@ -206,7 +253,8 @@
             </div>
 
             <!-- SOURCE -->
-            <div class="prop-tab-pane" id="tab-source">
+            <div class="prop-tab-pane{% if _show_source %} has-content{% endif %}" id="tab-source">
+                <h2 class="prop-pane-title">Source</h2>
                 {% if prop.url %}
                 <div class="prop-detail-section">
                     <h3>Source</h3>
@@ -233,7 +281,8 @@
             </div>
 
             <!-- RELATED -->
-            <div class="prop-tab-pane" id="tab-related">
+            <div class="prop-tab-pane{% if _show_related %} has-content{% endif %}" id="tab-related">
+                <h2 class="prop-pane-title">Related</h2>
                 {% if same_case %}
                 <div class="prop-detail-section">
                     <h3>This case also appears on</h3>
@@ -264,7 +313,8 @@
             </div>
 
             <!-- NOTES -->
-            <div class="prop-tab-pane" id="tab-notes">
+            <div class="prop-tab-pane has-content" id="tab-notes">
+                <h2 class="prop-pane-title">Notes</h2>
                 <div class="prop-detail-section">
                     <h3>Notes</h3>
                     <div id="notes-display" class="tile-notes-display">
