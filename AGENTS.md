@@ -108,7 +108,7 @@ links). All rows are mortgage/deed-of-trust sales for the Mtg tab.
 `auction_com` (same base + county detail pages) adds bank-owned (REO)
 inventory as `bank_owned`, also Mtg-tabbed.
 
-All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Notice" backend (see `scraper/publicnotice_base.py`). They download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (nc_publicnotice) or when PDF exists (tn_publicnotice), it is used as the canonical source; otherwise the on-page notice text falls back. `ga_publicnotice` scrapes Georgia Press Association tax-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF).
+All three `*_publicnotice` scrapers share the same ASP.NET WebForms "Public Notice" backend (see `scraper/publicnotice_base.py`). They download each notice PDF and store the **full PDF text** as `raw_source_text` (the on-page HTML is truncated). When PDF text is available and exceeds 300 chars (nc_publicnotice) or when PDF exists (tn_publicnotice), it is used as the canonical source; otherwise the on-page notice text falls back. `ga_publicnotice` scrapes Georgia Press Association tax-sale **and** mortgage/power-of-sale notices for the 7 N GA mountain counties and stores the full notice text as `raw_source_text` (extracted from the notice page, not PDF). Mortgage notices name a single property, so they are parsed by `_parse_single_parcel()` rather than the bundled per-parcel splitter (see the 2026-11-05 GA entry under Recent Updates).
 
 ## Product Verticals (branding)
 
@@ -281,6 +281,48 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 
 ## Recent Updates
+
+- **2026-11-05 (GA mortgage notices no longer dropped)**: `ga_publicnotice`'s
+  per-parcel splitter only understood the bundled tax-sale shape
+  (`File #: N Map/Parcel Number: X ... Defendant`). GA mortgage /
+  security-deed "Notice of Sale Under Power" notices name one property and
+  never use that shape, so they fell through `_PARCEL_SPLIT_RE` and were
+  discarded as "No parcels parsed" — live 2026-10-27 that was **11 of 12 GA
+  mountain-county candidates per run**, making the scraper look quiet while
+  real sales were being thrown away. Fix:
+  - **New `_parse_single_parcel()` fallback** (called from `_parse_parcels()`
+    when no bundled blocks match). Row key is the labeled parcel number
+    (`Tax Parcel ID`, `APN`, `PIN`, `Tax Map & Parcel`, `Parcel No.`, …) →
+    else a street-address slug → else the notice key:
+    `<county>:<parcel>`, `<county>:addr:<slug>`, `<county>:notice:<sp_case|pk>`.
+    Duplicate postings of one property collapse; address-less notices still
+    get a row instead of being dropped.
+  - **Shared `_make_property()` row builder** for bundled and single notices,
+    so GIS/Maps links are built at extraction time in one place (Telegram
+    alerts carry them).
+  - **Sale-date correctness**: the auction date is now taken only from a
+    window around sale language (`hours of sale`, `public outcry`,
+    `will sell`, `tax sale`, …) and accepts numeric `12/1/2026`; the old bare
+    month-date search reported the security-deed / plat / recording date
+    (live: 1998-05-19 and 2018 plat dates). `first Tuesday in November, 2026`
+    now tolerates the comma.
+  - **Address parsing**: suffix list widened for mortgage-notice street types
+    (`Overlook`, `Ridge`, `Cove`, `Hollow`, `Gap`, `Creek`, …) and alias
+    chains (`nka/aka/fka`) trimmed. Acreage accepts the `being X acres`
+    phrasing. A `dropped_no_key` raw-log decision was added.
+  - Live verified from the raw JSONL logs (2026-11-03 → 11-05, ~9 unique
+    mortgage notices/run, all `kept_mortgage`) and DB rows keyed
+    `lumpkin:addr:2768-damascus-church-rd`, `union:notice:9439537`,
+    `white:addr:62-eli-knobb-road`, `lumpkin:059-029`; all auction dates are
+    now plausible. 11 new tests in
+    `TestGAPublicNoticeSinglePropertyNotices` (`tests/test_scraper.py`).
+  - **Known gap (not fixed here)**: `_CONTAINING_ACRES_RE` still misses
+    `contains 1.07 Acres` and leading-dot decimals (`containing .878 acre`),
+    so a few live rows keep `acres=NULL` (2768 Damascus Church Rd, 62 Eli
+    Knobb Road). Single-property notices also collapse to one row when the
+    notice bundles several properties without the `File #... Defendant`
+    shape, and the single path trusts the grid county instead of the county
+    named in the notice body.
 
 - **2026-11-05 (desktop detail view: details + map + source at once)**: The
   property detail page hid the map and source behind tabs, so a desktop user
@@ -739,7 +781,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 - **2026-07-26**: GIS county portal registry for 21 NC mountain counties
 - **2026-07-26**: ZLS-NC scraper — all-page size (241 rows), no pagination
 - **2026-07-26**: Kania Law — ArcGIS LAND_UNITS acreage, 5-acre filter, GIS enrichment
-- **GA in scope**: 7 N GA mountain counties (fannin, gilmer, lumpkin, rabun, towns, union, white) via `ga_publicnotice`; AGENTS.md scope updated to 6 states. `ga_publicnotice` drops non-sale proceedings (quiet-title / tax-redemption, excess-fund interpleaders, foreclosure of equity of redemption) and keeps only upcoming tax-sale foreclosures. **GA tax sales are held on the first Tuesday of every month** (computed from the notice's "first Tuesday in <Month> <Year>"), and **GA has no upset-bid period**. Bundled notices (e.g. White County lists many parcels per notice "by deed/page"; Towns County lists each tax-map parcel in its own block) are split into **separate per-parcel listings** keyed on `<county>:<parcel_number>`; duplicate postings of the same parcel collapse while distinct parcels stay separate.
+- **GA in scope**: 7 N GA mountain counties (fannin, gilmer, lumpkin, rabun, towns, union, white) via `ga_publicnotice`; AGENTS.md scope updated to 6 states. `ga_publicnotice` drops non-sale proceedings (quiet-title / tax-redemption, excess-fund interpleaders, foreclosure of equity of redemption) and keeps only upcoming tax-sale foreclosures. **GA tax sales are held on the first Tuesday of every month** (computed from the notice's "first Tuesday in <Month> <Year>"), and **GA has no upset-bid period**. Bundled notices (e.g. White County lists many parcels per notice "by deed/page"; Towns County lists each tax-map parcel in its own block) are split into **separate per-parcel listings** keyed on `<county>:<parcel_number>`; duplicate postings of the same parcel collapse while distinct parcels stay separate. Single-property mortgage/power-of-sale notices (see 2026-11-05) are keyed on parcel, else `<county>:addr:<slug>`, else `<county>:notice:<listing>`.
 - **2026-08-25**: `ga_county_summary.md` created — GA qPublic (Schneider Corp) app IDs / pages / KeyValue spacing per county; Lumpkin (`AppID=991`) and White (`AppID=982`) verified and added to `GA_QPUBLIC_APPS` in `scraper/gis_urls.py`. County knowledge bases now tracked in `nc_county_summary.md`, `ga_county_summary.md`, and `tn_county_summary.md` (see "County knowledge base" under GIS Integration).
 - **2026-09-10/11**: Dashboard collapsed to per-state **Tax + Mtg tabs** (`property_category()`); TN/NC/newspaper scrapers retain mortgage/deed-of-trust sales as `mortgage_foreclosure` instead of dropping them; per-notice JSONL raw-text logs in `scraper/tmp/<source>_raw_<date>.jsonl`. Five trustee-sale scrapers added sharing `scraper/trustee_base.py` (`rlselaw`, `brockandscott`, `foreclosuretennessee`, `bellcarrington`, `logs_nc` — 49 Mtg rows on trial runs).
 - **2026-09-11**: Turnstile solving moved in-browser (camoufox passive wait + checkbox click); 2captcha code deleted after `ERROR_ZERO_BALANCE` (passes off-peak, e.g. 4am cron: 51 classified notices). `pdfplumber` post-mortem: stale image predated the requirement so all PDFs silently fell back to truncated HTML — live-installed, `extract_pdf_text` now ERRORs when missing.

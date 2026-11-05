@@ -2448,6 +2448,132 @@ File #: 77 Map/Parcel Number: 098 185 Defendant(s) in FiFa: Roe, John; 098 185 /
         assert scraper._parse_acres(block) == 0.45
 
 
+class TestGAPublicNoticeSinglePropertyNotices:
+    """GA mortgage / security-deed "Notice of Sale Under Power" notices name a
+    single property and never use the bundled tax-sale block shape
+    ("File #: N Map/Parcel Number: X ... Defendant"). They fell through
+    ``_PARCEL_SPLIT_RE`` and were dropped silently as "No parcels parsed" --
+    live 2026-10-27 that was 11 of 12 GA mountain-county candidates per run,
+    so the scraper looked "quiet" while real sales were being discarded."""
+
+    MORTGAGE = (
+        "NOTICE OF SALE UNDER POWER STATE OF GEORGIA LUMPKIN COUNTY Under and "
+        "by virtue of the Power of Sale contained in a Security Deed given by, "
+        "Cameron Bartlett, to Mortgage Electronic Registration Systems, Inc., "
+        "dated 8/30/2022, and recorded on 9/2/2022, in Book 1572, Page 182, "
+        "Lumpkin County, Georgia Records, conveying the after described "
+        "property ... will on 1/5/2027 sell at public outcry to the highest "
+        "bidder for cash: During the legal hours of sale before the door of "
+        "the courthouse of Lumpkin County, Georgia., the following described "
+        "property situated in Lumpkin County, Georgia, to wit: ALL THAT TRACT "
+        "OR PARCEL OF LAND LYING AND BEING IN LAND LOT 763, containing 1.25 "
+        "acres, more or less, BEING IMPROVED PROPERTY KNOWN AS 185 COLLINS WAY "
+        "AND TAX PARCEL 059-029 ACCORDING TO THE 2021 SYSTEM OF NUMBERING "
+        "PROPERTIES BY THE Tax Parcel ID: 059-029 Being real property commonly "
+        "known as 185 COLLINS WAY DAHLONEGA, GA 30533 The debt remains ...")
+
+    @pytest.fixture()
+    def scraper(self):
+        from scraper.ga_publicnotice import GAPublicNoticeScraper
+        s = GAPublicNoticeScraper.__new__(GAPublicNoticeScraper)
+        return s
+
+    def test_single_notice_parses_one_row(self, scraper):
+        props = scraper._parse_parcels(
+            self.MORTGAGE, "lumpkin", "2027-01-05", "http://x/ID=9422677",
+            kind="mortgage_foreclosure", fallback_key="9422677")
+        assert len(props) == 1
+        p = props[0]
+        assert p["source_listing_id"] == "lumpkin:059-029"
+        assert p["parcel_number"] == "059-029"
+        assert p["address"] == "185 COLLINS WAY"
+        assert p["acres"] == 1.25
+        assert p["property_type"] == "mortgage_foreclosure"
+        assert p["county"] == "lumpkin"
+        assert p["auction_date"] == "2027-01-05"
+        assert "qpublic" in (p["gis_url"] or "")
+        assert "185" in (p["google_maps_url"] or "")
+
+    def test_duplicate_postings_collapse_on_parcel(self, scraper):
+        a = scraper._parse_parcels(
+            self.MORTGAGE, "lumpkin", None, "http://x/ID=1",
+            kind="mortgage_foreclosure", fallback_key="1")
+        b = scraper._parse_parcels(
+            self.MORTGAGE, "lumpkin", None, "http://x/ID=2",
+            kind="mortgage_foreclosure", fallback_key="2")
+        assert a[0]["source_listing_id"] == b[0]["source_listing_id"] == "lumpkin:059-029"
+
+    def test_address_only_notice_keys_on_address(self, scraper):
+        text = ("NOTICE OF SALE UNDER POWER, UNION COUNTY ... Said property is "
+                "commonly known as 404 Hollow Hill Rd, Blairsville, GA 30512 "
+                "together with all fixtures and personal property attached ...")
+        props = scraper._parse_parcels(
+            text, "union", None, "http://x", kind="mortgage_foreclosure",
+            fallback_key="9423042")
+        assert props[0]["source_listing_id"] == "union:addr:404-hollow-hill-rd"
+        assert props[0]["address"] == "404 Hollow Hill Rd"
+        assert props[0]["parcel_number"] is None
+
+    def test_notice_with_no_parcel_or_address_keeps_listing_key(self, scraper):
+        # Live 9425337: only road names (no house number) + a Map/Parcel line
+        # that the split regex doesn't see. The notice must still be kept.
+        text = ("NOTICE OF SALE UNDER POWER ... more commonly known as: Skeenah "
+                "Gap Road, Suches, Georgia 30572 and Rock Creek Circle, Blue "
+                "Ridge, Georgia 30513 ... Subdivision Lot No. 25, containing 1.4 "
+                "acres of land, more or less ...")
+        props = scraper._parse_parcels(
+            text, "fannin", "2026-11-03", "http://x", kind="mortgage_foreclosure",
+            fallback_key="9425337")
+        assert len(props) == 1
+        assert props[0]["source_listing_id"] == "fannin:notice:9425337"
+        assert props[0]["address"] is None
+        assert props[0]["acres"] == 1.4
+
+    def test_no_parcel_no_address_no_key_dropped(self, scraper):
+        assert scraper._parse_parcels(
+            "no key here", "fannin", None, None,
+            kind="mortgage_foreclosure") == []
+
+    def test_sale_date_ignores_deed_and_recording_dates(self, scraper):
+        # Live 9424554: the security-deed / recording dates sit earlier in the
+        # notice and used to be reported as the auction date.
+        text = ("... dated 12/24/2015, and recorded on 9/15/2016, in Book 1995, "
+                "Page 394, Gilmer County, Georgia Records ... by virtue of the "
+                "power of sale and authority vested in it, will on 12/1/2026 "
+                "sell at public outcry to the highest bidder for cash ...")
+        assert scraper._extract_sale_date(text) == "2026-12-01"
+
+    def test_sale_date_none_when_only_recording_dates(self, scraper):
+        assert scraper._extract_sale_date(
+            "recorded on 9/15/2016 and dated 12/24/2015") is None
+
+    def test_first_tuesday_with_comma(self, scraper):
+        assert scraper._extract_sale_date(
+            "within the legal hours of sale on the first Tuesday in November, 2026"
+        ) == "2026-11-03"
+
+    def test_acreage_being_phrasing(self, scraper):
+        assert scraper._parse_acres(
+            "being 1.045 acres more particularly described as Lot 19") == 1.045
+
+    def test_street_suffix_overlook(self, scraper):
+        text = ("... APN: 0041-00151 Commonly Known As: 412 Necowa Cove "
+                "Overlook, Blue Ridge GA 30513 The Debt Secured ...")
+        props = scraper._parse_parcels(
+            text, "fannin", None, "http://x", kind="mortgage_foreclosure",
+            fallback_key="9424505")
+        assert props[0]["address"] == "412 Necowa Cove Overlook"
+        assert props[0]["parcel_number"] == "0041-00151"
+
+    def test_alias_chain_trimmed(self, scraper):
+        text = ("... and said property is more commonly known as 375 Tanglewood "
+                "Circle nka 254 Tanglewood Circle, Blairsville, GA 30512 ...")
+        props = scraper._parse_parcels(
+            text, "union", None, "http://x", kind="mortgage_foreclosure",
+            fallback_key="9423045")
+        assert props[0]["address"] == "375 Tanglewood Circle"
+
+
 class TestTNPublicNoticeParcelSplit:
     """TN county-trustee tax-sale notices are consolidated tables of delinquent
     parcels; :func:`_tn_parse_parcels` must split them into one listing per

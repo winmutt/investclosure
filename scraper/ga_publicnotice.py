@@ -42,14 +42,29 @@ COUNTY_SET = set(GA_MOUNTAIN_COUNTIES)
 
 # Parcel street address inside GA sheriff's-sale notices -- anchored on the
 # "known as" / "located on" / "Property address:" phrasing that precedes each
-# parcel's street address.
+# parcel's street address. Suffix list covers the mortgage-notice phrasings
+# ("commonly known as 412 Necowa Cove Overlook", "known as 157 Seaborn Drive")
+# as well as the sheriff's-sale ones; longer alternatives come first so a
+# suffix is never matched as a prefix of itself.
 _GA_PARCEL_ADDR_RE = re.compile(
     r"(?:known as|located on|property\s+address)\s*:?\s+"
     r"(\d{1,5}\s+[A-Za-z0-9.]+(?:\s+[A-Za-z0-9.]+){0,4}"
-    r"\s+(?:STREET|ST|AVENUE|AVE|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|HWY|"
-    r"HIGHWAY|CT|CIRCLE|CIR|PKWY|PIKE|WAY|TRAIL|HEIGHTS|ESTATES|GASSE)\.?)",
+    r"\s+(?:STREET|ST|AVENUE|AVE|BOULEVARD|BLVD|DRIVE|DR|ROAD|RD|LANE|LN|"
+    r"HIGHWAY|HWY|CIRCLE|CIR|PARKWAY|PKWY|PIKE|WAY|TRAIL|TRL|HEIGHTS|"
+    r"ESTATES|OVERLOOK|RIDGE|RUN|PASS|HOLLOW|MEADOWS|MEADOW|GLEN|COVE|"
+    r"PARK|LOOP|BEND|POINTE|POINT|KNOLL|CREST|SUMMIT|VISTA|GAP|FORD|MILL|"
+    r"SPRINGS|SPRING|CREEK|BRANCH|FALLS|SQUARE|PLAZA|CROSSING|XING|TRACE|"
+    r"WALK|PATH|TERRACE|TER|COURT|CT|PLACE|PL|ALLEY)\.?)",
     re.IGNORECASE,
 )
+
+
+def _clean_street(addr: Optional[str]) -> Optional[str]:
+    """Drop alias chains ("375 Tanglewood Circle nka 254 Tanglewood Circle")."""
+    if not addr:
+        return None
+    return re.split(r"\s+(?:nka|aka|fka|now\s+known\s+as)\s+", addr,
+                    flags=re.IGNORECASE)[0].strip()
 # Fallback when only a parcel number is given (e.g. Towns County notices).
 _GA_PARCEL_NO_RE = re.compile(r"Tax Map\s*&\s*Parcel[:\s]+([0-9A-Za-z]+)", re.IGNORECASE)
 
@@ -64,9 +79,20 @@ _SALE_DATE_RE = re.compile(
 # GA tax sales are statutorily held on the FIRST TUESDAY of the month.
 _FIRST_TUESDAY_RE = re.compile(
     r"first\s+Tuesday\s+in\s+(January|February|March|April|May|June|July|"
-    r"August|September|October|November|December)\s+(\d{4})",
+    r"August|September|October|November|December)\s*,?\s*(\d{4})",
     re.IGNORECASE,
 )
+
+# Sale-language anchors: the auction date is stated next to one of these.
+# Used to keep the security-deed / plat / recording date from being read as
+# the sale date.
+_SALE_ANCHOR_RE = re.compile(
+    r"(?:hours\s+of\s+sale|public\s+outcry|will\s+sell|sold\s+at|sell\s+at|"
+    r"tax\s+sale|sheriff'?s\s+sale)",
+    re.IGNORECASE,
+)
+# Numeric sale dates ("will on 12/1/2026 sell at public outcry").
+_NUMERIC_SALE_DATE_RE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 
 # Split a single (bundled) GA tax-sale notice into its per-parcel blocks.
 _PARCEL_SPLIT_RE = re.compile(
@@ -74,13 +100,29 @@ _PARCEL_SPLIT_RE = re.compile(
     r"(.+?)\s+Defendant",
     re.IGNORECASE,
 )
+# A single-property notice (GA security-deed / power-of-sale mortgage sales)
+# carries one parcel and never has the bundled
+# "File #: N Map/Parcel Number: X ... Defendant" shape that _PARCEL_SPLIT_RE
+# needs, so its labeled parcel number is the fallback listing key.
+# Verified live against the GA mountain-county inventory: "Tax Parcel ID:
+# 059-029", "Tax Parcel No. 0041062", "APN: 0041-00151", "PIN: 0041062",
+# "BEING KNOWN AS PARCEL 0034D 002".
+_GA_LABELED_PARCEL_RE = re.compile(
+    r"(?:Tax\s+Parcel(?:\s+(?:ID|No\.?|Number))?|"
+    r"Tax\s+Map\s*&\s*Parcel(?:\s+Number)?|"
+    r"\bAPN\b|\bPIN\b|Map\s*/\s*Parcel(?:\s+Number)?|"
+    r"Parcel\s+(?:ID|No\.?|Number))\s*[:#.]?\s*"
+    r"([0-9]{1,8}[A-Za-z]?(?:[-\s][0-9]{1,6}[A-Za-z]?)?)",
+    re.IGNORECASE,
+)
 # Acreage within a single parcel block. Two forms:
 #   * the legal body -- "containing 1,236.7 acres, more or less" (authoritative)
+#     / "being 1.045 acres" (mortgage-notice phrasing)
 #   * the parcel-line shorthand -- "063 001 / 1236.70 AC" / "2.07 Acs"
 # Both may carry thousands commas, so the captured number is passed through
 # ``_normalize_acres`` before use.
 _CONTAINING_ACRES_RE = re.compile(
-    r"containing\s+([\d,]+(?:\.\d+)?)\s+acres?\b", re.IGNORECASE)
+    r"(?:containing|being)\s+([\d,]+(?:\.\d+)?)\s+acres?\b", re.IGNORECASE)
 # Parcel-line shorthand (".45 Ac", "1236.70 AC", "2.07 Acs"). The integer part
 # is optional so a leading-dot decimal like ".45 Ac" is not misread as 45.
 _LINE_ACRES_RE = re.compile(
@@ -310,13 +352,32 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 return (first + timedelta(days=offset)).isoformat()
             except (ValueError, KeyError):
                 pass
-        m = _SALE_DATE_RE.search(text)
-        if not m:
-            return None
-        try:
-            return date(int(m.group(3)), months[m.group(1).lower()], int(m.group(2))).isoformat()
-        except (ValueError, KeyError):
-            return None
+        # Otherwise anchor on sale language. A bare month-name date anywhere
+        # in the notice is usually the security-deed / plat / recording date
+        # (live 2026-10-27: 9423045 reported 1998-05-19, its deed date, and
+        # 9424505/9424527 reported the 2018 plat date) -- never use it.
+        for before in (False, True):
+            for anchor in _SALE_ANCHOR_RE.finditer(text):
+                if before:
+                    window = text[max(0, anchor.start() - 90):anchor.start()]
+                else:
+                    window = text[anchor.end():anchor.end() + 260]
+                m = _SALE_DATE_RE.search(window)
+                if m:
+                    try:
+                        return date(int(m.group(3)),
+                                    months[m.group(1).lower()],
+                                    int(m.group(2))).isoformat()
+                    except (ValueError, KeyError):
+                        pass
+                m = _NUMERIC_SALE_DATE_RE.search(window)
+                if m:
+                    try:
+                        return date(int(m.group(3)), int(m.group(1)),
+                                    int(m.group(2))).isoformat()
+                    except ValueError:
+                        pass
+        return None
 
     @staticmethod
     def _parse_acres(block: str) -> Optional[float]:
@@ -354,9 +415,102 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         return None
 
     @staticmethod
+    def _make_property(*, county: str, parcel_no: Optional[str], street: Optional[str],
+                       address: Optional[str], acres: Optional[float], desc: str,
+                       kind: str, auction_date: Optional[str],
+                       detail_url: Optional[str], listing_id: str) -> PropertyData:
+        """Build one PropertyData row (shared by bundled and single notices).
+
+        Map links are built at extraction time (pure URL builders, no network)
+        so the Telegram alert sent at insert time already carries Maps + GIS.
+        GIS is parcel-deep via qPublic; Maps only for real street addresses
+        (not "Parcel <no>" placeholders).
+        """
+        from .gis_urls import get_ga_gis_url
+        from .nc_gis_lookup import build_google_maps_url
+        return {
+            "source": "ga_publicnotice",
+            "source_listing_id": listing_id,
+            "url": detail_url,
+            "address": address[:120] if address else None,
+            "city": None,
+            "county": county,
+            "state": "GA",
+            "zip_code": None,
+            "latitude": None,
+            "longitude": None,
+            "price": None,
+            "acres": acres,
+            "description": desc,
+            "property_type": kind,
+            "image_url": None,
+            "court_case": None,
+            "auction_date": auction_date,
+            "parcel_number": parcel_no,
+            "raw_source_text": desc,
+            "raw_paragraph": desc,
+            "gis_url": get_ga_gis_url(county, parcel_no or ""),
+            "google_maps_url": (
+                build_google_maps_url(None, None, street, None, county, state="GA")
+                if street else None
+            ),
+        }
+
+    @staticmethod
+    def _parse_single_parcel(text: str, county: str,
+                             auction_date: Optional[str],
+                             detail_url: Optional[str],
+                             kind: str = "mortgage_foreclosure",
+                             fallback_key: Optional[str] = None
+                             ) -> List[PropertyData]:
+        """One row for a notice that is NOT the bundled tax-sale block format.
+
+        GA mortgage / security-deed "Notice of Sale Under Power" notices name a
+        single property and never carry the
+        "File #: N Map/Parcel Number: X ... Defendant" shape that
+        ``_PARCEL_SPLIT_RE`` requires, so they used to fall through and be
+        dropped silently as "No parcels parsed" (verified live 2026-10-27: 11
+        of 12 GA mountain-county candidates per run).
+
+        Keyed on the labeled parcel number when present (duplicate postings of
+        the same property then collapse), else the street address, else the
+        listing id (SP case / pk id) so address-less notices still get a row.
+        """
+        parcel_no = None
+        m = _GA_LABELED_PARCEL_RE.search(text)
+        if m:
+            parcel_no = m.group(1).strip()
+
+        street = None
+        addr_m = _GA_PARCEL_ADDR_RE.search(text)
+        if addr_m:
+            candidate = _clean_street(addr_m.group(1).strip())
+            from .courthouses import is_courthouse_address
+            if candidate and not is_courthouse_address(candidate, county, "GA"):
+                street = candidate
+
+        if not parcel_no and not street and not fallback_key:
+            return []
+        if parcel_no:
+            listing_id = f"{county}:{parcel_no}"
+        elif street:
+            slug = re.sub(r"[^a-z0-9]+", "-", street.lower()).strip("-")
+            listing_id = f"{county}:addr:{slug}"
+        else:
+            listing_id = f"{county}:notice:{fallback_key}"
+        address = street or (f"Parcel {parcel_no}" if parcel_no else None)
+
+        return [GAPublicNoticeScraper._make_property(
+            county=county, parcel_no=parcel_no, street=street, address=address,
+            acres=GAPublicNoticeScraper._parse_acres(text),
+            desc=text.strip(), kind=kind, auction_date=auction_date,
+            detail_url=detail_url, listing_id=listing_id)]
+
+    @staticmethod
     def _parse_parcels(text: str, county: str, auction_date: Optional[str],
                        detail_url: Optional[str],
-                       kind: str = "tax_foreclosure") -> List[PropertyData]:
+                       kind: str = "tax_foreclosure",
+                       fallback_key: Optional[str] = None) -> List[PropertyData]:
         """Split a bundled GA foreclosure notice into one record per parcel.
 
         Each block is its own listing, keyed on ``<county>:<parcel_number>`` so
@@ -364,11 +518,17 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         parcels do not. The county is the one the notice body itself names
         (falling back to the grid-derived county) -- never the search box.
         ``kind`` tags the rows (``tax_foreclosure`` or ``mortgage_foreclosure``).
+
+        Notices that aren't the bundled tax-sale shape (single-property
+        mortgage / power-of-sale sales) fall back to
+        :meth:`_parse_single_parcel`.
         """
         fallback_county = (county or "").lower().strip()
         matches = list(_PARCEL_SPLIT_RE.finditer(text))
         if not matches:
-            return []
+            return GAPublicNoticeScraper._parse_single_parcel(
+                text, fallback_county, auction_date, detail_url, kind=kind,
+                fallback_key=fallback_key)
         parcels: List[PropertyData] = []
         for i, m in enumerate(matches):
             start = m.start()
@@ -379,53 +539,19 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                             or fallback_county).lower().strip()
 
             addr_m = _GA_PARCEL_ADDR_RE.search(block)
-            address = addr_m.group(1).strip() if addr_m else None
-            if address:
+            street = _clean_street(addr_m.group(1).strip()) if addr_m else None
+            if street:
                 from .courthouses import is_courthouse_address
-                if is_courthouse_address(address, block_county, "GA"):
-                    address = None
-            if not address:
-                address = f"Parcel {parcel_no}"
-            acres = GAPublicNoticeScraper._parse_acres(block)
-            # Map links at build time (pure URL builders, no network) so the
-            # Telegram alert sent at insert time already carries Maps + GIS.
-            # GIS is parcel-deep via qPublic; Maps only for real street
-            # addresses (not "Parcel <no>" placeholders).
-            from .gis_urls import get_ga_gis_url
-            from .nc_gis_lookup import build_google_maps_url
-            gis_url = get_ga_gis_url(block_county, parcel_no)
-            google_maps_url = (
-                build_google_maps_url(
-                    None, None, addr_m.group(1).strip(), None,
-                    block_county, state="GA")
-                if addr_m else None
-            )
-            desc = block.strip()
-            parcel: PropertyData = {
-                "source": "ga_publicnotice",
-                "source_listing_id": f"{block_county}:{parcel_no}",
-                "url": detail_url,
-                "address": address[:120] if address else None,
-                "city": None,
-                "county": block_county,
-                "state": "GA",
-                "zip_code": None,
-                "latitude": None,
-                "longitude": None,
-                "price": None,
-                "acres": acres,
-                "description": desc,
-                "property_type": kind,
-                "image_url": None,
-                "court_case": None,
-                "auction_date": auction_date,
-                "parcel_number": parcel_no,
-                "raw_source_text": desc,
-                "raw_paragraph": desc,
-                "gis_url": gis_url,
-                "google_maps_url": google_maps_url,
-            }
-            parcels.append(parcel)
+                if is_courthouse_address(street, block_county, "GA"):
+                    street = None
+            address = street or f"Parcel {parcel_no}"
+            parcels.append(GAPublicNoticeScraper._make_property(
+                county=block_county, parcel_no=parcel_no, street=street,
+                address=address,
+                acres=GAPublicNoticeScraper._parse_acres(block),
+                desc=block.strip(), kind=kind, auction_date=auction_date,
+                detail_url=detail_url,
+                listing_id=f"{block_county}:{parcel_no}"))
         return parcels
 
     def scrape(self) -> List[PropertyData]:
@@ -651,9 +777,18 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         auction_date = self._extract_sale_date(raw_text)
         county = (record.get("county") or "").lower().strip()
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
-        parcels = self._parse_parcels(raw_text, county, auction_date, detail_url, kind=kind)
+        parcels = self._parse_parcels(raw_text, county, auction_date, detail_url,
+                                      kind=kind,
+                                      fallback_key=record.get("sp_case") or pk_id)
         if not parcels:
             logger.warning("No parcels parsed for %s (county=%s)", pk_id, county)
+            log_raw(
+                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                county=record.get("county"), state="GA",
+                decision="dropped_no_key",
+                reason="no parcel number, street address, or listing key",
+                raw_text=raw_text, url=detail_url,
+            )
         else:
             log_raw(
                 "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
