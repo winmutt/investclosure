@@ -31,7 +31,8 @@ from scraper.nc_gis_lookup import (
     build_google_maps_url,
     build_google_maps_topo_url,
 )
-from scraper.gis_urls import get_nconemap_viewer_url
+from scraper.gis_urls import (HOSTED_VIEWER_PATH, get_hosted_viewer_url,
+                              get_nconemap_viewer_url)
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', str(config.data_dir)))
 REPORTS_DIR = Path(os.environ.get('REPORTS_DIR', str(config.data_dir / "reports")))
@@ -185,6 +186,11 @@ def _row_to_dict(row):
             d.get("longitude"), d.get("latitude"),
             d.get("address"), d.get("city"), d.get("county"), state=d.get("state"),
         )
+    # The GIS button: a stored deep link when enrichment produced one (GA
+    # qPublic / TN TPAD are parcel-deep), otherwise our hosted viewer built
+    # from the row's parcel or coordinates — most Zillow rows carry coordinates
+    # and no parcel, so their cards would otherwise offer no parcel map at all.
+    d["gis_link"] = _gis_button_url(d)
     return d
 
 
@@ -261,133 +267,351 @@ def inject_global_stats():
 # States surfaced first in the dashboard tab bar (primary markets)
 STATE_PRIORITY = ["NC", "TN"]
 
+# ---- Dashboard filtering / sorting ----------------------------------------
+# Shared by the dashboard ('/') and the search page ('/properties'). Unknown
+# acreage sorts last in both directions so a NULL never looks like the
+# smallest (or largest) parcel.
+_ACRES_ORDER = "CASE WHEN acres IS NULL THEN 1 ELSE 0 END, acres"
+
+PROPERTY_SORTS = {
+    "sale": ("Sale date (soonest first)",
+             "COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC"),
+    "acres_desc": ("Acreage: high to low", _ACRES_ORDER + " DESC"),
+    "acres_asc": ("Acreage: low to high", _ACRES_ORDER + " ASC"),
+    "county_asc": ("County: A to Z",
+                   "LOWER(county) ASC, LOWER(state) ASC, " + _ACRES_ORDER + " DESC"),
+    "county_desc": ("County: Z to A",
+                    "LOWER(county) DESC, LOWER(state) DESC, " + _ACRES_ORDER + " DESC"),
+}
+DEFAULT_PROPERTY_SORT = "sale"
+
+
+def _parse_property_filters(args) -> dict:
+    """Read county / acreage / sort query params from a request.
+
+    The county select submits ``STATE|county`` so same-named counties in
+    different states (Polk NC/TN, Union GA/TN, …) stay distinct; a bare
+    ``county`` value is still accepted for older links.
+    """
+    county = (args.get('county') or '').strip()
+    state = ''
+    if '|' in county:
+        state, county = (part.strip() for part in county.split('|', 1))
+        state = state.upper()
+    min_acres = args.get('min_acres', type=float)
+    max_acres = args.get('max_acres', type=float)
+    if min_acres is not None and min_acres < 0:
+        min_acres = None
+    if max_acres is not None and max_acres < 0:
+        max_acres = None
+    if min_acres is not None and max_acres is not None and min_acres > max_acres:
+        min_acres, max_acres = max_acres, min_acres
+    sort = (args.get('sort') or DEFAULT_PROPERTY_SORT).strip()
+    if sort not in PROPERTY_SORTS:
+        sort = DEFAULT_PROPERTY_SORT
+    return {"county": county, "state": state, "min_acres": min_acres,
+            "max_acres": max_acres, "sort": sort}
+
+
+def _filters_active(filters: dict) -> bool:
+    """True when the dashboard is showing anything other than its default view."""
+    return bool(filters["county"]
+                or filters["min_acres"] is not None
+                or filters["max_acres"] is not None
+                or filters["sort"] != DEFAULT_PROPERTY_SORT)
+
+
+def _property_where(filters: dict, *, status: Optional[str] = 'active',
+                    query: str = '') -> tuple[str, list]:
+    """Build the shared WHERE clause for the dashboard / search queries."""
+    clauses: list[str] = []
+    params: list = []
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    if query:
+        clauses.append(
+            "(address LIKE ? OR city LIKE ? OR county LIKE ?"
+            " OR description LIKE ? OR notes LIKE ?"
+            " OR parcel_number LIKE ? OR court_case LIKE ? OR source_listing_id LIKE ?)")
+        params.extend([f"%{query}%"] * 8)
+    if filters["state"] and filters["county"]:
+        clauses.append("LOWER(state) = ? AND LOWER(county) = ?")
+        params.extend([filters["state"].lower(), filters["county"].lower()])
+    elif filters["county"]:
+        clauses.append("LOWER(county) LIKE ?")
+        params.append(f"%{filters['county'].lower()}%")
+    # An acreage bound only makes sense for rows whose acreage is known.
+    if filters["min_acres"] is not None:
+        clauses.append("acres IS NOT NULL AND acres >= ?")
+        params.append(filters["min_acres"])
+    if filters["max_acres"] is not None:
+        clauses.append("acres IS NOT NULL AND acres <= ?")
+        params.append(filters["max_acres"])
+    return (" AND ".join(clauses) or "1=1"), params
+
+
+def _county_groups(conn) -> list[dict]:
+    """Active counties grouped by state for the ``STATE|county`` selects."""
+    rows = conn.execute(
+        "SELECT DISTINCT state, county FROM properties"
+        " WHERE status = 'active' AND county IS NOT NULL AND TRIM(county) <> ''"
+        " ORDER BY LOWER(state), LOWER(county)"
+    ).fetchall()
+    groups: list[dict] = []
+    for row in rows:
+        state = (row["state"] or "").strip().upper()
+        county = (row["county"] or "").strip()
+        if not county:
+            continue
+        if not groups or groups[-1]["state"] != state:
+            groups.append({"state": state, "counties": []})
+        groups[-1]["counties"].append(county)
+    return groups
+
+
+def _sort_choices() -> list[tuple[str, str]]:
+    return [(key, label) for key, (label, _sql) in PROPERTY_SORTS.items()]
+
+
+# ---- Per-tab (state x category) dashboard queries -------------------------
+# The dashboard used to run ONE query for every state and tab and slice the
+# first 1000 rows into buckets. Tennessee alone has ~1,700 're' rows, so that
+# window starved the other boards: NC (975 active rows) was left showing 4.
+# Every (state, category) pane now runs its own query with its own filters and
+# its own row budget, and its tab count is the count of what it actually
+# matched.
+
+PROPERTY_CATEGORIES = ("tax", "mtg", "re")
+DASHBOARD_PANE_LIMIT = 1000
+
+# SQL mirror of property_category(). Kept next to the Python classifier so the
+# per-pane WHERE clauses cannot drift from what the tiles are bucketed by
+# (tests/test_scraper.py asserts the two agree on every input shape).
+_MTG_PATTERNS = (
+    ("property_type", ("%mortgage%", "%mtg%", "%deed of trust%",
+                       "%bank_owned%", "%reo%")),
+    ("notes", ("%mortgage%", "%mtg%")),
+    ("description", ("%deed of trust%",)),
+)
+
+
+def _category_clause(cat: str) -> tuple[str, list]:
+    """WHERE fragment selecting one tab's rows (no params)."""
+    mtg = " OR ".join(f"LOWER(COALESCE({col}, '')) LIKE '{pat}'"
+                      for col, pats in _MTG_PATTERNS for pat in pats)
+    is_re = "LOWER(COALESCE(source, '')) = 'zillow'"
+    if cat == "re":
+        return is_re, []
+    if cat == "mtg":
+        return f"NOT ({is_re}) AND ({mtg})", []
+    return f"NOT ({is_re}) AND NOT ({mtg})", []
+
+
+def _pane_arg(args, cat: str, name: str):
+    """Read ``<name>_<cat>``, falling back to the bare ``<name>``.
+
+    The bare form keeps links written before the per-tab controls (and the
+    old shared filter bar) working: they then apply to every tab.
+    """
+    for key in (f"{name}_{cat}", name):
+        value = (args.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _pane_filters(args, cat: str) -> dict:
+    """Filters for one (state, category) pane."""
+    county = _pane_arg(args, cat, "county") or ""
+    # Legacy shared-bar form: 'NC|Macon'. The state half names the board the
+    # county belongs to, so it only applies when that board is on screen.
+    county_state = ""
+    if "|" in county:
+        county_state, county = (p.strip() for p in county.split("|", 1))
+        county_state = county_state.upper()
+
+    def _acres(name):
+        raw = _pane_arg(args, cat, name)
+        try:
+            value = float(raw) if raw is not None else None
+        except ValueError:
+            return None
+        return None if value is not None and value < 0 else value
+
+    min_acres, max_acres = _acres("min_acres"), _acres("max_acres")
+    if min_acres is not None and max_acres is not None and min_acres > max_acres:
+        min_acres, max_acres = max_acres, min_acres
+    sort = _pane_arg(args, cat, "sort") or DEFAULT_PROPERTY_SORT
+    if sort not in PROPERTY_SORTS:
+        sort = DEFAULT_PROPERTY_SORT
+    return {"county": county, "county_state": county_state,
+            "min_acres": min_acres, "max_acres": max_acres, "sort": sort}
+
+
+def _pane_filters_active(filters: dict) -> bool:
+    """True when a pane shows anything other than its default view."""
+    return bool(filters["county"]
+                or filters["min_acres"] is not None
+                or filters["max_acres"] is not None
+                or filters["sort"] != DEFAULT_PROPERTY_SORT)
+
+
+def _pane_where(state: str, cat: str, filters: dict) -> tuple[str, list]:
+    """WHERE clause for one pane: its state, its tab, its county/acreage."""
+    clause, params = _category_clause(cat)
+    clauses = ["status = 'active'", f"UPPER(state) = ?", f"({clause})"]
+    params = [state] + params
+    county = filters["county"]
+    if county:
+        clauses.append("LOWER(county) = ?")
+        params.append(county.lower())
+    if filters["min_acres"] is not None:
+        clauses.append("acres IS NOT NULL AND acres >= ?")
+        params.append(filters["min_acres"])
+    if filters["max_acres"] is not None:
+        clauses.append("acres IS NOT NULL AND acres <= ?")
+        params.append(filters["max_acres"])
+    return " AND ".join(clauses), params
+
+
+def _state_counts(conn) -> list[dict]:
+    """Active totals per state, priority markets first (the state tab bar)."""
+    rows = conn.execute(
+        "SELECT UPPER(state) AS state, COUNT(*) AS n FROM properties"
+        " WHERE status = 'active' AND state IS NOT NULL"
+        " GROUP BY UPPER(state)"
+    ).fetchall()
+    counts = {(r["state"] or "UNKNOWN"): r["n"] for r in rows}
+    return [{"state": s, "count": n} for s, n in sorted(
+        counts.items(),
+        key=lambda kv: (STATE_PRIORITY.index(kv[0]) if kv[0] in STATE_PRIORITY else 99,
+                        kv[0]))]
+
+
+def _counties_for(conn, state: str, cat: str) -> list[str]:
+    """County choices for one pane's select (that state + tab only)."""
+    clause, params = _category_clause(cat)
+    rows = conn.execute(
+        "SELECT DISTINCT county FROM properties"
+        f" WHERE status = 'active' AND UPPER(state) = ? AND ({clause})"
+        " AND county IS NOT NULL AND TRIM(county) <> ''"
+        " ORDER BY LOWER(county)",
+        [state] + params).fetchall()
+    return [(r["county"] or "").strip() for r in rows if (r["county"] or "").strip()]
+
 
 @app.route('/')
 def landing():
+    """Dashboard: one state board, its three category tabs each filtered/sorted
+    by their own controls (``?st=NC&cat=mtg&county_mtg=…&sort_re=…``)."""
     conn = get_conn()
-    props = scraper_db.get_all_active(conn, limit=1000, source=None)
-    conn.close()
-    props = _rows_to_dicts(props)
+    states = _state_counts(conn)
+    state_keys = [s["state"] for s in states]
+    board = (request.args.get("st") or "").strip().upper()
+    if board not in state_keys:
+        # A stale/absent board falls back to the first state that has rows.
+        board = state_keys[0] if state_keys else ""
 
-    # Group active properties by vertical -> state -> tab (tax / mtg / re).
-    # 'mountains' holds all current sources; 'beach' stays empty until the
-    # water-frontage sources land (it renders as a stub meanwhile).
-    by_vertical: dict[str, dict[str, dict[str, list]]] = {k: {} for k in VERTICALS}
-    vertical_counts: dict[str, int] = {k: 0 for k in VERTICALS}
-    for p in props:
-        v = property_vertical(p)  # 'mountains' or 'beach'
-        st = (p.get("state") or "UNKNOWN").strip().upper()
-        cat = property_category(p)  # 'tax', 'mtg', or 're'
-        if st not in by_vertical[v]:
-            by_vertical[v][st] = {"tax": [], "mtg": [], "re": []}
-        by_vertical[v][st][cat].append(p)
-        vertical_counts[v] = vertical_counts.get(v, 0) + 1
-
-    # The mountains board (the default vertical) keeps the flat state view.
-    states = by_vertical.get(DEFAULT_VERTICAL, {})
-
-    # Order states: priority markets first, then alphabetically
-    states_order = sorted(
-        states.keys(),
-        key=lambda s: (STATE_PRIORITY.index(s) if s in STATE_PRIORITY else 99, s),
-    )
-
-    # Ordered vertical tab metadata (label / active-stub / count) for the
-    # mountains|beach switch.
-    verticals = [
-        {
-            "key": k,
-            "label": meta["label"],
-            "status": meta["status"],
-            "count": vertical_counts.get(k, 0),
+    panes: dict[str, dict] = {}
+    for cat in PROPERTY_CATEGORIES:
+        filters = _pane_filters(request.args, cat)
+        # A legacy 'NC|Macon' filter belongs to NC's board only.
+        if filters["county_state"] and filters["county_state"] != board:
+            filters = dict(filters, county="")
+        where, params = _pane_where(board, cat, filters)
+        order = PROPERTY_SORTS[filters["sort"]][1]
+        rows = conn.execute(
+            f"SELECT * FROM properties WHERE {where} ORDER BY {order}, id DESC LIMIT ?",
+            [*params, DASHBOARD_PANE_LIMIT]).fetchall()
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM properties WHERE {where}", params).fetchone()[0]
+        panes[cat] = {
+            "props": _rows_to_dicts(rows),
+            "total": total,
+            "shown": len(rows),
+            "filters": filters,
+            "filters_active": _pane_filters_active(filters),
+            "counties": _counties_for(conn, board, cat),
         }
+    active_total = conn.execute(
+        "SELECT COUNT(*) FROM properties WHERE status = 'active'").fetchone()[0]
+    conn.close()
+
+    requested = (request.args.get("cat") or "").strip().lower()
+    if requested in panes and panes[requested]["total"]:
+        active_cat = requested
+    else:
+        # Open on the first tab that actually has rows: landing on an empty
+        # Tax tab while 900 listings sit under Re reads as "no results".
+        active_cat = next((c for c in PROPERTY_CATEGORIES if panes[c]["total"]),
+                          PROPERTY_CATEGORIES[0])
+
+    # The mountains|beach switch counts every active row (beach stays a stub
+    # until the water-frontage sources land — see BEACH_SOURCES).
+    verticals = [
+        {"key": k, "label": meta["label"], "status": meta["status"],
+         "count": active_total if k == DEFAULT_VERTICAL else 0}
         for k, meta in VERTICALS.items()
     ]
 
     return render_template('landing.html',
+                            state=board,
                             states=states,
-                            states_order=states_order,
+                            panes=panes,
+                            active_cat=active_cat,
                             verticals=verticals,
-                            default_vertical=DEFAULT_VERTICAL)
+                            default_vertical=DEFAULT_VERTICAL,
+                            categories=PROPERTY_CATEGORIES,
+                            sort_choices=_sort_choices())
 
 
 @app.route('/properties')
 def properties():
     conn = get_conn()
     query = request.args.get('q', '').strip()
-    county = request.args.get('county', '').strip()
-    min_acres = request.args.get('min_acres', type=float)
     status_filter = request.args.get('status', '').strip()
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(200, max(1, request.args.get('per_page', 20, type=int)))
     offset = (page - 1) * per_page
+    filters = _parse_property_filters(request.args)
 
-    # Build query — investclosure doesn't use price much
-    if status_filter:
-        sql = "SELECT * FROM properties WHERE status = ?"
-        params = [status_filter]
-    else:
-        sql = "SELECT * FROM properties WHERE status = 'active'"
-        params = []
+    # An empty status means "active" (historical behaviour); any other value
+    # (e.g. 'archived') filters to exactly that status.
+    status_value = status_filter or 'active'
+    where, params = _property_where(filters, status=status_value, query=query)
+    order = PROPERTY_SORTS[filters["sort"]][1]
 
-    if query:
-        sql += (" AND (address LIKE ? OR city LIKE ? OR county LIKE ?"
-                " OR description LIKE ? OR notes LIKE ?"
-                " OR parcel_number LIKE ? OR court_case LIKE ? OR source_listing_id LIKE ?)")
-        pattern = f"%{query}%"
-        params.extend([pattern] * 8)
-
-    if county:
-        sql += " AND county LIKE ?"
-        params.append(f"%{county}%")
-
-    if min_acres:
-        sql += " AND (acres IS NULL OR acres >= ?)"
-        params.append(min_acres)
-
-    sql += " ORDER BY COALESCE(initial_auction_date, last_seen) DESC, first_seen DESC LIMIT ? OFFSET ?"
-    params.extend([per_page, offset])
-
-    rows = conn.execute(sql, params).fetchall()
-
-    # Get count for pagination
-    if status_filter:
-        count_sql = "SELECT COUNT(*) FROM properties WHERE status = ?"
-        count_params = [status_filter]
-    else:
-        count_sql = "SELECT COUNT(*) FROM properties WHERE status = 'active'"
-        count_params = []
-
-    if query:
-        count_sql += (" AND (address LIKE ? OR city LIKE ? OR county LIKE ?"
-                      " OR description LIKE ? OR notes LIKE ?"
-                      " OR parcel_number LIKE ? OR court_case LIKE ? OR source_listing_id LIKE ?)")
-        pattern = f"%{query}%"
-        count_params.extend([pattern] * 8)
-    if county:
-        count_sql += " AND county LIKE ?"
-        count_params.append(f"%{county}%")
-    if min_acres:
-        count_sql += " AND (acres IS NULL OR acres >= ?)"
-        count_params.append(min_acres)
-
-    total = conn.execute(count_sql, count_params).fetchone()[0]
-
-    county_options = conn.execute(
-        "SELECT DISTINCT county FROM properties WHERE county IS NOT NULL AND status='active' ORDER BY county"
+    rows = conn.execute(
+        f"SELECT * FROM properties WHERE {where} ORDER BY {order}, id DESC LIMIT ? OFFSET ?",
+        [*params, per_page, offset],
     ).fetchall()
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM properties WHERE {where}", params).fetchone()[0]
+    county_groups = _county_groups(conn)
+    conn.close()
+    rows = _rows_to_dicts(rows)
+
+    # Keep every filter in the pager links (previously hand-concatenated, which
+    # broke on float acreage values and dropped new params such as sort).
+    page_query = {k: v for k, v in request.args.items() if k != 'page'}
+    prev_url = (url_for('properties', page=page - 1, **page_query)
+                if page > 1 else None)
+    next_url = (url_for('properties', page=page + 1, **page_query)
+                if page * per_page < total else None)
 
     return render_template('properties.html',
-                           properties=_rows_to_dicts(rows),
+                           properties=rows,
                            total=total,
                            page=page,
                            per_page=per_page,
                            query=query,
-                           county=county,
-                           min_acres=min_acres,
+                           filters=filters,
                            status=status_filter,
-                           county_options=_rows_to_dicts(county_options))
+                           county_groups=county_groups,
+                           sort_choices=_sort_choices(),
+                           prev_url=prev_url,
+                           next_url=next_url)
 
 
 @app.route('/new')
@@ -582,29 +806,38 @@ def property_navigation(property_id):
     })
 
 
-def _detail_map_embed_url(prop: dict) -> Optional[str]:
-    """Same-origin map URL that can be embedded in an <iframe>.
+def _viewer_map_url(prop: dict) -> Optional[str]:
+    """Same-origin hosted viewer URL for a row, or None.
 
-    Only the hosted ``/static/gis_viewer.html`` viewer is embeddable — the
-    GA qPublic / TN TPAD links are third-party pages that block framing.
-    NC rows get a viewer URL derived from their stored GIS link, or built
-    from coordinates when enrichment never produced one (e.g. most Zillow
-    rows), so the desktop detail view can show the parcel in place.
+    Only ``/static/gis_viewer.html`` can be embedded in an <iframe> — the GA
+    qPublic / TN TPAD links are third-party pages that block framing. NC rows
+    get the OneMap parcel layer; a row whose enrichment never produced a
+    ``gis_url`` (most Zillow rows) gets a viewer built from its coordinates,
+    in any state, so the desktop detail view can show the parcel in place.
     """
     gis = (prop.get("gis_url") or "").strip()
-    if gis.startswith("/static/gis_viewer.html"):
+    if gis.startswith(HOSTED_VIEWER_PATH):
         return gis
-    if (prop.get("state") or "").upper() == "NC":
-        lat = prop.get("latitude")
-        lon = prop.get("longitude")
-        parcel = (prop.get("parcel_number") or "").strip() or None
-        if lat is not None and lon is not None:
-            return get_nconemap_viewer_url(lon, lat, parcel,
-                                           prop.get("county"))
-        if parcel:
-            return get_nconemap_viewer_url(None, None, parcel,
-                                           prop.get("county"))
+    lat = prop.get("latitude")
+    lon = prop.get("longitude")
+    parcel = (prop.get("parcel_number") or "").strip() or None
+    state = (prop.get("state") or "").upper()
+    if state == "NC" and ((lat is not None and lon is not None) or parcel):
+        return get_nconemap_viewer_url(lon, lat, parcel, prop.get("county"))
+    if lat is not None and lon is not None and not gis:
+        return get_hosted_viewer_url(lon, lat, state=state)
     return None
+
+
+def _gis_button_url(prop: dict) -> Optional[str]:
+    """Target for a card's GIS button.
+
+    A stored link wins: the GA qPublic / TN TPAD pages are parcel-deep, which
+    beats a coordinate-centred map. Otherwise fall back to the hosted viewer.
+    A row with neither gets no button at all (link-depth policy: Google Maps
+    still covers address-only rows).
+    """
+    return (prop.get("gis_url") or "").strip() or _viewer_map_url(prop)
 
 
 @app.route('/property/<int:property_id>')
@@ -623,7 +856,7 @@ def property_detail(property_id):
     conn.close()
     prop = _row_to_dict(row)
     return render_template('property.html', prop=prop,
-                           map_embed_url=_detail_map_embed_url(prop),
+                           map_embed_url=_viewer_map_url(prop),
                            same_case=[_row_to_dict(r) for r in same_case],
                            cross_links=cross_links,
                            audit_log=audit_log)

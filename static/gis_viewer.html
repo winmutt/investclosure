@@ -9,13 +9,27 @@
     html, body, #view { height: 100%; width: 100%; margin: 0; padding: 0; }
     #bar {
       position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-      background: rgba(17,24,39,0.92); color: #fff; padding: 8px 12px;
-      font: 14px/1.4 system-ui, sans-serif; display: flex; gap: 12px; align-items: center;
+      background: rgba(17,24,39,0.92); color: #fff; padding: 6px 12px;
+      font: 14px/1.4 system-ui, sans-serif; display: flex; gap: 10px;
+      align-items: center; flex-wrap: wrap;
     }
     #bar a { color: #93c5fd; }
     #bar .sp { opacity: .7; }
+    #bases, #overlays { display: flex; gap: 4px; }
+    #bases button, #overlays button {
+      font: 12px/1 system-ui, sans-serif; padding: 4px 8px; border-radius: 5px;
+      border: 1px solid rgba(255,255,255,.35); background: transparent;
+      color: #e5e7eb; cursor: pointer;
+    }
+    #bases button[aria-pressed="true"],
+    #overlays button[aria-pressed="true"] {
+      background: #e27728; border-color: #e27728; color: #111827; font-weight: 600;
+    }
+    #overlays button[data-overlay="water"][aria-pressed="true"] {
+      background: #2b7fd4; border-color: #2b7fd4; color: #fff;
+    }
     #card {
-      position: absolute; top: 52px; right: 12px; z-index: 10; width: 280px;
+      position: absolute; top: 48px; right: 12px; z-index: 10; width: 280px;
       background: rgba(17,24,39,0.92); color: #fff; border-radius: 8px;
       padding: 10px 12px; font: 13px/1.5 system-ui, sans-serif; display: none;
     }
@@ -28,7 +42,17 @@
 <body>
   <div id="bar">
     <strong>Mountains Parcel Map</strong>
-    <span class="sp" id="info">Loading NC OneMap parcel layer…</span>
+    <div id="bases" role="group" aria-label="Basemap">
+      <button type="button" data-base="lidar" title="LiDAR-derived shaded relief (USGS 3DEP)">LiDAR</button>
+      <button type="button" data-base="imagery" title="Aerial photography">Imagery</button>
+      <button type="button" data-base="topo" title="Topographic map">Topo</button>
+      <button type="button" data-base="street" title="Street map">Street</button>
+    </div>
+    <div id="overlays" role="group" aria-label="Overlays">
+      <button type="button" data-overlay="water" title="Streams, rivers and lakes (USGS NHD)">Water</button>
+    </div>
+    <span class="sp" id="info">Loading…</span>
+    <span class="sp" id="src"></span>
   </div>
   <div id="card"></div>
   <div id="view"></div>
@@ -36,29 +60,173 @@
   <script src="https://js.arcgis.com/4.29/"></script>
   <script>
     const params = new URLSearchParams(location.search);
-    const service = params.get("service") ||
-      "/gis/proxy/secure/rest/services/NC1Map_Parcels/MapServer/1";
+    // `service` is absent for rows outside NC: there is no statewide parcel
+    // layer to draw there, so the viewer shows the property on the basemap.
+    const service = params.get("service");
     const center = params.get("center");   // "lng,lat"
     const level = parseFloat(params.get("level") || "16");
     const parcel = params.get("parcel");
 
+    const STORAGE_KEY = "mountains-basemap";
+    const DEFAULT_BASE = "lidar";
+
     require([
-      "esri/Map", "esri/views/MapView", "esri/layers/FeatureLayer",
-      "esri/Graphic", "esri/geometry/Point", "esri/geometry/Polygon",
-      "esri/symbols/SimpleMarkerSymbol"
-    ], function (Map, MapView, FeatureLayer, Graphic, Point, Polygon, SimpleMarkerSymbol) {
+      "esri/Map", "esri/Basemap", "esri/views/MapView", "esri/layers/FeatureLayer",
+      "esri/layers/WebTileLayer", "esri/Graphic", "esri/geometry/Point",
+      "esri/geometry/Polygon", "esri/symbols/SimpleMarkerSymbol"
+    ], function (Map, Basemap, MapView, FeatureLayer, WebTileLayer,
+                 Graphic, Point, Polygon, SimpleMarkerSymbol) {
 
-      const map = new Map({ basemap: "satellite" });
+      const info = document.getElementById("info");
+      const srcLine = document.getElementById("src");
+      const setInfo = (text) => { info.textContent = text; };
+      const readPref = (key, fallback) => {
+        try {
+          const value = localStorage.getItem(key);
+          return value === null ? fallback : value;
+        } catch (e) { return fallback; }
+      };
+      const writePref = (key, value) => {
+        try { localStorage.setItem(key, value); } catch (e) { /* private mode */ }
+      };
 
-      const layer = new FeatureLayer({
+      const tile = (urlTemplate, opts) =>
+        new WebTileLayer(Object.assign({ urlTemplate }, opts || {}));
+
+      // LiDAR relief: USGS 3DEP shaded relief is LiDAR-derived wherever USGS
+      // has flown it (all of our mountain counties), but its cache stops at
+      // z16 — Esri's global hillshade sits underneath so deep zoom never goes
+      // blank and non-NC states still get relief.
+      const buildLidar = () => new Basemap({
+        title: "LiDAR relief",
+        baseLayers: [
+          tile("https://services.arcgisonline.com/ArcGIS/rest/services/"
+               + "Elevation/World_Hillshade/MapServer/tile/{level}/{row}/{col}",
+               { title: "Global hillshade", copyright: "Esri" }),
+          tile("https://basemap.nationalmap.gov/arcgis/rest/services/"
+               + "USGSShadedReliefOnly/MapServer/tile/{level}/{row}/{col}",
+               { title: "LiDAR relief (USGS 3DEP)", maxZoom: 16,
+                 copyright: "USGS 3DEP" }),
+        ],
+      });
+
+      // Aerial photography. NC OneMap's cached statewide ortho is the deepest
+      // zoom for NC and is served same-origin through /gis/proxy; everywhere
+      // else (and whenever the proxy does not answer) Esri World Imagery.
+      // The cache covers North Carolina only and the proxy needs the dashboard
+      // login, so one tile is probed before it is adopted: a basemap switch
+      // must never leave the map empty.
+      let ncOrthoWorks = null;
+      // WebTileLayer.urlTemplate must be ABSOLUTE: a root-relative template is
+      // re-parsed by the SDK into a bogus host ("https://null/oxy/…") and every
+      // tile request dies on CORS, leaving the basemap blank.
+      const NC_ORTHO_PATH =
+        "/gis/proxy/secure/rest/services/Imagery/Orthoimagery_Latest_cached"
+        + "/ImageServer/tile/{level}/{row}/{col}";
+      const NC_ORTHO_TEMPLATE = location.origin + NC_ORTHO_PATH;
+      const esriImagery = () =>
+        tile("https://server.arcgisonline.com/ArcGIS/rest/services/"
+             + "World_Imagery/MapServer/tile/{level}/{row}/{col}",
+             { title: "World Imagery", copyright: "Esri" });
+      const ncOrtho = () =>
+        tile(NC_ORTHO_TEMPLATE, { title: "NC OneMap ortho",
+                                  copyright: "NC OneMap" });
+      const buildImagery = () => new Basemap({
+        title: "Imagery",
+        baseLayers: [ncOrthoWorks ? ncOrtho() : esriImagery()],
+      });
+
+      const buildTopo = () => new Basemap({
+        title: "Topo",
+        baseLayers: [tile("https://server.arcgisonline.com/ArcGIS/rest/services/"
+                          + "World_Topo_Map/MapServer/tile/{level}/{row}/{col}",
+                          { copyright: "Esri" })],
+      });
+
+      const buildStreet = () => new Basemap({
+        title: "Street",
+        baseLayers: [tile("https://server.arcgisonline.com/ArcGIS/rest/services/"
+                          + "World_Street_Map/MapServer/tile/{level}/{row}/{col}",
+                          { copyright: "Esri" })],
+      });
+
+      const BASE_BUILDERS = {
+        lidar: buildLidar, imagery: buildImagery,
+        topo: buildTopo, street: buildStreet,
+      };
+
+      // ?base= wins (a link can force a view), then the last choice the
+      // visitor made, then LiDAR.
+      const isBase = (k) => !!k && Object.prototype.hasOwnProperty.call(BASE_BUILDERS, k);
+      let currentBase = [params.get("base"), readPref(STORAGE_KEY, null), DEFAULT_BASE]
+        .filter(isBase)[0] || DEFAULT_BASE;
+
+      const map = new Map({ basemap: BASE_BUILDERS[currentBase]() });
+
+      const parcelLayer = service ? new FeatureLayer({
         url: service,
         outFields: ["parno", "altparno", "ownname", "gisacres", "cntyname"],
         popupTemplate: {
           title: "{cntyname} Parcel",
           content: "PIN: <b>{parno}</b><br>Owner: {ownname}<br>GIS Acres: {gisacres}"
         }
+      }) : null;
+
+      // ── Water: streams, rivers, lakes ────────────────────────────────────
+      // USGS National Map NHD. It is Web Mercator, covers all six states (NC
+      // OneMap's own hydrography is NC-only), and answers cross-origin
+      // (access-control-allow-origin: *), so no proxy is involved. "Large
+      // scale" layers carry the creek-sized detail and only appear once the
+      // visitor is zoomed in past ~1:72k (z13); the small-scale pair covers
+      // the wider view, so the map never queries a statewide river network.
+      const NHD = "https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer";
+      const LINE = (width) => ({
+        type: "simple",
+        symbol: { type: "simple-line", color: [43, 127, 212, 0.95], width,
+                  cap: "round", join: "round" },
       });
-      map.add(layer);
+      const WATER_FILL = {
+        type: "simple",
+        symbol: { type: "simple-fill", color: [78, 160, 214, 0.45],
+                  outline: { color: [43, 127, 212, 0.9], width: 0.6 } },
+      };
+      // Field case differs between NHD layers (GNIS_NAME on the area/waterbody
+      // layers, gnis_name on the flowlines), so the popup reads whichever it
+      // gets instead of relying on the template substitution being lenient.
+      const waterPopup = (label) => ({
+        title: label,
+        outFields: ["*"],
+        content: (feature) => {
+          const attrs = (feature.graphic || feature).attributes || {};
+          const name = attrs.GNIS_NAME || attrs.gnis_name;
+          const type = attrs.FTYPE || attrs.ftype;
+          if (name) return "<b>" + name + "</b><br>USGS NHD";
+          return type ? "USGS NHD feature type " + type : "USGS NHD water feature";
+        },
+      });
+      const waterLayers = [
+        new FeatureLayer({ url: NHD + "/10", outFields: ["*"],
+                           maxZoom: 13, renderer: WATER_FILL,
+                           popupTemplate: waterPopup("Water body") }),
+        new FeatureLayer({ url: NHD + "/4", outFields: ["*"],
+                           maxZoom: 13, renderer: LINE(0.9),
+                           popupTemplate: waterPopup("Stream / river") }),
+        new FeatureLayer({ url: NHD + "/12", outFields: ["*"],
+                           minZoom: 13, renderer: WATER_FILL,
+                           popupTemplate: waterPopup("Water body") }),
+        new FeatureLayer({ url: NHD + "/6", outFields: ["*"],
+                           minZoom: 13, renderer: LINE(1.8),
+                           popupTemplate: waterPopup("Stream / river") }),
+      ];
+      // Water sits above the basemap but below the parcel outlines.
+      waterLayers.forEach(l => map.add(l));
+      if (parcelLayer) {
+        map.add(parcelLayer);
+        parcelLayer.when(
+          () => { setInfo("NC OneMap parcels loaded."); },
+          (err) => { setInfo("Layer failed to load: " + err.message); }
+        );
+      }
 
       const view = new MapView({
         container: "view",
@@ -67,11 +235,101 @@
         zoom: center ? level : 7
       });
 
-      const info = document.getElementById("info");
-      layer.when(
-        () => { info.textContent = "NC OneMap parcels loaded."; },
-        (err) => { info.textContent = "Layer failed to load: " + err.message; }
-      );
+      const BASE_LABEL = {
+        lidar: "LiDAR relief · USGS 3DEP",
+        imagery: "Aerial imagery",
+        topo: "Topo · Esri",
+        street: "Street · Esri",
+      };
+      const WATER_KEY = "mountains-water";
+      let waterOn = readPref(WATER_KEY, "1") === "1";
+
+      function paintBaseButtons() {
+        document.querySelectorAll("#bases button").forEach((btn) => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.base === currentBase));
+        });
+      }
+
+      function paintWaterButton() {
+        document.querySelectorAll("#overlays button")
+          .forEach(btn => btn.setAttribute("aria-pressed", String(waterOn)));
+      }
+
+      // What the visitor is actually looking at — which imagery answered
+      // matters when judging a wooded ridge from a screen.
+      function paintSourceLine() {
+        let base = BASE_LABEL[currentBase];
+        if (currentBase === "imagery") {
+          base += ncOrthoWorks === null ? "…" : (ncOrthoWorks ? " · NC OneMap" : " · Esri");
+        }
+        const bits = [base, waterOn ? "Water · USGS NHD" : "Water off"];
+        if (service) bits.push("Parcels · NC OneMap");
+        srcLine.textContent = bits.join("   |   ");
+      }
+
+      function applyWater(on) {
+        waterOn = on;
+        waterLayers.forEach(l => { l.visible = on; });
+        writePref(WATER_KEY, on ? "1" : "0");
+        paintWaterButton();
+        paintSourceLine();
+      }
+
+      function tileIndex(lng, lat, z) {
+        const n = Math.pow(2, z);
+        const latRad = lat * Math.PI / 180;
+        return {
+          col: Math.floor((lng + 180) / 360 * n),
+          row: Math.floor((1 - Math.log(Math.tan(latRad)
+                       + 1 / Math.cos(latRad)) / Math.PI) / 2 * n),
+          level: z,
+        };
+      }
+
+      async function probeNcOrtho() {
+        if (!service) return false;
+        const [lng, lat] = center ? center.split(",").map(Number) : [-82.9, 35.5];
+        const t = tileIndex(lng, lat, 14);
+        const url = NC_ORTHO_TEMPLATE
+          .replace("{level}", t.level).replace("{row}", t.row).replace("{col}", t.col);
+        try {
+          const res = await fetch(url);
+          return res.ok && (res.headers.get("content-type") || "").startsWith("image");
+        } catch (e) {
+          return false;
+        }
+      }
+
+      // Resolve the imagery source in the background so switching to Imagery
+      // (or a ?base=imagery deep link) gets NC's deeper ortho when it can.
+      if (service) {
+        probeNcOrtho().then((ok) => {
+          ncOrthoWorks = ok;
+          if (currentBase === "imagery") map.basemap = buildImagery();
+          paintSourceLine();
+        });
+      } else {
+        ncOrthoWorks = false;
+        setInfo("Coordinate-centred map — this state has no statewide parcel layer.");
+      }
+
+      function applyBase(key) {
+        currentBase = key;
+        map.basemap = BASE_BUILDERS[key]();
+        writePref(STORAGE_KEY, key);
+        paintBaseButtons();
+        paintSourceLine();
+      }
+
+      document.getElementById("bases").addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-base]");
+        if (btn) applyBase(btn.dataset.base);
+      });
+
+      document.getElementById("overlays").addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-overlay]");
+        if (btn && btn.dataset.overlay === "water") applyWater(!waterOn);
+      });
 
       function showCard(rows, title) {
         const card = document.getElementById("card");
@@ -103,7 +361,7 @@
       // Python variants in scraper/nc_gis_lookup._parcel_variants: raw,
       // dash-stripped, and McDowell-style middle-segment zero-padded.
       async function locateParcel() {
-        if (!parcel || !/^[A-Za-z0-9\-\s]+$/.test(parcel)) return false;
+        if (!service || !parcel || !/^[A-Za-z0-9\-\s]+$/.test(parcel)) return false;
         const variants = [parcel, parcel.replace(/-/g, "")];
         const m = parcel.match(/^(\d{4})-(\d{1,3})-(\d{4})$/);
         if (m) {
@@ -153,7 +411,7 @@
             }
           });
           view.graphics.add(g);
-          await           view.goTo(g, { padding: { top: 60, left: 40, bottom: 40, right: 40 } });
+          await view.goTo(g, { padding: { top: 60, left: 40, bottom: 40, right: 40 } });
           view.popup.open({ features: [g], location: poly.centroid });
           showCard(
             [["PIN", pin], ["Owner", owner], ["Acres", acres],
@@ -167,11 +425,16 @@
         }
       }
 
+      paintBaseButtons();
+      applyWater(waterOn);
       if (parcel) {
         locateParcel().then(found => {
           if (!found) {
             addCenterMarker();
-            showCard([["PIN", parcel], ["Status", "Not found in NC OneMap"]], "Parcel lookup");
+            showCard([["PIN", parcel],
+                      ["Status", service ? "Not found in NC OneMap"
+                                         : "No parcel layer for this state"]],
+                     "Parcel lookup");
           }
         });
       } else {

@@ -189,6 +189,36 @@ def get_ga_gis_url(county: str, parcel: str = "") -> str:
     )
 
 
+HOSTED_VIEWER_PATH = "/static/gis_viewer.html"
+
+
+def get_hosted_viewer_url(lng: float = None, lat: float = None,
+                          parcel: str = None, state: str = None) -> str:
+    """Build a URL for our own ``static/gis_viewer.html``.
+
+    North Carolina rows get the OneMap parcel layer (drawn through the
+    same-origin ``/gis/proxy`` route); every other state gets the same viewer
+    without a parcel layer — there is no statewide parcel service to draw, but
+    the coordinate-centred relief/imagery map still takes the visitor to the
+    property, which is what the link-depth policy asks for.
+    """
+    parts = []
+    if (state or "NC").upper() == "NC":
+        parts.append(f"service={quote(NC_ONEMAP_PROXY_LAYER, safe='')}")
+    if lng is not None and lat is not None:
+        try:
+            parts.append(f"center={float(lng):.6f},{float(lat):.6f}&level=16")
+        except (TypeError, ValueError):
+            pass
+    if parcel:
+        parts.append(f"parcel={quote(str(parcel))}")
+    if state and (state or "").upper() != "NC":
+        # Only meaningful for the non-NC case (no parcel layer to draw); NC
+        # links keep the exact shape already stored in the database.
+        parts.append(f"state={quote(str(state).upper())}")
+    return f"{HOSTED_VIEWER_PATH}?" + "&".join(parts)
+
+
 def get_nconemap_viewer_url(lng: float = None, lat: float = None,
                             parcel: str = None, county: str = None) -> str:
     """Build a same-origin GIS viewer URL for the NC OneMap parcel layer.
@@ -199,15 +229,7 @@ def get_nconemap_viewer_url(lng: float = None, lat: float = None,
     issues). When parcel coordinates are known the viewer is centered/zoomed on
     the parcel; otherwise it opens the statewide parcel layer.
     """
-    svc = quote(NC_ONEMAP_PROXY_LAYER, safe="")
-    url = f"/static/gis_viewer.html?service={svc}"
-    if lng is not None and lat is not None:
-        try:
-            url += f"&center={float(lng):.6f},{float(lat):.6f}&level=16"
-        except (TypeError, ValueError):
-            pass
-    if parcel:
-        url += f"&parcel={quote(str(parcel))}"
+    url = get_hosted_viewer_url(lng, lat, parcel, state="NC")
     return url
 
 

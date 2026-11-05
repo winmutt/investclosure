@@ -217,6 +217,19 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
         if scraper_name == "tn_publicnotice":
             properties = scrape_with_enrichment(solve_captcha=True, enrich=True,
                                                lookback_days=lookback_days)
+        elif scraper_name == "zillow":
+            # Zillow's listing description exists only on the detail page (one
+            # rendered page per listing), so the harvest skips ids whose row
+            # already carries text or a parcel and is capped per run
+            # (ZILLOW_DETAIL_LIMIT): coverage converges across runs instead of
+            # re-rendering the whole inventory on every sweep.
+            resolved = {r[0] for r in conn.execute(
+                "SELECT source_listing_id FROM properties "
+                "WHERE source = 'zillow' AND ("
+                "  (description IS NOT NULL AND TRIM(description) <> '')"
+                "  OR (parcel_number IS NOT NULL AND TRIM(parcel_number) <> ''))")}
+            scraper = scraper_class(fetch_details=True, detail_skip=resolved)
+            properties = scraper.run()
         elif scraper_name == "ga_publicnotice":
             scraper = scraper_class(lookback_days=lookback_days)
             properties = scraper.run()

@@ -95,8 +95,8 @@
                 Map
             </a>
             {% endif %}
-            {% if prop.gis_url %}
-            <a href="{{ prop.gis_url }}" target="_blank" rel="noopener" class="tile-action-btn" title="View on GIS Viewer (satellite)">
+            {% if prop.gis_link %}
+            <a href="{{ prop.gis_link }}" target="_blank" rel="noopener" class="tile-action-btn" title="Parcel map — LiDAR relief, aerial imagery, topo">
                 GIS
             </a>
             {% endif %}
@@ -141,8 +141,58 @@
 {% endif %}
 {% endmacro %}
 
+{#- Per-tab filter row. Each (state, category) pane owns its controls: the
+    county list holds only counties that appear in THIS tab, and the sort
+    applies to this tab's rows only. Submitting keeps the other tabs' filters.
+-#}
+{% macro pane_filter(cat, pane, state) %}
+<div class="search-bar filter-bar filter-bar-pane">
+    <form method="GET" action="{{ url_for('landing') }}">
+        <input type="hidden" name="st" value="{{ state }}">
+        <input type="hidden" name="cat" value="{{ cat }}">
+        {% for other in categories %}{% if other != cat %}
+        <input type="hidden" name="county_{{ other }}" value="{{ panes[other].filters.county }}">
+        <input type="hidden" name="min_acres_{{ other }}"
+               value="{{ panes[other].filters.min_acres if panes[other].filters.min_acres is not none else '' }}">
+        <input type="hidden" name="max_acres_{{ other }}"
+               value="{{ panes[other].filters.max_acres if panes[other].filters.max_acres is not none else '' }}">
+        <input type="hidden" name="sort_{{ other }}" value="{{ panes[other].filters.sort }}">
+        {% endif %}{% endfor %}
+        <select name="county_{{ cat }}" class="filter-select"
+                aria-label="Filter {{ cat }} properties in {{ state }} by county">
+            <option value="">All counties</option>
+            {% for c in pane.counties %}
+            <option value="{{ c }}"
+                    {% if pane.filters.county and pane.filters.county|lower == c|lower %}selected{% endif %}>{{ c }} County</option>
+            {% endfor %}
+        </select>
+        <input type="number" name="min_acres_{{ cat }}" min="0" step="0.1"
+               value="{{ pane.filters.min_acres if pane.filters.min_acres is not none else '' }}"
+               placeholder="Min acres" class="filter-input filter-input-acres" aria-label="Minimum acres">
+        <span class="filter-sep">–</span>
+        <input type="number" name="max_acres_{{ cat }}" min="0" step="0.1"
+               value="{{ pane.filters.max_acres if pane.filters.max_acres is not none else '' }}"
+               placeholder="Max acres" class="filter-input filter-input-acres" aria-label="Maximum acres">
+        <select name="sort_{{ cat }}" class="filter-select" aria-label="Sort {{ cat }} properties">
+            {% for key, label in sort_choices %}
+            <option value="{{ key }}" {% if pane.filters.sort == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn">Apply</button>
+        {% if pane.filters_active %}
+        <a href="{{ url_for('landing', st=state) }}" class="btn btn-secondary">Clear</a>
+        {% endif %}
+    </form>
+    {% if pane.filters_active or pane.shown < pane.total %}
+    <div class="filter-summary muted">
+        {{ pane.total }} matching propert{{ 'y' if pane.total == 1 else 'ies' }}{% if pane.shown < pane.total %} — showing the first {{ pane.shown }}, narrow with the filters above{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
 {% block content %}
-<div class="tabs tabs-vertical" data-tab-group="vertical">
+<div class="tabs tabs-vertical" data-tab-group="vertical" data-tab-persist="off">
     {% for v in verticals %}
     <button type="button" class="tab-btn{% if v.key == default_vertical %} active{% endif %}"
             data-tab="{{ v.key }}" aria-selected="{% if v.key == default_vertical %}true{% else %}false{% endif %}">
@@ -154,42 +204,39 @@
 {% for v in verticals %}
 <div class="tab-pane vertical-pane" data-tab-pane="{{ v.key }}" data-tab-pane-group="vertical"{% if v.key != default_vertical %} hidden{% endif %}>
 {% if v.key == 'mountains' %}
-{% if states_order %}
-<div class="tabs tabs-states" data-tab-group="state">
-    {% for st in states_order %}
-    <button type="button" class="tab-btn{% if loop.first %} active{% endif %}" data-tab="{{ st }}" aria-selected="{% if loop.first %}true{% else %}false{% endif %}">
-        {{ st }} <span class="tab-count">{{ states[st].tax|length + states[st].mtg|length + states[st].re|length }}</span>
-    </button>
+{#- One state board at a time. State tabs are links (each board is its own
+    query); Tax/Mtg/Re stay client-side because all three panes render, each
+    with its own filters and sort. -#}
+{% set cat_labels = {'tax': 'Tax', 'mtg': 'Mtg', 're': 'Re'} %}
+{% if states %}
+<div class="tabs tabs-states">
+    {% for s in states %}
+    <a class="tab-btn{% if s.state == state %} active{% endif %}"
+       href="{{ url_for('landing', st=s.state, sort_tax=panes.tax.filters.sort, sort_mtg=panes.mtg.filters.sort, sort_re=panes.re.filters.sort) }}">
+        {{ s.state }} <span class="tab-count">{{ s.count }}</span>
+    </a>
     {% endfor %}
 </div>
+{% endif %}
 
-{% for st in states_order %}
-<div class="tab-pane state-pane" data-tab-pane="{{ st }}" data-tab-pane-group="state"{% if not loop.first %} hidden{% endif %}>
-    <div class="tabs tabs-cat" data-tab-group="cat-{{ st }}">
-        <button type="button" class="tab-btn active" data-tab="tax" aria-selected="true">
-            Tax <span class="tab-count">{{ states[st].tax|length }}</span>
+{% if state %}
+<div class="state-pane">
+    <div class="tabs tabs-cat" data-tab-group="cat" data-tab-persist="off" data-tab-url="on">
+        {% for cat in categories %}
+        <button type="button" class="tab-btn{% if cat == active_cat %} active{% endif %}"
+                data-tab="{{ cat }}" aria-selected="{{ 'true' if cat == active_cat else 'false' }}">
+            {{ cat_labels[cat] }} <span class="tab-count">{{ panes[cat].total }}</span>
         </button>
-        <button type="button" class="tab-btn" data-tab="mtg" aria-selected="false">
-            Mtg <span class="tab-count">{{ states[st].mtg|length }}</span>
-        </button>
-        <button type="button" class="tab-btn" data-tab="re" aria-selected="false">
-            Re <span class="tab-count">{{ states[st].re|length }}</span>
-        </button>
+        {% endfor %}
     </div>
 
-    <div class="tab-pane" data-tab-pane="tax" data-tab-pane-group="cat-{{ st }}">
-        {{ tile_grid(states[st].tax, st, 'tax') }}
+    {% for cat in categories %}
+    <div class="tab-pane" data-tab-pane="{{ cat }}" data-tab-pane-group="cat"{% if cat != active_cat %} hidden{% endif %}>
+        {{ pane_filter(cat, panes[cat], state) }}
+        {{ tile_grid(panes[cat].props, state, cat) }}
     </div>
-
-    <div class="tab-pane" data-tab-pane="mtg" data-tab-pane-group="cat-{{ st }}" hidden>
-        {{ tile_grid(states[st].mtg, st, 'mtg') }}
-    </div>
-
-    <div class="tab-pane" data-tab-pane="re" data-tab-pane-group="cat-{{ st }}" hidden>
-        {{ tile_grid(states[st].re, st, 're') }}
-    </div>
+    {% endfor %}
 </div>
-{% endfor %}
 {% else %}
 <div class="empty-state">
     <p>No active properties yet.</p>

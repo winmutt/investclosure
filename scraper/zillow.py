@@ -11,8 +11,17 @@ walks every page of each county's search (see
 :func:`build_paged_county_url`), extracts listings from the embedded Next.js
 searchResults JSON, applies the price / acreage filters, and rejects
 Zillow's cross-state name collisions (e.g. "Perry, KS" served for a Perry
-County, KY search). Detail-page enrichment (description + parcel number) is
-opt-in via ``fetch_details``.
+County, KY search).
+
+Detail-page enrichment (the listing description) is opt-in via
+``fetch_details``. Zillow blocks framing its site (``X-Frame-Options: DENY``),
+so the stored text is what the property detail page shows next to the map.
+The parcel number is deliberately NOT harvested: Zillow renders it from a
+client-side GraphQL POST whose every call answers 403 for an automated
+session (measured 2026-11-05: 31/31 POSTs 403 across NC and TN listings), so
+no scroll waits for it. NC rows get parcel + acreage from the OneMap address
+lookup in the post-run enrichment instead, and :func:`extract_detail` still
+reads the SSR payload in case Zillow ever ships the field inline.
 
 Pagination matters: a county search renders only 41 listings per page, so
 before 2026-11-02 the scraper saw the first 41 of e.g. Macon NC's 820 and
@@ -303,8 +312,48 @@ def parse_listings(list_results: list, county: str, state: str,
     return properties
 
 
+# Zillow's own listing object carries the assessor id under one of these keys
+# ("Parcel number" on the page renders from `apn`).
+_PARCEL_KEYS = ("parcelNumber", "parcelId", "apn")
+# Subtrees describing OTHER properties (nearby/similar homes, price and tax
+# history) — a parcel found there belongs to someone else's listing.
+_OTHER_LISTINGS_RE = re.compile(
+    r"nearby|similar|neighbor|mapresult|searchresult|zestimate|"
+    r"history|comparable|repeatview", re.I)
+# County parcels are alphanumerics like 05430t001 (Sullivan TN) or 007.01
+# (Cocke TN); anything else (labels, empty strings) is rejected.
+_PARCEL_VALUE_RE = re.compile(r"^[0-9][0-9A-Za-z\-./() ]{2,24}$")
+
+
+def find_parcel(payload) -> Optional[str]:
+    """Shallowest parcel identifier in a parsed Zillow payload, or None.
+
+    Walks breadth-first so the listing's own fields win over a nested
+    nearby-homes block, and skips containers that describe other properties.
+    """
+    queue: list = [payload]
+    for node in queue:                      # appended items are visited too
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in _PARCEL_KEYS:
+                    text = str(value).strip() if value is not None else ""
+                    if _PARCEL_VALUE_RE.match(text):
+                        return text
+                elif isinstance(value, (dict, list)) \
+                        and not _OTHER_LISTINGS_RE.search(key):
+                    queue.append(value)
+        elif isinstance(node, list):
+            queue.extend(v for v in node if isinstance(v, (dict, list)))
+    return None
+
+
 def extract_detail(html: str) -> tuple[Optional[str], Optional[str]]:
-    """Pull (description, parcel_number) from a homedetails page payload."""
+    """Pull (description, parcel_number) from a homedetails page payload.
+
+    The SSR ``gdpClientCache`` blob carries the description; a parcel number
+    is rarely present there — Zillow delivers it in a client-side GraphQL
+    POST (see :meth:`ZillowScraper._fetch_detail`).
+    """
     match = _NEXT_DATA_RE.search(html or "")
     if not match:
         return None, None
@@ -318,13 +367,13 @@ def extract_detail(html: str) -> tuple[Optional[str], Optional[str]]:
         for value in cache_data.values():
             if isinstance(value, dict) and "property" in value:
                 property_data = value["property"]
+                if not isinstance(property_data, dict):
+                    continue
                 description = property_data.get("description")
-                parcel = (property_data.get("parcelNumber")
-                          or property_data.get("parcelId")
-                          or property_data.get("apn")
-                          or property_data.get("attribution", {})
-                          .get("parcelNumber"))
-                return description, parcel
+                if isinstance(description, dict):
+                    description = description.get("description")
+                return (description if isinstance(description, str) else None,
+                        find_parcel(property_data))
     except (KeyError, json.JSONDecodeError, TypeError, AttributeError):
         pass
     return None, None
@@ -349,12 +398,20 @@ class ZillowScraper(BaseScraper):
     MAX_PAGES_PER_COUNTY = 20
 
     def __init__(self, fetch_details: bool = False,
-                 states: Optional[list[str]] = None):
+                 states: Optional[list[str]] = None,
+                 detail_skip: Optional[set] = None,
+                 detail_limit: Optional[int] = None):
         super().__init__(delay_range=config.get_delay_range("zillow"))
         self.max_price = config.get_max_price("zillow")
         self.min_acres = config.get_min_acres("zillow")
         self.max_acres = config.get_max_acres("zillow")
         self.fetch_details = fetch_details
+        # Listing ids whose DB row already carries a parcel number — the
+        # harvest skips them so coverage converges instead of re-rendering
+        # the whole inventory on every run.
+        self.detail_skip = set(detail_skip or ())
+        self.detail_limit = (config.get_detail_limit("zillow")
+                             if detail_limit is None else detail_limit)
         self.states = [s.upper() for s in states] if states else None
         self.centroids = load_centroids()
         self.geo = load_index()
@@ -523,25 +580,63 @@ class ZillowScraper(BaseScraper):
         return None
 
     def _enrich_details(self, props: list[PropertyData]) -> None:
-        logger.info("Fetching %d detail pages", len(props))
-        for i, prop in enumerate(props, 1):
-            url = prop.get("url")
-            if not url:
-                continue
+        """Harvest the listing description (and parcel, when present inline).
+
+        The description is what the property detail page shows next to the map
+        — Zillow blocks framing its site, so the stored text is the listing.
+        Every detail page costs a fresh profile and a page load, so the pass
+        takes at most ``detail_limit`` rows and skips ``detail_skip`` (ids whose
+        DB row already has text): coverage converges across runs instead of
+        re-rendering the whole inventory each sweep.
+        """
+        todo = [p for p in props
+                if p.get("url") and not p.get("description")
+                and p.get("source_listing_id") not in self.detail_skip]
+        if self.detail_limit:
+            todo = todo[:self.detail_limit]
+        if not todo:
+            logger.info("Zillow details: nothing to harvest (%d row(s) "
+                        "already carry listing text)", len(self.detail_skip))
+            return
+        logger.info("Zillow details: harvesting %d listing(s) (%d already "
+                    "harvested)", len(todo), len(self.detail_skip))
+        found = 0
+        for i, prop in enumerate(todo, 1):
             time.sleep(random.uniform(*self.DELAY_BETWEEN_DETAIL_PAGES))
-            try:
-                with camoufox_context() as page:
-                    page.set_default_timeout(self.PAGE_TIMEOUT_MS)
-                    resp = page.goto(url, wait_until="domcontentloaded",
-                                     timeout=self.PAGE_TIMEOUT_MS)
-                    desc, parcel = extract_detail(resp.text() if resp else "")
-            except Exception as exc:
-                logger.warning("Detail fetch failed for %s: %s", url, exc)
-                continue
+            desc, parcel = self._fetch_detail(prop["url"])
             if desc:
                 prop["description"] = desc
-            if parcel:
+                found += 1
+            if parcel and not prop.get("parcel_number"):
                 prop["parcel_number"] = parcel
+            if i % 25 == 0:
+                logger.info("  zillow details %d/%d — %d description(s) so far",
+                            i, len(todo), found)
+        logger.info("Zillow details done: %d/%d description(s) harvested",
+                    found, len(todo))
+
+    def _fetch_detail(self, url: str) -> tuple[Optional[str], Optional[str]]:
+        """Return (description, parcel_number) for one homedetails URL.
+
+        Everything usable is in the page's SSR ``__NEXT_DATA__`` blob. The
+        parcel number is NOT: Zillow renders it from a client-side GraphQL POST
+        whose every call answers 403 for an automated session (measured
+        2026-11-05: 31/31 POSTs 403, no parcel in any response), so the page is
+        not scrolled waiting for it — that only cost ~9s per listing. NC rows
+        get their parcel/acres from the OneMap address lookup in the post-run
+        enrichment instead; the SSR payload is still searched in case Zillow
+        ever ships the field inline (find_parcel, used by extract_detail).
+        """
+        try:
+            with camoufox_context() as page:
+                page.set_default_timeout(self.PAGE_TIMEOUT_MS)
+                resp = page.goto(url, wait_until="domcontentloaded",
+                                 timeout=self.PAGE_TIMEOUT_MS)
+                html = resp.text() if resp else ""
+        except Exception as exc:
+            logger.warning("Detail fetch failed for %s: %s", url, exc)
+            return None, None
+        return extract_detail(html)
 
     @staticmethod
     def _dedupe(props: list[PropertyData]) -> list[PropertyData]:

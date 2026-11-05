@@ -306,6 +306,26 @@ body {
     min-width: 120px;
 }
 
+.filter-input-acres {
+    min-width: 104px;
+    width: 104px;
+}
+
+.filter-sep {
+    align-self: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.filter-bar {
+    margin-bottom: 0.4rem;
+}
+
+.filter-summary {
+    font-size: 0.8rem;
+    margin-top: 0.2rem;
+}
+
 /* Tabs */
 .tabs {
     display: flex;

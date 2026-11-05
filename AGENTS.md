@@ -147,13 +147,64 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 
 **GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources). `ga_publicnotice` acreage is enriched per-county from qPublic parcel reports via camoufox page loads (`scraper/ga_gis_enrich.py`, auto-run after each GA scrape); plain HTTP gets Cloudflare-403 so reports are browser-only. Rabun Sky Valley lots report Acres 0 at source and keep `acres=NULL`.
 
+## Dashboard Boards, Tabs and Filters
+
+`/` renders **one state board at a time** (`?st=NC`), with the three category
+tabs (Tax | Mtg | Re) inside it. Each (state, category) pane is **its own
+query** with its own filters, sort and row budget
+(`DASHBOARD_PANE_LIMIT = 1000`), and its tab count is the count of what that
+query matched.
+
+- **Why it works this way:** the original ran ONE `LIMIT 1000` query for every
+  state and sliced the rows into buckets. Tennessee's ~1,733 `re` rows filled
+  the window, so NC — 975 active properties — was left showing 3 tax / 14 mtg /
+  4 re tiles (1/1/4 once an acreage filter was added). Per-pane queries make a
+  big board in one state unable to hide another state's inventory.
+- **Params:** `st` (board), `cat` (visible pane), and per-tab
+  `county_<cat>` / `min_acres_<cat>` / `max_acres_<cat>` / `sort_<cat>`. Bare
+  `county` / `min_acres` / `max_acres` / `sort` are still read as a fallback for
+  every tab, so older links keep working; a legacy `STATE|county` value applies
+  only to the board it names. `/properties` (search) keeps its own shared bar.
+- **`_category_clause()` is the SQL mirror of `property_category()`** and must
+  stay in step with it — `tests/test_dashboard_panes.py::TestPaneQueries`
+  asserts the two agree row by row.
+- **Tab JS** (`static/investclosure/js/app.js`): a group with
+  `data-tab-persist="off"` keeps the pane the server rendered instead of
+  restoring a stored choice (the category/vertical bars use this — a stale
+  stored tab used to hide the pane the filters actually matched).
+  `data-tab-url="on"` mirrors the choice into `?cat=` so a refresh keeps it.
+
 ## GIS Integration
 
 Link-depth policy: every GIS button must take you to the property (parcel-deep
 or coordinate-centered). Rows with no parcel/coords get **no** GIS button
 (Google Maps still covers address rows); states with no parcel service
-(SC/AL) never get viewer links. `scraper/backfill_links.py` rebuilds all
-links; `scraper/tn_gis_enrich.py` fills TN TPAD links + acres/owner.
+(SC/AL) never get **third-party** viewer links. `scraper/backfill_links.py`
+rebuilds all links; `scraper/tn_gis_enrich.py` fills TN TPAD links + acres/owner.
+
+- **Card GIS button** (`_gis_button_url` in `server.py`, exposed as `gis_link`
+  on every dashboard row): a stored `gis_url` wins (GA qPublic / TN TPAD are
+  parcel-deep), otherwise the hosted viewer — NC rows get the OneMap parcel
+  layer, and any row with coordinates gets a coordinate-centred hosted viewer
+  link. That extends the policy deliberately: the hosted viewer is our own
+  page, so a Zillow row with no parcel still reaches a map.
+- **Hosted viewer** (`static/gis_viewer.html`, built with `get_hosted_viewer_url`
+  in `scraper/gis_urls.py`) — four basemaps (`&base=`): `lidar` (default: USGS
+  3DEP shaded relief over Esri World Hillshade, relief cache stops at z16),
+  `imagery` (NC: OneMap `Imagery/Orthoimagery_Latest_cached` tile cache through
+  `/gis/proxy`, probed once and falling back to Esri World Imagery; elsewhere
+  Esri), `topo`, `street`. Plus a **Water** overlay (USGS NHD
+  `hydro.nationalmap.gov/.../nhd/MapServer` layers 10/4 small-scale, 12/6
+  large-scale — CORS-open, all six states, drawn under the parcel layer).
+  Basemap and overlay choices persist in localStorage (`mountains-basemap`,
+  `mountains-water`).
+- **`WebTileLayer.urlTemplate` must be absolute.** A root-relative template is
+  re-parsed by the SDK into `https://null/oxy/…` and every tile dies on CORS —
+  the basemap renders blank with no visible error. Build proxied templates from
+  `location.origin` (see `NC_ORTHO_TEMPLATE`).
+- **NHD field case varies per layer** (`GNIS_NAME` on the area layers,
+  `gnis_name` on the flowlines), so the water popup uses a content function
+  rather than `{field}` substitution.
 
 - **NC OneMap statewide service**: `https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1` — single query for all 100 NC counties
 - Primary acreage field: `gisacres` (Double type)
@@ -282,6 +333,60 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-11-05 (dashboard: per-board, per-tab filters and sorting)**: County /
+  acreage / sort controls moved **inside** each (state, category) tab and the
+  query restructured to match. The old dashboard ran ONE `LIMIT 1000` query for
+  every state and tab and bucketed the rows in Python, so a big `re` tab in one
+  state ate the window: Tennessee's 1,733 zillow rows left NC — **975 active
+  properties** — showing 3 tax / 14 mtg / 4 re tiles, and 1/1/4 with an acreage
+  filter. Now `landing()` runs one query per pane (`_pane_where` +
+  `DASHBOARD_PANE_LIMIT`), each with its own county/acreage/sort params
+  (`county_mtg`, `min_acres_re`, `sort_re`, …), its own tab count, and its own
+  county list (`_counties_for`); a state switch navigates (`?st=TN`, carrying
+  the sort choices), a category switch stays client-side.
+  - Bare `county`/`min_acres`/`max_acres`/`sort` still filter every tab (older
+    links work); a legacy `STATE|county` value applies only to the board it names.
+  - `_category_clause()` is the SQL mirror of `property_category()`, asserted
+    row-by-row in `tests/test_dashboard_panes.py` (9 pane tests).
+  - **Tab JS gotcha**: `[data-tab-group]` restored the last choice from
+    localStorage, overriding the server's pane — a stale stored "Tax" hid the
+    900-row Re tab. Category/vertical bars now set `data-tab-persist="off"`
+    (keep the server's pane) and the category bar `data-tab-url="on"` (mirror
+    the choice into `?cat=` so a refresh keeps it).
+  - **Template cache gotcha** (cost an hour of debugging): Flask caches Jinja
+    templates when debug is off, so template edits do not appear until
+    `podman restart investclosure` — the same reason as the `--cron` note below.
+- **2026-11-05 (Zillow: descriptions harvested, parcels are unobtainable)**: The
+  detail-page harvest now reads only the SSR `__NEXT_DATA__` blob and skips
+  rows whose DB record already has text (`run.py` skip-set is description OR
+  parcel); `ZILLOW_DETAIL_LIMIT` (default 150) caps each run. Live probe:
+  **6/6 descriptions** harvested. Parcel numbers, though, are a dead end —
+  Zillow renders them from a client-side GraphQL POST that answers **403 on
+  every call** for an automated session (measured 31/31 and 24/24 across NC/TN
+  listings) and the rendered Facts card shows no Tax ID row, so
+  `_fetch_detail` no longer scrolls waiting for it (~9s per listing saved) and
+  the `DETAIL_SCROLL_*` constants are gone. NC rows get parcel + acreage from
+  the OneMap **address** lookup in the post-run enrichment instead.
+  - **Real bug fixed on the way**: `_upsert_property` wrote
+    `description = ?` unconditionally, so every re-sighting (the county search
+    payload carries no description) would have wiped the harvested text. It now
+    follows the bed/bath rule — an absent value never clobbers a known one.
+- **2026-11-05 (detail view: map and listing side by side on desktop)**: When a
+  row has both a map and a source, `.prop-details` gains `prop-map-source` and
+  the map pane spans 7/12 columns with the source in a bordered
+  `.prop-source-frame` beside it, both at `min(66vh, 660px)`; long notices
+  scroll inside the frame. Zillow sends `X-Frame-Options: DENY` + CSP
+  `frame-ancestors none`, so the listing **cannot** be embedded — the tile says
+  so and opens the listing in a new tab while the map stays on screen.
+- **2026-11-05 (GIS viewer: LiDAR basemaps, water overlay, card GIS buttons)**:
+  See "GIS Integration" above — four basemaps with LiDAR relief as the default,
+  a USGS NHD water overlay, and every dashboard card's GIS button now wired to
+  `gis_link`. The NC ortho rendered blank until the tile template was made
+  absolute (`location.origin`): `WebTileLayer` turns a root-relative template
+  into `https://null/oxy/…`, so the bug was invisible except as an empty map.
+  Verified live in Camoufox by observing DOM state and tile responses
+  (`page.evaluate` runs in an isolated world there, so page globals such as
+  `require` are not readable from tests).
 - **2026-11-05 (GA mortgage notices no longer dropped)**: `ga_publicnotice`'s
   per-parcel splitter only understood the bundled tax-sale shape
   (`File #: N Map/Parcel Number: X ... Defendant`). GA mortgage /
@@ -794,7 +899,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 Integration tests cover DB operations, archive filtering, county filtering, and GIS enrichment:
 
 ```bash
-python3 -m pytest tests/ -q                      # Full suite (6 files)
+python3 -m pytest tests/ -q                      # Full suite
 python3 -m pytest tests/test_scraper.py::TestArchiveBelowAcres -v  # Archive tests only
 ```
 
@@ -807,3 +912,5 @@ python3 -m pytest tests/test_scraper.py::TestArchiveBelowAcres -v  # Archive tes
 - **Tax/Mtg tabs** (`test_tax_mtg_tabs.py`): category mapping, NC/GA/TN kind tagging, newspaper mortgage classifier, JSONL rawlog, in-browser Turnstile solver, GIS link routing, NC cross-state guard
 - **Trustee sales** (`test_trustee_sales.py`): shared clean/price/date/address helpers, per-scraper row parsers with recon fixtures
 - **Audit + search** (`test_audit_search.py`): audit_log history, parcel/case/listing-id search, status filter, detail History section
+- **Dashboard panes** (`test_dashboard_panes.py`): `_category_clause()` agrees with `property_category()` row by row, per-tab filter parsing (namespaced params, shared-bar fallback, reversed bounds, junk sort), per-state boards, per-pane row budgets and tab counts, tab-scoped county lists, `?cat=` pane selection, legacy `STATE|county` scoping
+- **GIS links** (`test_gis_links.py`): hosted-viewer URL params, card GIS-button routing (stored link vs. viewer vs. none), viewer layer markup (LiDAR default, four basemaps, absolute NC ortho template, USGS NHD water layers, persisted preferences)

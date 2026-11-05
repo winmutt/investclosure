@@ -460,6 +460,9 @@ class Config:
                 "min_acres": _opt_float("ZILLOW_MIN_ACRES", 5.0),
                 "max_price": _opt_int("ZILLOW_MAX_PRICE", 250_000),
                 "max_acres": _opt_float("ZILLOW_MAX_ACRES", 1000.0),
+                # Parcel numbers need one rendered detail page each (~10s), so
+                # a run only harvests this many rows that still lack one.
+                "detail_limit": _opt_int("ZILLOW_DETAIL_LIMIT", 150),
             },
         }
 
@@ -488,6 +491,11 @@ class Config:
         """Get maximum acres, with scraper override (0 = no cap)."""
         overrides = self.SCRAPER_OVERRIDES.get(name, {})
         return overrides.get("max_acres", self.MAX_ACRES)
+
+    def get_detail_limit(self, name: str, default: int = 0) -> int:
+        """Max detail pages a scraper may render per run (0 = no cap)."""
+        overrides = self.SCRAPER_OVERRIDES.get(name, {})
+        return overrides.get("detail_limit", default)
 
     def should_use_proxy(self, name: str) -> bool:
         """Check if proxy should be used for this scraper."""

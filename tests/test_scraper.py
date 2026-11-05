@@ -96,7 +96,8 @@ def conn(tmp_dir):
     return _ensure_db(tmp_dir / "test.db")
 
 
-def _make_prop(conn, source_listing_id, acres, county="Ashe", source="test"):
+def _make_prop(conn, source_listing_id, acres, county="Ashe", source="test",
+               state="NC"):
     return insert_property(
         conn=conn,
         source=source,
@@ -105,7 +106,7 @@ def _make_prop(conn, source_listing_id, acres, county="Ashe", source="test"):
         address=f"{source_listing_id} Road",
         city=None,
         county=county,
-        state="NC",
+        state=state,
         zip_code=None,
         latitude=None,
         longitude=None,
@@ -677,6 +678,24 @@ class TestUpsertProperty:
         assert status == "duplicate"
         assert row["extracted_pin"] == "9508-82-4582-000"
         assert row["extracted_deed_plat"] == "Plat:File15Pg282"
+
+    def test_upsert_keeps_a_harvested_description(self, conn):
+        """Zillow's county search payload carries no listing text, so a
+        re-sighting must not wipe the description the detail harvest stored —
+        it is what the property page shows beside the map."""
+        _upsert_property(
+            conn, "zillow", "z_desc", "https://www.zillow.com/homedetails/1_zpid/",
+            "1 Otter Mountain Rd", None, "Macon", "NC", None, None, None, 100,
+            acres=20.0, description="Wooded lake-frontage lot.",
+        )
+        status, row = _upsert_property(
+            conn, "zillow", "z_desc", "https://www.zillow.com/homedetails/1_zpid/",
+            "1 Otter Mountain Rd", None, "Macon", "NC", None, None, None, 120,
+            acres=20.0, description=None,
+        )
+        assert status == "duplicate"
+        assert row["description"] == "Wooded lake-frontage lot."
+        assert row["price_cents"] == 120      # price still updates normally
 
 
 class TestGetStats:
@@ -1703,7 +1722,49 @@ class TestServerFlask:
         # Desktop layout: labelled panes + tabless responsive grid.
         assert '<h2 class="prop-pane-title">Details</h2>' in html
         assert '<h2 class="prop-pane-title">Maps &amp; GIS</h2>' in html
-        assert "repeat(auto-fit, minmax(320px, 1fr))" in html
+        assert "repeat(12, minmax(0, 1fr))" in html
+
+    def test_detail_pairs_map_with_source_frame(self, app, tmp_dir):
+        """Map and source share the desktop row (see the prop-map-source CSS):
+        the map is only worth studying if the listing text sits beside it."""
+        conn = _ensure_db(tmp_dir / "test.db")
+        pid = self._detail_row(conn, "NC1", description="Wooded lake-frontage lot.")
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(f"/property/{pid}").get_data(as_text=True)
+        assert 'class="prop-details prop-map-source"' in html
+        assert '<div class="prop-source-frame">' in html
+        assert '<h2 class="prop-pane-title">Source</h2>' in html
+        # A taller map than the mobile pane, matched by the source frame.
+        assert "height:min(66vh, 660px)" in html
+        assert ".prop-details.prop-map-source > #tab-maps { grid-column: 1 / span 7; }" in html
+        assert ".prop-details.prop-map-source > #tab-source { grid-column: 8 / -1; }" in html
+
+    def test_detail_marks_zillow_as_unembeddable(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        pid = self._detail_row(conn, "NC1")
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(f"/property/{pid}").get_data(as_text=True)
+        # Zillow sends X-Frame-Options: DENY, so the tile explains the new-tab
+        # button instead of rendering an empty iframe.
+        assert "X-Frame-Options" in html
+        assert "Open listing in a new tab" in html
+
+    def test_detail_without_source_has_no_map_source_pairing(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        pid = self._detail_row(conn, "NC1", url=None, description=None)
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(f"/property/{pid}").get_data(as_text=True)
+        # The pairing class goes on the container (the CSS rules live in the
+        # page's own <style> block either way).
+        assert 'class="prop-details prop-map-source"' not in html
+        assert 'class="prop-details"' in html
+        assert '<div class="prop-source-frame">' in html   # pane still rendered
 
     def test_detail_does_not_embed_third_party_map(self, app, tmp_dir):
         conn = _ensure_db(tmp_dir / "test.db")
@@ -1924,6 +1985,125 @@ class TestServerFlask:
         with app.test_client() as client:
             resp = client.get("/properties?q=Ashe")
             assert resp.status_code == 200
+
+    def test_landing_county_filter_is_state_aware(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "ASH", 10.0, county="Ashe", state="NC")
+        _make_prop(conn, "POLKNC", 12.0, county="Polk", state="NC")
+        _make_prop(conn, "POLKTN", 14.0, county="Polk", state="TN")
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get("/?county=NC|Polk").get_data(as_text=True)
+        # Same-named counties in different states stay distinct.
+        assert "POLKNC Road" in html
+        assert "POLKTN Road" not in html
+        assert "ASH Road" not in html
+        assert "1 matching property" in html
+
+    def test_landing_acres_range_filter(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "SMALL", 5.0)
+        _make_prop(conn, "MID", 25.0)
+        _make_prop(conn, "BIG", 100.0)
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get("/?min_acres=10&max_acres=50").get_data(as_text=True)
+        assert "MID Road" in html
+        assert "SMALL Road" not in html
+        assert "BIG Road" not in html
+
+    def test_landing_acreage_filter_excludes_unknown_acres(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "KNOWN", 25.0)
+        _make_prop(conn, "UNKNOWN", None)
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get("/?min_acres=1").get_data(as_text=True)
+        assert "KNOWN Road" in html
+        assert "UNKNOWN Road" not in html
+
+    def test_landing_sort_by_acres(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "LOWACRES", 5.0)
+        _make_prop(conn, "MIDACRES", 50.0)
+        _make_prop(conn, "HIGHACRES", 500.0)
+        conn.close()
+
+        with app.test_client() as client:
+            desc = client.get("/?sort=acres_desc").get_data(as_text=True)
+            asc = client.get("/?sort=acres_asc").get_data(as_text=True)
+
+        desc_pos = [desc.index(a) for a in
+                    ("HIGHACRES Road", "MIDACRES Road", "LOWACRES Road")]
+        assert desc_pos == sorted(desc_pos)
+        asc_pos = [asc.index(a) for a in
+                   ("LOWACRES Road", "MIDACRES Road", "HIGHACRES Road")]
+        assert asc_pos == sorted(asc_pos)
+
+    def test_landing_sort_by_county(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "ZZZTOWN", 10.0, county="Zebulon")
+        _make_prop(conn, "AAATOWN", 10.0, county="Ashe")
+        conn.close()
+
+        with app.test_client() as client:
+            asc = client.get("/?sort=county_asc").get_data(as_text=True)
+            desc = client.get("/?sort=county_desc").get_data(as_text=True)
+
+        assert asc.index("AAATOWN Road") < asc.index("ZZZTOWN Road")
+        assert desc.index("ZZZTOWN Road") < desc.index("AAATOWN Road")
+
+    def test_landing_unknown_sort_falls_back_to_default(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "P1", 25.0)
+        conn.close()
+
+        with app.test_client() as client:
+            resp = client.get("/?sort=DROP%20TABLE")
+        assert resp.status_code == 200
+        assert "P1 Road" in resp.get_data(as_text=True)
+
+    def test_properties_acreage_range_and_sort(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "SMALL", 5.0)
+        _make_prop(conn, "MID", 25.0)
+        _make_prop(conn, "BIG", 100.0)
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(
+                "/properties?min_acres=10&max_acres=50&sort=acres_desc"
+            ).get_data(as_text=True)
+        assert "MID Road" in html
+        assert "SMALL Road" not in html
+        assert "BIG Road" not in html
+
+    def test_properties_county_filter_state_qualified(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "POLKNC", 12.0, county="Polk", state="NC")
+        _make_prop(conn, "POLKTN", 14.0, county="Polk", state="TN")
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get("/properties?county=TN|Polk").get_data(as_text=True)
+        assert "POLKTN Road" in html
+        assert "POLKNC Road" not in html
+
+    def test_properties_pagination_preserves_sort(self, app, tmp_dir):
+        conn = _ensure_db(tmp_dir / "test.db")
+        _make_prop(conn, "P1", 25.0)
+        _make_prop(conn, "P2", 30.0)
+        conn.close()
+
+        with app.test_client() as client:
+            html = client.get(
+                "/properties?sort=acres_desc&per_page=1"
+            ).get_data(as_text=True)
+        assert "sort=acres_desc" in html
+        assert "page=2" in html
 
 
 class TestRowToDict:
@@ -2572,77 +2752,6 @@ class TestGAPublicNoticeSinglePropertyNotices:
             text, "union", None, "http://x", kind="mortgage_foreclosure",
             fallback_key="9423045")
         assert props[0]["address"] == "375 Tanglewood Circle"
-
-
-class TestTNPublicNoticeParcelSplit:
-    """TN county-trustee tax-sale notices are consolidated tables of delinquent
-    parcels; :func:`_tn_parse_parcels` must split them into one listing per
-    parcel (mirroring the GA bundled-notice handling)."""
-
-    # A space-stripped (as PDF-extracted) Sullivan delinquent-tax notice with
-    # two delinquent parcels, each terminated by a "Total:$" marker.
-    STRIPPED = (
-        "NOTICEOFSULLIVANCOUNTYDELINQUENTTAXSALEPursuanttotheOrdersomeOwner,"
-        "Tamika2442BroadSt020-G/G/023.00County:$2,188.55City:$1,848.64"
-        "DB3536/1636Total:$5,519.81"
-        "Owner,Brittany495EmmettRd030-L/B/001.20County:$3,000.00"
-        "Total:$3,000.00"
-    )
-
-    def test_parse_parcels_splits_by_total(self):
-        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
-        assert len(parcels) == 2
-        assert parcels[0]["address"] == "2442 Broad St"
-        assert parcels[0]["parcel_number"] == "020-G/G/023.00"
-        assert parcels[1]["address"] == "495 Emmett Rd"
-        assert parcels[1]["parcel_number"] == "030-L/B/001.20"
-
-    def test_parse_parcels_keys_on_county_and_parcel(self):
-        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
-        assert parcels[0]["source_listing_id"] == "sullivan:020-G/G/023.00"
-        assert parcels[1]["source_listing_id"] == "sullivan:030-L/B/001.20"
-        assert all(p["county"] == "sullivan" for p in parcels)
-        assert all(p["property_type"] == "tax_foreclosure" for p in parcels)
-
-    def test_parse_parcels_handles_space_stripped_text(self):
-        # The PDF often arrives with all inter-word spaces stripped; the splitter
-        # must normalize before extracting addresses.
-        parcels = _tn_parse_parcels(self.STRIPPED, "sullivan", "2026-09-02", "http://x")
-        assert parcels[0]["address"] == "2442 Broad St"
-
-    def test_parse_parcels_no_table_returns_empty(self):
-        assert _tn_parse_parcels("No parcel table here", "sullivan", "2026-09-02", "http://x") == []
-
-    def test_extract_sale_date(self):
-        assert _tn_extract_sale_date("SALE ON SEPTEMBER 2, 2026") == "2026-09-02"
-        assert _tn_extract_sale_date("no date here") is None
-
-    def test_extract_detail_returns_list_for_tax_sale(self):
-        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
-        s._extract_notice_text = lambda page, sid, rec: self.STRIPPED
-        s._is_tax_foreclosure = lambda t: True
-        s._is_publication_notice = lambda t: False
-        s._extract_acreage = lambda t: None
-        rec = {"pk_id": "553715", "sp_case": None, "county": "Sullivan"}
-        props = s._extract_detail(None, "SID", rec)
-        assert isinstance(props, list)
-        assert len(props) == 2
-        assert props[0]["property_type"] == "tax_foreclosure"
-
-    def test_extract_detail_keeps_mortgage_for_mtg_tab(self):
-        # Mortgage/deed-of-trust sales are no longer filtered out — they are
-        # kept for the Mtg tab with an explicit mortgage_foreclosure type.
-        s = TNPublicNoticeScraper.__new__(TNPublicNoticeScraper)
-        s._extract_notice_text = lambda page, sid, rec: (
-            "NOTICE OF SUBSTITUTE TRUSTEE'S SALE ... deed of trust ..."
-        )
-        s._is_tax_foreclosure = lambda t: False
-        s._is_publication_notice = lambda t: False
-        s._extract_acreage = lambda t: None
-        rec = {"pk_id": "1", "sp_case": None, "county": "Sullivan"}
-        props = s._extract_detail(None, "SID", rec)
-        assert len(props) == 1
-        assert props[0]["property_type"] == "mortgage_foreclosure"
 
 
 class TestTNPublicNoticeParcelSplit:

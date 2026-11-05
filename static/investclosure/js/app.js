@@ -15,14 +15,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // Status indicator in sidebar
     fetchHealthIndicator();
 
-    // Dashboard nested tabs (state -> foreclosures/notices).
+    // Dashboard nested tabs (vertical -> state -> category).
     // Each [data-tab-group] is independent; panes are matched by
     // [data-tab-pane-group="<group name>"] so nested groups don't clash.
-    // Selection is persisted per-group across refresh/navigation.
+    // Selection is persisted per-group across refresh/navigation, unless the
+    // group is marked data-tab-persist="off" — then the pane the server
+    // rendered stays visible (the server knows which tab the active filters
+    // actually matched, and a stale stored choice would hide it).
+    // data-tab-url="on" mirrors the choice into ?cat= so a refresh keeps it.
     const TAB_STORAGE_PREFIX = 'investclosure_tab_';
 
     function setupTabGroup(group) {
         const groupName = group.getAttribute('data-tab-group');
+        const persist = group.getAttribute('data-tab-persist') !== 'off';
+        const syncUrl = group.getAttribute('data-tab-url') === 'on';
         // Direct-child buttons only (avoids matching buttons of nested groups)
         const buttons = Array.from(group.querySelectorAll(':scope > [data-tab]'));
         const panes = Array.from(
@@ -40,22 +46,39 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
+        function syncCatParam(target) {
+            if (!window.history || !window.history.replaceState) return;
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.set('cat', target);
+                window.history.replaceState({}, '', url);
+            } catch (e) { /* non-standard URL: nothing to sync */ }
+        }
+
         buttons.forEach(function(btn) {
             btn.addEventListener('click', function() {
                 const target = btn.getAttribute('data-tab');
                 activateTab(target);
-                try { localStorage.setItem(TAB_STORAGE_PREFIX + groupName, target); } catch (e) {}
+                if (persist) {
+                    try { localStorage.setItem(TAB_STORAGE_PREFIX + groupName, target); } catch (e) {}
+                }
+                if (syncUrl) syncCatParam(target);
             });
         });
 
-        // Restore previously selected tab, else default to first button
+        // Restore the stored choice when the group allows it; otherwise honour
+        // the pane the server rendered (its .active button).
         let saved = null;
-        try { saved = localStorage.getItem(TAB_STORAGE_PREFIX + groupName); } catch (e) {}
-        if (saved && buttons.some(function(b) { return b.getAttribute('data-tab') === saved; })) {
-            activateTab(saved);
-        } else if (buttons.length) {
-            activateTab(buttons[0].getAttribute('data-tab'));
+        if (persist) {
+            try { saved = localStorage.getItem(TAB_STORAGE_PREFIX + groupName); } catch (e) {}
         }
+        const initial = saved && buttons.some(function(b) { return b.getAttribute('data-tab') === saved; })
+            ? saved
+            : (persist
+                ? (buttons.length ? buttons[0].getAttribute('data-tab') : null)
+                : (buttons.some(function(b) { return b.classList.contains('active'); })
+                    ? null : (buttons.length ? buttons[0].getAttribute('data-tab') : null)));
+        if (initial) activateTab(initial);
     }
 
     document.querySelectorAll('[data-tab-group]').forEach(setupTabGroup);

@@ -393,13 +393,14 @@ def _upsert_property(
                 if acres is None:
                     updates.append("acres_source = ?")
                     values.append(None)
-        updates.extend([
-            "price_cents = ?",
-            "description = ?",
-        ])
-        values.extend([
-            price_cents, description,
-        ])
+        updates.append("price_cents = ?")
+        values.append(price_cents)
+        # A harvested description must survive the next sweep: the county
+        # search payload carries none, so an absent value never overwrites one
+        # (the detail harvest would otherwise be undone every run).
+        if description:
+            updates.append("description = ?")
+            values.append(description)
         # Bed/bath counts come from the source; never clobber a known value
         # with an absent one (land listings carry none).
         if bedrooms is not None:

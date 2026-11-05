@@ -396,3 +396,172 @@ def test_extract_detail():
 def test_extract_detail_missing():
     assert extract_detail("") == (None, None)
     assert extract_detail(_next_data({})) == (None, None)
+
+
+# --------------------------------------------------------------------------
+# Parcel harvesting (the number lives in a client-side GraphQL POST)
+# --------------------------------------------------------------------------
+
+def test_find_parcel_prefers_the_listings_own_value():
+    from scraper.zillow import find_parcel
+    payload = {"data": {"property": {
+        "zpid": 421685554,
+        "parcelNumber": "007.01",
+        "nearbySearchResults": {"listResults": [
+            {"parcelNumber": "999999999"}]},
+    }}}
+    assert find_parcel(payload) == "007.01"
+
+
+def test_find_parcel_skips_history_and_nulls():
+    from scraper.zillow import find_parcel
+    # tax/price history rows carry their own ids and nulls
+    payload = {"data": {"property": {
+        "taxHistory": [{"parcelId": None}, {"parcelId": "111222333"}],
+        "priceHistory": [{"apn": "444555666"}],
+        "apn": "05430t001",
+    }}}
+    assert find_parcel(payload) == "05430t001"
+    # nothing usable at all
+    assert find_parcel({"property": {"apn": None, "parcelId": ""}}) is None
+    assert find_parcel({"property": {"apn": "N/A"}}) is None
+    assert find_parcel({}) is None
+
+
+def test_extract_detail_finds_nested_attribution_parcel():
+    cache = json.dumps({"q": {"property": {
+        "description": "Two acres of woods.",
+        "attribution": {"parcelNumber": "0668-15-3806"}}}})
+    html = _next_data({"props": {"pageProps": {"componentProps": {
+        "gdpClientCache": cache}}}})
+    desc, parcel = extract_detail(html)
+    assert desc == "Two acres of woods."
+    assert parcel == "0668-15-3806"
+
+
+def test_detail_limit_comes_from_config(monkeypatch):
+    from scraper import zillow as zl
+    monkeypatch.setitem(zl.config.SCRAPER_OVERRIDES["zillow"],
+                        "detail_limit", 42)
+    assert zl.ZillowScraper().detail_limit == 42
+    # an explicit argument still wins
+    assert zl.ZillowScraper(detail_limit=7).detail_limit == 7
+
+
+def test_enrich_details_skips_harvested_rows_and_respects_limit(monkeypatch):
+    """Only rows without listing text are rendered, at most detail_limit."""
+    from scraper import zillow as zl
+
+    calls = []
+
+    def fake_fetch(self, url):
+        calls.append(url)
+        zpid = url.split("/")[-2].split("_")[0]
+        return ("desc for " + url, None)
+
+    monkeypatch.setattr(zl.ZillowScraper, "_fetch_detail", fake_fetch)
+    scraper = zl.ZillowScraper(fetch_details=True,
+                               detail_skip={"500", "501"}, detail_limit=3)
+    scraper.DELAY_BETWEEN_DETAIL_PAGES = (0, 0)
+    props = [{"url": f"https://www.zillow.com/homedetails/{i}_zpid/",
+              "source_listing_id": str(i)} for i in range(500, 507)]
+    props[5]["description"] = "already has text"      # harvested in an earlier run
+    scraper._enrich_details(props)
+
+    assert calls == [f"https://www.zillow.com/homedetails/{i}_zpid/"
+                     for i in (502, 503, 504)]
+    assert props[0].get("description") is None        # skipped: DB row has text
+    assert props[2]["description"] == "desc for " + props[2]["url"]
+    assert props[6].get("description") is None        # beyond the cap
+
+
+class _FakeMouse:
+    def __init__(self):
+        self.scroll = 0
+
+class _FakeResponse:
+    def __init__(self, text=""):
+        self._text = text
+
+    def text(self):
+        return self._text
+
+
+class _FakePage:
+    """Minimal Playwright page: one HTML response, no scrolling, no XHR."""
+
+    def __init__(self, html=""):
+        self.mouse = _FakeMouse()
+        self.listeners = []
+        self._html = html
+
+    def set_default_timeout(self, ms):
+        pass
+
+    def on(self, event, handler):
+        self.listeners.append((event, handler))
+
+    def goto(self, url, **kwargs):
+        return _FakeResponse(self._html)
+
+
+def test_fetch_detail_reads_the_ssr_payload_without_waiting(monkeypatch):
+    """The parcel POST answers 403 for every automated session, so the page is
+    read as served: no scroll, no response listeners, SSR text only."""
+    from scraper import zillow as zl
+
+    cache = json.dumps({"q": {"property": {
+        "description": "Lake view lot.", "parcelNumber": "066800153806"}}})
+    html = _next_data({"props": {"pageProps": {"componentProps": {
+        "gdpClientCache": cache}}}})
+
+    pages = []
+
+    class _Ctx:
+        def __enter__(self):
+            page = _FakePage(html)
+            pages.append(page)
+            return page
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(zl, "camoufox_context", lambda *a, **k: _Ctx())
+
+    desc, parcel = zl.ZillowScraper()._fetch_detail(
+        "https://www.zillow.com/homedetails/1_zpid/")
+    assert (desc, parcel) == ("Lake view lot.", "066800153806")
+    assert pages[0].mouse.scroll == 0            # no wait for the blocked POST
+    assert pages[0].listeners == []
+
+
+def test_fetch_detail_without_a_payload_returns_nothing(monkeypatch):
+    from scraper import zillow as zl
+
+    class _Ctx:
+        def __enter__(self):
+            return _FakePage("<html>bot wall</html>")
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(zl, "camoufox_context", lambda *a, **k: _Ctx())
+    assert zl.ZillowScraper()._fetch_detail(
+        "https://www.zillow.com/homedetails/1_zpid/") == (None, None)
+
+
+def test_fetch_detail_swallows_a_failed_page(monkeypatch):
+    from scraper import zillow as zl
+
+    class _Boom:
+        def __enter__(self):
+            raise RuntimeError("browser died")
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(zl, "camoufox_context", lambda *a, **k: _Boom())
+    assert zl.ZillowScraper()._fetch_detail(
+        "https://www.zillow.com/homedetails/1_zpid/") == (None, None)
+
+

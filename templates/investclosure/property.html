@@ -43,24 +43,52 @@
         .prop-map-hint { margin-top:0.3rem; font-size:0.78rem; }
         .prop-raw-source { max-height:480px; overflow:auto; }
 
-        /* Desktop: drop the tabs and show details, map and source together. */
+        /* Desktop: drop the tabs and show details, map and source together.
+           The map and the source share a row — a 300px column is too small to
+           read a parcel next to its listing, so they take 7/5 of a 12-column
+           grid and the map gets a height worth studying. */
         @media (min-width: 1100px) {
             .prop-tabs { display:none; }
             .prop-details {
                 display:grid;
-                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-                gap: 1rem 1.5rem;
+                grid-template-columns: repeat(12, minmax(0, 1fr));
+                gap: 1rem 1.2rem;
                 align-items:start;
             }
+            .prop-details > .prop-tab-pane { grid-column: 1 / -1; }
+            .prop-details.prop-map-source > #tab-maps { grid-column: 1 / span 7; }
+            .prop-details.prop-map-source > #tab-source { grid-column: 8 / -1; }
             .prop-tab-pane, .prop-tab-pane.active {
                 display:grid;
                 grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
                 gap: 0.35rem 1.2rem;
                 align-items:start;
             }
+            /* Map and source stack in one column inside their grid cell. */
+            .prop-details > #tab-maps, .prop-details > #tab-source {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 0.5rem;
+            }
+            /* Stretch both to the row height (the map drives it) so the source
+               tile reads as a pane beside the map instead of a stub with a
+               void under it; long notices scroll inside the frame. Matching the
+               map's height exactly keeps the two columns visually paired. */
+            .prop-details.prop-map-source > #tab-maps,
+            .prop-details.prop-map-source > #tab-source { align-self: stretch; }
+            .prop-details.prop-map-source > #tab-source {
+                grid-template-rows: auto minmax(0, 1fr);
+            }
             .prop-tab-pane:not(.has-content) { display:none; }
             .prop-pane-title { display:block; }
-            .prop-map-embed iframe { height:360px; }
+            .prop-map-embed iframe { height:min(66vh, 660px); }
+            .prop-source-frame {
+                border:1px solid #e5e7eb; border-radius:10px; background:#fff;
+                padding:0.6rem 0.8rem; max-height:min(66vh, 660px); overflow:auto;
+            }
+            .prop-details.prop-map-source .prop-source-frame {
+                height:min(66vh, 660px); max-height:none;
+            }
+            .prop-source-frame .prop-raw-source { max-height:none; }
             /* The maps pane sits beside the overview; its links are duplicated
                there, so drop the overview's link list on desktop. */
             .prop-links-section { display:none; }
@@ -69,7 +97,7 @@
 
         <div class="prop-tabs" role="tablist">
             <button type="button" class="prop-tab-btn active" onclick="showPropTab('overview', this)">Overview</button>
-            {% set _show_maps = map_embed_url or prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.get('tnmap_owner') or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink or prop.tnmap_gislink or prop.get('tnmap_address') %}
+            {% set _show_maps = map_embed_url or prop.gis_link or prop.google_maps_url or prop.google_maps_topo_url or prop.get('tnmap_owner') or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink or prop.tnmap_gislink or prop.get('tnmap_address') %}
             {% if _show_maps %}<button type="button" class="prop-tab-btn" onclick="showPropTab('maps', this)">Maps &amp; GIS</button>{% endif %}
             {% set _show_source = prop.url or prop.raw_source_text or prop.description %}
             {% if _show_source %}<button type="button" class="prop-tab-btn" onclick="showPropTab('source', this)">Source</button>{% endif %}
@@ -78,7 +106,7 @@
             <button type="button" class="prop-tab-btn" onclick="showPropTab('notes', this)">Notes</button>
         </div>
 
-        <div class="prop-details">
+        <div class="prop-details{% if map_embed_url and _show_source %} prop-map-source{% endif %}">
             <!-- OVERVIEW -->
             <div class="prop-tab-pane active has-content" id="tab-overview">
                 <h2 class="prop-pane-title">Details</h2>
@@ -102,8 +130,8 @@
                     {% elif prop.google_maps_topo_url %}
                     <p><a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">Topographic Map</a></p>
                     {% endif %}
-                    {% if prop.gis_url %}
-                    <p><a href="{{ prop.gis_url }}" target="_blank" rel="noopener">GIS Viewer (satellite)</a></p>
+                    {% if prop.gis_link %}
+                    <p><a href="{{ prop.gis_link }}" target="_blank" rel="noopener">Parcel Map (LiDAR / imagery)</a></p>
                     {% endif %}
                     {% if prop.google_maps_satellite_url %}
                     <p><a href="{{ prop.google_maps_satellite_url }}" target="_blank" rel="noopener">Aerial / Satellite Photo</a></p>
@@ -196,7 +224,7 @@
                     </p>
                 </div>
                 {% endif %}
-                {% if prop.gis_url or prop.google_maps_url or prop.google_maps_topo_url or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink %}
+                {% if prop.gis_link or prop.google_maps_url or prop.google_maps_topo_url or prop.google_maps_satellite_url or prop.google_maps_street_url or prop.taxnet_url or prop.gislink %}
                 <div class="prop-detail-section">
                     <h3>Maps &amp; GIS Links</h3>
                     {% if prop.address and prop.county %}
@@ -205,8 +233,8 @@
                     {% elif prop.google_maps_topo_url %}
                     <p><strong>Google Maps (Topo):</strong> <a href="{{ prop.google_maps_topo_url }}" target="_blank" rel="noopener">View Topographic Map</a></p>
                     {% endif %}
-                    {% if prop.gis_url %}
-                    <p><strong>GIS Viewer (satellite):</strong> <a href="{{ prop.gis_url }}" target="_blank" rel="noopener">{{ prop.gis_url }}</a></p>
+                    {% if prop.gis_link %}
+                    <p><strong>Parcel Map (LiDAR / imagery):</strong> <a href="{{ prop.gis_link }}" target="_blank" rel="noopener">{{ prop.gis_link }}</a></p>
                     {% endif %}
                     {% if prop.google_maps_satellite_url %}
                     <p><strong>Aerial / Satellite Photo:</strong> <a href="{{ prop.google_maps_satellite_url }}" target="_blank" rel="noopener">View Aerial Photo</a></p>
@@ -255,29 +283,37 @@
             <!-- SOURCE -->
             <div class="prop-tab-pane{% if _show_source %} has-content{% endif %}" id="tab-source">
                 <h2 class="prop-pane-title">Source</h2>
+                <div class="prop-source-frame">
                 {% if prop.url %}
                 <div class="prop-detail-section">
-                    <h3>Source</h3>
+                    <h3>{% if prop.source == 'zillow' %}Zillow listing{% else %}Source notice{% endif %}</h3>
                     <p>
                         <a href="{{ prop.url }}" target="_blank" rel="noopener" class="btn">
-                            {% if prop.source == 'zillow' %}View Zillow listing{% else %}View Original Notice{% endif %}
+                            {% if prop.source == 'zillow' %}Open listing in a new tab ↗{% else %}Open notice in a new tab ↗{% endif %}
                         </a>
                     </p>
+                    {% if prop.source == 'zillow' %}
+                    <p class="muted prop-source-note">Zillow serves
+                        <code>X-Frame-Options: DENY</code>, so its page cannot be
+                        embedded in this dashboard; it opens in a new tab and the
+                        listing detail below stays on screen next to the map.</p>
+                    {% endif %}
                     <p class="muted">Source: {{ prop.source }}{% if prop.source_listing_id %} · Listing ID: {{ prop.source_listing_id }}{% endif %}</p>
                 </div>
                 {% endif %}
                 {% if prop.raw_source_text %}
                 <div class="prop-detail-section">
                     <h3>Raw Source Text</h3>
-                    <pre class="prop-raw-source" style="max-width:1024px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word">{{ prop.raw_source_text }}</pre>
+                    <pre class="prop-raw-source" style="white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word">{{ prop.raw_source_text }}</pre>
                 </div>
                 {% endif %}
                 {% if prop.description %}
                 <div class="prop-detail-section">
                     <h3>Description</h3>
-                    <div class="prop-description">{{ prop.description[:2000] }}</div>
+                    <div class="prop-description">{{ prop.description[:6000] }}</div>
                 </div>
                 {% endif %}
+                </div>
             </div>
 
             <!-- RELATED -->
