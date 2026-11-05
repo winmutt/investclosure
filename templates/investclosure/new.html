@@ -48,6 +48,13 @@
             <div class="list-item-row">
                 <span>{{ prop.county or 'N/A' }} County, {{ prop.state }}</span>
                 <span>{{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres</span>
+                {% if prop.bedrooms or prop.bathrooms %}
+                <span>
+                    {% if prop.bedrooms %}{{ prop.bedrooms }} bd{% endif %}
+                    {% if prop.bedrooms and prop.bathrooms %} / {% endif %}
+                    {% if prop.bathrooms %}{{ prop.bathrooms|fmt_num }} ba{% endif %}
+                </span>
+                {% endif %}
                 <span>First seen: {{ prop.first_seen }}</span>
             </div>
         </div>
