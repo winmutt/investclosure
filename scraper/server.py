@@ -1001,18 +1001,120 @@ def export():
     return redirect(url_for('landing'))
 
 
-@app.route('/gis/proxy/<path:dp>')
+class _ProxyImageCache:
+    """Small LRU for proxied GIS images.
+
+    NC OneMap's elevation and ortho ImageServers are dynamic ``exportImage``
+    services (no tile cache), so every pan re-renders each tile server-side.
+    Keeping the last few hundred kilobytes-bounded tiles makes panning back and
+    refreshing the page cheap without unbounded memory growth.
+    """
+
+    def __init__(self, max_entries: int = 400, max_bytes: int = 48 * 1024 * 1024):
+        from collections import OrderedDict
+        self._items: "OrderedDict[tuple, tuple]" = OrderedDict()
+        self._bytes = 0
+        self._max_entries = max_entries
+        self._max_bytes = max_bytes
+
+    def get(self, key):
+        hit = self._items.get(key)
+        if hit is None:
+            return None
+        self._items.move_to_end(key)
+        return hit
+
+    def put(self, key, body: bytes, content_type: str) -> None:
+        if len(body) > self._max_bytes // 4:
+            return  # one huge image would evict everything else
+        old = self._items.pop(key, None)
+        if old is not None:
+            self._bytes -= len(old[0])
+        self._items[key] = (body, content_type)
+        self._bytes += len(body)
+        while (len(self._items) > self._max_entries
+               or self._bytes > self._max_bytes):
+            _, (evicted, _ct) = self._items.popitem(last=False)
+            self._bytes -= len(evicted)
+
+
+_GIS_IMAGE_CACHE = _ProxyImageCache()
+
+# NC OneMap's LiDAR elevation products. DEM03 is the statewide 3.125 US-survey-
+# foot (~0.95 m) LiDAR-derived DEM; the ``_hillshade`` / ``_shaded_relief``
+# siblings are pre-rendered from it.
+NC_ELEV_PATH = "secure/rest/services/Elevation"
+# DEM03_hillshade (grayscale) reads far better under parcel lines and the water
+# overlay than the tinted _shaded_relief at these zooms; both are pre-rendered
+# from the same DEM03 grid.
+NC_LIDAR_IMAGE = "DEM03_hillshade/ImageServer"
+
+# Web Mercator half-extent, the origin every XYZ tile bbox is measured from.
+_MERCATOR_R = 20037508.342789244
+
+
+@app.route('/gis/lidar/<int:z>/<int:x>/<int:y>.png')
+def gis_lidar_tile(z: int, x: int, y: int):
+    """NC OneMap's LiDAR relief as ordinary XYZ tiles.
+
+    The state publishes elevation only as *dynamic* ImageServers (exportImage,
+    no tile cache). Publicly the JS SDK's ``ImageryLayer`` stitches those badly
+    at these zooms — one stretched image with no-data wedges — so the same
+    product is re-tiled here: the XYZ bbox is computed locally, one exportImage
+    is requested per tile, and the result is cached in-process and by the
+    browser. Deterministic, pan-safe, and no different data from the state's
+    own hillshade.
+    """
+    if not 0 <= z <= 19:
+        abort(404)
+    n = 1 << z
+    if not (0 <= x < n and 0 <= y < n):
+        abort(404)
+
+    cache_key = ("lidar", z, x, y)
+    hit = _GIS_IMAGE_CACHE.get(cache_key)
+    if hit is not None:
+        body, ct = hit
+        return Response(body, content_type=ct,
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    size = 2 * _MERCATOR_R / n
+    x0 = -_MERCATOR_R + x * size
+    y1 = _MERCATOR_R - y * size
+    bbox = f"{x0},{y1 - size},{x0 + size},{y1}"
+
+    from scraper import nconemap_net
+    url = (f"https://services.nconemap.gov/{NC_ELEV_PATH}/{NC_LIDAR_IMAGE}"
+           f"/exportImage?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256"
+           f"&format=png32&f=image&interpolation=RSP_BilinearInterpolation")
+    try:
+        resp = nconemap_net.get(url, timeout=30)
+    except Exception as e:  # pragma: no cover - network
+        return jsonify({"error": f"nconemap lidar failed: {e}"}), 502
+
+    ct = resp.headers.get("content-type", "image/png")
+    if resp.status_code != 200 or "image" not in ct:
+        return jsonify({"error": "nconemap lidar tile unavailable"}), 502
+
+    _GIS_IMAGE_CACHE.put(cache_key, resp.content, ct)
+    return Response(resp.content, content_type=ct,
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.route('/gis/proxy/<path:dp>', methods=["GET", "POST", "HEAD", "OPTIONS"])
 def gis_proxy(dp: str):
-    """Server-side proxy to the NC OneMap parcel REST services.
+    """Server-side proxy to the NC OneMap ArcGIS REST services.
 
-    The new ArcGIS Online Map Viewer ignores the legacy ``?url=`` deep-link
-    parameter, and nconemap.gov only whitelists ``arcgis.com`` for CORS, so a
-    browser cannot load the layer directly. This route forwards requests to
-    ``https://services.nconemap.gov/<dp>`` server-side (CORS-free) and returns
-    the response same-origin, so our hosted ``static/gis_viewer.html`` can load
-    the parcel layer without cross-origin errors.
+    nconemap.gov only whitelists ``arcgis.com`` for CORS, so a browser cannot
+    load a layer or tile from it directly. This route forwards requests to
+    ``https://services.nconemap.gov/<dp>`` server-side and returns the response
+    same-origin: the parcel layer, the cached ortho tiles and the LiDAR
+    ImageServer layers of the hosted viewer all come through here.
 
-    Restricted to nconemap.gov parcel-service paths to avoid an open proxy.
+    Restricted to ArcGIS service paths to avoid an open proxy. Image responses
+    carry a short Cache-Control so panning back does not re-render them, and
+    get a small in-process cache — the dynamic elevation/ortho services take
+    0.2-2s per tile, so a pan would otherwise queue a dozen TLS round-trips.
     """
     if not (dp.startswith("secure/rest/services/") or dp.startswith("arcgis/rest/services/")):
         abort(403)
@@ -1020,22 +1122,34 @@ def gis_proxy(dp: str):
     qs = request.query_string.decode("latin-1")
     url = downstream + ("?" + qs if qs else "")
 
-    from curl_cffi import requests as proxy_requests
+    from scraper import nconemap_net
+
+    cache_key = (dp, qs)
+    if request.method == "GET":
+        hit = _GIS_IMAGE_CACHE.get(cache_key)
+        if hit is not None:
+            body, ct = hit
+            return Response(body, status=200, content_type=ct,
+                            headers={"Cache-Control": "public, max-age=3600"})
+
     try:
         if request.method == "POST":
-            resp = proxy_requests.post(
+            resp = nconemap_net.post(
                 url, data=request.get_data(),
                 headers={"Content-Type": request.headers.get("Content-Type", "application/x-www-form-urlencoded")},
-                timeout=30, impersonate="chrome131",
+                timeout=30,
             )
         else:
-            resp = proxy_requests.get(url, timeout=30, impersonate="chrome131")
+            resp = nconemap_net.get(url, timeout=30)
     except Exception as e:  # pragma: no cover - network
         return jsonify({"error": f"nconemap proxy failed: {e}"}), 502
 
     ct = resp.headers.get("content-type", "application/json")
     if "image" in ct:
-        return Response(resp.content, status=resp.status_code, content_type=ct)
+        if request.method == "GET":
+            _GIS_IMAGE_CACHE.put(cache_key, resp.content, ct)
+        return Response(resp.content, status=resp.status_code, content_type=ct,
+                        headers={"Cache-Control": "public, max-age=3600"})
     return Response(resp.content, status=resp.status_code, content_type=ct)
 
 

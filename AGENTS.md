@@ -189,19 +189,45 @@ rebuilds all links; `scraper/tn_gis_enrich.py` fills TN TPAD links + acres/owner
   link. That extends the policy deliberately: the hosted viewer is our own
   page, so a Zillow row with no parcel still reaches a map.
 - **Hosted viewer** (`static/gis_viewer.html`, built with `get_hosted_viewer_url`
-  in `scraper/gis_urls.py`) — four basemaps (`&base=`): `lidar` (default: USGS
-  3DEP shaded relief over Esri World Hillshade, relief cache stops at z16),
-  `imagery` (NC: OneMap `Imagery/Orthoimagery_Latest_cached` tile cache through
-  `/gis/proxy`, probed once and falling back to Esri World Imagery; elsewhere
-  Esri), `topo`, `street`. Plus a **Water** overlay (USGS NHD
+  in `scraper/gis_urls.py`) — five basemaps (`&base=`): `lidar_nc` (**default
+  for NC rows**: NC OneMap `Elevation/DEM03_hillshade`, a 3.125 US-survey-foot
+  ≈0.95 m LiDAR grid, re-tiled same-origin at `/gis/lidar/{z}/{x}/{y}.png`),
+  `lidar` (USGS 3DEP shaded relief over Esri World Hillshade, relief cache
+  stops at z16 — the fallback for every other state and for NC when the state
+  service is unreachable), `imagery` (NC: OneMap
+  `Imagery/Orthoimagery_Latest_cached` tile cache through `/gis/proxy`, probed
+  once and falling back to Esri World Imagery; elsewhere Esri), `topo`,
+  `street`. Plus a **Water** overlay (USGS NHD
   `hydro.nationalmap.gov/.../nhd/MapServer` layers 10/4 small-scale, 12/6
   large-scale — CORS-open, all six states, drawn under the parcel layer).
-  Basemap and overlay choices persist in localStorage (`mountains-basemap`,
-  `mountains-water`).
+  Basemap and overlay choices persist in localStorage (`mountains-basemap-v2`,
+  `mountains-water`; v1 is ignored so a stale "lidar" pick doesn't pin users
+  to 3DEP).
+- **NC LiDAR tiles are re-tiled, not drawn by `ImageryLayer`.** DEM03 is a
+  dynamic ImageServer (`exportImage`, no tile cache; 0.2–2 s per tile).
+  Rendering it with the SDK's `ImageryLayer` produced one stretched image with
+  no-data wedges even though a full-viewport `exportImage` of the same bbox is
+  clean — the flaw is in client-side stitching at these zooms. `server.py`'s
+  `gis_lidar_tile()` computes the XYZ bbox in Web Mercator, requests one
+  256 px export per tile, and caches it in `_GIS_IMAGE_CACHE` (process-local
+  LRU, 400 entries / 48 MB) with `Cache-Control: max-age=86400`. Warm tiles
+  return in ~90 ms, cold ~0.3–0.4 s. `probeNcLidar()` checks one tile before
+  trusting the basemap and falls back to 3DEP **without persisting** the
+  fallback.
+- **NC OneMap TLS is currently expired upstream** (2026-11-05 →): the host
+  serves a DigiCert cert for `CN=services.gis.nc.gov` with
+  `notAfter=Nov 5 23:59:59 2026 GMT`, and **both** `services.nconemap.gov` and
+  `services.gis.nc.gov` serve it, so the rename does not help. `scraper/
+  nconemap_net.py` is the single HTTP path for NC OneMap (`server.gis_proxy`,
+  `gis_lidar_tile`, `nc_gis_lookup._nc1map_query`): a certificate error retries
+  once unverified, the verdict is cached for `REPROBE_SECONDS = 600`, and a
+  later verified response drops the fallback automatically. Set
+  `NCONEMAP_TLS_STRICT=1` to disable the fallback (an outage then surfaces as
+  errors). Remove the workaround once NC renews.
 - **`WebTileLayer.urlTemplate` must be absolute.** A root-relative template is
   re-parsed by the SDK into `https://null/oxy/…` and every tile dies on CORS —
   the basemap renders blank with no visible error. Build proxied templates from
-  `location.origin` (see `NC_ORTHO_TEMPLATE`).
+  `location.origin` (see `NC_ORTHO_TEMPLATE`, `NC_LIDAR_TEMPLATE`).
 - **NHD field case varies per layer** (`GNIS_NAME` on the area layers,
   `gnis_name` on the flowlines), so the water popup uses a content function
   rather than `{field}` substitution.
@@ -330,8 +356,46 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
+| `NCONEMAP_TLS_STRICT` | *(unset)* | Set `1` to refuse the unverified NC OneMap fallback while their cert is expired |
 
 ## Recent Updates
+
+- **2026-11-06 (NC LiDAR basemap + NC OneMap TLS outage)**: Two connected
+  changes.
+  - **The viewer now opens NC rows on the state's own LiDAR hillshade.**
+    NC OneMap publishes `Elevation/DEM03` (3.125 US-survey-ft ≈ 0.95 m
+    statewide LiDAR DEM) with `_hillshade`, `_shaded_relief`, `_slope`,
+    `_aspect`, `_visual` siblings and 1/2/4/20/100-ft contour rasters. The
+    grayscale `DEM03_hillshade` reads far better under parcel lines and the
+    water overlay than the tinted `_shaded_relief`, so it is the default for
+    NC (`DEFAULT_BASE = service ? "lidar_nc" : "lidar"`); a fifth
+    "LiDAR NC" button switches back and other states keep 3DEP.
+  - **It is re-tiled, not drawn by `ImageryLayer`.** DEM03 is dynamic-only
+    (no tile cache). The SDK stitched it as one stretched image with no-data
+    wedges even though a full-viewport `exportImage` of the same bbox is
+    clean, so `server.gis_lidar_tile()` (`/gis/lidar/<z>/<x>/<y>.png`) turns
+    XYZ coordinates into a Web-Mercator bbox, exports one 256 px PNG per tile
+    and caches it (in-process LRU + `max-age=86400`). Verified live on
+    Haywood parcel 8711-00-6993: crisp relief across the viewport, polygon
+    located and highlighted, water overlay drawn, buttons/persistence work.
+  - **Why the outage surfaced**: `services.nconemap.gov` presents a DigiCert
+    cert for `CN=services.gis.nc.gov` that expired **2026-11-05 23:59:59Z**;
+    both hostnames serve it, so the newer name is no escape. This broke the
+    dashboard parcel layer, the NC ortho basemap and all NC acreage/parcel
+    enrichment at once. New `scraper/nconemap_net.py` is now the single HTTP
+    path for NC OneMap (`server.gis_proxy`, `server.gis_lidar_tile`,
+    `nc_gis_lookup._nc1map_query`): a certificate error retries once
+    unverified, that verdict is cached for `REPROBE_SECONDS = 600` (a doomed
+    handshake per tile otherwise doubled every map request), and a later
+    verified response drops the fallback by itself. `NCONEMAP_TLS_STRICT=1`
+    disables the fallback. Live: layer metadata 200, `by_parcel` returns
+    1.0 ac / owner / address, sample tiles 0.3–1.9 s cold and 93 ms cached.
+  - The loader changed shape: `gis_proxy` now accepts GET/POST/HEAD/OPTIONS
+    and serves `Cache-Control: public, max-age=3600` for images.
+  - 26 tests in `tests/test_gis_links.py` (XYZ bbox math validated against an
+    independent slippy-map computation, out-of-range 404s, non-image 502,
+    tile caching, viewer markup, TLS fallback/strict/renewal); full suite 701
+    pass, 8 skipped.
 
 - **2026-11-05 (dashboard: per-board, per-tab filters and sorting)**: County /
   acreage / sort controls moved **inside** each (state, category) tab and the

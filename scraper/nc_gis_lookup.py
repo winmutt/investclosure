@@ -73,7 +73,11 @@ def _nc1map_query(post_data: dict, timeout: int = 15) -> Optional[list[dict]]:
     data["returnGeometry"] = "true"
     data["outSR"] = "4326"
     try:
-        resp = curl_requests.Session(impersonate="chrome131").post(
+        # nconemap_net falls back to an unverified connection while the state's
+        # TLS certificate is expired (2026-11-05) instead of silently losing
+        # every parcel/acreage lookup.
+        from scraper import nconemap_net
+        resp = nconemap_net.post(
             NC_ONEMAP_URL,
             data=data,
             timeout=timeout,

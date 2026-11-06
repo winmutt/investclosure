@@ -43,7 +43,8 @@
   <div id="bar">
     <strong>Mountains Parcel Map</strong>
     <div id="bases" role="group" aria-label="Basemap">
-      <button type="button" data-base="lidar" title="LiDAR-derived shaded relief (USGS 3DEP)">LiDAR</button>
+      <button type="button" data-base="lidar_nc" title="NC LiDAR hillshade — NC OneMap DEM03, 3.125 ft grid (~1 m)">LiDAR NC</button>
+      <button type="button" data-base="lidar" title="LiDAR-derived shaded relief (USGS 3DEP), tile-cached">LiDAR</button>
       <button type="button" data-base="imagery" title="Aerial photography">Imagery</button>
       <button type="button" data-base="topo" title="Topographic map">Topo</button>
       <button type="button" data-base="street" title="Street map">Street</button>
@@ -67,8 +68,14 @@
     const level = parseFloat(params.get("level") || "16");
     const parcel = params.get("parcel");
 
-    const STORAGE_KEY = "mountains-basemap";
-    const DEFAULT_BASE = "lidar";
+    // A stored choice is keyed by version: v2 introduces the NC LiDAR basemap,
+    // and a v1 "lidar" preference would otherwise pin every returning visitor
+    // to the coarse 3DEP relief. Their next pick sticks under the new key.
+    const STORAGE_KEY = "mountains-basemap-v2";
+    // NC rows open on the state's own LiDAR hillshade (0.95 m grid); everything
+    // else — and NC when that service cannot answer — uses the tile-cached
+    // USGS 3DEP relief, which stays fast and needs no proxy.
+    const DEFAULT_BASE = service ? "lidar_nc" : "lidar";
 
     require([
       "esri/Map", "esri/Basemap", "esri/views/MapView", "esri/layers/FeatureLayer",
@@ -96,7 +103,8 @@
       // LiDAR relief: USGS 3DEP shaded relief is LiDAR-derived wherever USGS
       // has flown it (all of our mountain counties), but its cache stops at
       // z16 — Esri's global hillshade sits underneath so deep zoom never goes
-      // blank and non-NC states still get relief.
+      // blank. It needs no proxy, so it is the fallback for every state and
+      // for NC whenever the state's own DEM service is unreachable.
       const buildLidar = () => new Basemap({
         title: "LiDAR relief",
         baseLayers: [
@@ -108,6 +116,22 @@
                { title: "LiDAR relief (USGS 3DEP)", maxZoom: 16,
                  copyright: "USGS 3DEP" }),
         ],
+      });
+
+      // NC LiDAR relief: NC OneMap's DEM03 — a 3.125 US-survey-foot (~0.95 m)
+      // statewide LiDAR-derived DEM, far crisper than the 3DEP generalization.
+      // The state serves it only as a dynamic ImageServer, so /gis/lidar/{z}/
+      // {x}/{y}.png re-tiles it same-origin (the SDK's ImageryLayer rendered
+      // that service with no-data wedges); tiles are cached both ends.
+      const NC_LIDAR_TEMPLATE =
+        location.origin + "/gis/lidar/{level}/{col}/{row}.png";
+      let ncLidarWorks = null;   // probed once, same as the ortho
+      const buildLidarNc = () => new Basemap({
+        title: "LiDAR NC",
+        baseLayers: [tile(NC_LIDAR_TEMPLATE, {
+          title: "NC LiDAR relief (DEM03)", maxZoom: 19,
+          copyright: "NC OneMap",
+        })],
       });
 
       // Aerial photography. NC OneMap's cached statewide ortho is the deepest
@@ -151,12 +175,12 @@
       });
 
       const BASE_BUILDERS = {
-        lidar: buildLidar, imagery: buildImagery,
+        lidar_nc: buildLidarNc, lidar: buildLidar, imagery: buildImagery,
         topo: buildTopo, street: buildStreet,
       };
 
-      // ?base= wins (a link can force a view), then the last choice the
-      // visitor made, then LiDAR.
+      // ?base= wins (a link can force a view), then the last choice the visitor
+      // made, then the default for this row's state (NC LiDAR, else 3DEP).
       const isBase = (k) => !!k && Object.prototype.hasOwnProperty.call(BASE_BUILDERS, k);
       let currentBase = [params.get("base"), readPref(STORAGE_KEY, null), DEFAULT_BASE]
         .filter(isBase)[0] || DEFAULT_BASE;
@@ -236,6 +260,7 @@
       });
 
       const BASE_LABEL = {
+        lidar_nc: "LiDAR relief · NC OneMap DEM03 (~0.95 m)",
         lidar: "LiDAR relief · USGS 3DEP",
         imagery: "Aerial imagery",
         topo: "Topo · Esri",
@@ -261,6 +286,8 @@
         let base = BASE_LABEL[currentBase];
         if (currentBase === "imagery") {
           base += ncOrthoWorks === null ? "…" : (ncOrthoWorks ? " · NC OneMap" : " · Esri");
+        } else if (currentBase === "lidar_nc" && ncLidarWorks === false) {
+          base += " · unavailable, showing 3DEP";
         }
         const bits = [base, waterOn ? "Water · USGS NHD" : "Water off"];
         if (service) bits.push("Parcels · NC OneMap");
@@ -313,10 +340,37 @@
         setInfo("Coordinate-centred map — this state has no statewide parcel layer.");
       }
 
-      function applyBase(key) {
+      // One tile of the state LiDAR relief decides whether that basemap can be
+      // drawn (it is re-tiled through this app and depends on NC OneMap). When
+      // it cannot, fall back to the cached 3DEP relief *without* storing that
+      // as the visitor's choice, so the sharper basemap returns by itself once
+      // the service answers again.
+      async function probeNcLidar() {
+        if (!service) return false;
+        const [lng, lat] = center ? center.split(",").map(Number) : [-82.9, 35.5];
+        const t = tileIndex(lng, lat, 14);
+        const url = NC_LIDAR_TEMPLATE
+          .replace("{level}", t.level).replace("{row}", t.row).replace("{col}", t.col);
+        try {
+          const res = await fetch(url);
+          return res.ok && (res.headers.get("content-type") || "").startsWith("image");
+        } catch (e) {
+          return false;
+        }
+      }
+
+      if (service) {
+        probeNcLidar().then((ok) => {
+          ncLidarWorks = ok;
+          if (!ok && currentBase === "lidar_nc") applyBase("lidar", false);
+          paintSourceLine();
+        });
+      }
+
+      function applyBase(key, persist) {
         currentBase = key;
         map.basemap = BASE_BUILDERS[key]();
-        writePref(STORAGE_KEY, key);
+        if (persist !== false) writePref(STORAGE_KEY, key);
         paintBaseButtons();
         paintSourceLine();
       }
@@ -421,6 +475,9 @@
                              (attrs.ownname ? " — " + attrs.ownname : "");
           return true;
         } catch (e) {
+          // Swallowing this made "parcel not found" indistinguishable from a
+          // failed request; keep the page usable but leave a trace.
+          console.warn("locateParcel failed:", e);
           return false;
         }
       }
