@@ -118,7 +118,10 @@ def target_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def run_pass(limit: Optional[int] = None,
              ids: Optional[set[int]] = None) -> dict:
     conn = _ensure_db()
-    done = load_done()
+    # A failed fetch is retried on the next pass: only "ok" verdicts count as
+    # done, otherwise a bot wall would permanently leave a row unjudged.
+    done = {row_id: rec for row_id, rec in load_done().items()
+            if rec.get("status") == "ok"}
     rows = [r for r in target_rows(conn) if r["id"] not in done]
     if ids:
         rows = [r for r in rows if r["id"] in ids]
