@@ -1010,6 +1010,53 @@ def export():
 # default, so the file route forces text/plain for these.
 _REPORT_INLINE_EXTS = {".md", ".txt", ".csv", ".json", ".ics", ".html",
                        ".htm", ".log"}
+_MARKDOWN_EXTS = {".md", ".markdown"}
+
+# Extensions for rendering report markdown: `tables` for the pipe tables the
+# building review uses, `sane_lists` + `nl2br` for readable prose, `toc` for a
+# section index. `fenced_code` for any code blocks.
+_MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists", "nl2br", "toc"]
+
+# Self-contained styled shell for a rendered report. Matches the dashboard's
+# Inter/slate palette; keeps links clickable and tables readable. The body is
+# the pre-sanitized markdown->html conversion.
+_REPORT_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+ body{{margin:0;background:#0f172a;color:#e2e8f0;
+   font:15px/1.6 'Inter',system-ui,Segoe UI,Roboto,sans-serif}}
+ .wrap{{max-width:960px;margin:0 auto;padding:2rem 1.5rem 4rem}}
+ .bar{{display:flex;justify-content:space-between;align-items:center;
+   gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap}}
+ .bar a{{color:#38bdf8;text-decoration:none;font-size:.9rem}}
+ .bar a:hover{{text-decoration:underline}}
+ article{{background:#111827;border:1px solid #1f2937;border-radius:12px;
+   padding:1.5rem 1.75rem}}
+ h1,h2,h3,h4{{color:#f1f5f9;line-height:1.3;margin:1.4em 0 .5em}}
+ h1{{font-size:1.6rem;border-bottom:1px solid #1f2937;padding-bottom:.4em}}
+ h2{{font-size:1.25rem;border-bottom:1px solid #1f2937;padding-bottom:.3em}}
+ a{{color:#38bdf8}} a:visited{{color:#818cf8}}
+ code{{background:#1f2937;padding:.1em .35em;border-radius:4px;
+   font-size:.85em}}
+ pre{{background:#1f2937;padding:.9rem;border-radius:8px;overflow:auto}}
+ pre code{{background:none;padding:0}}
+ table{{border-collapse:collapse;width:100%;margin:.8em 0;font-size:.9rem}}
+ th,td{{border:1px solid #334155;padding:.45em .6em;text-align:left;
+   vertical-align:top}}
+ th{{background:#1e293b}} tr:nth-child(even) td{{background:#0f172a}}
+ ul,ol{{padding-left:1.4em}} li{{margin:.15em 0}}
+ blockquote{{border-left:3px solid #334155;margin:.8em 0;padding:.2em 1em;
+   color:#cbd5e1}}
+ hr{{border:none;border-top:1px solid #1f2937;margin:1.5em 0}}
+</style></head>
+<body><div class="wrap">
+ <div class="bar"><a href="/reports">← All reports</a>
+   <a href="/reports/{raw}">View raw source</a></div>
+ <article>{body}</article>
+</div></body></html>
+"""
 
 
 @app.route('/reports')
@@ -1033,12 +1080,28 @@ def reports():
 
 @app.route('/reports/<path:filename>')
 def report_file(filename):
-    """Serve one report file from REPORTS_DIR (traversal-guarded)."""
+    """Serve one report file from REPORTS_DIR (traversal-guarded).
+
+    Markdown renders to a styled HTML page (clickable links, tables); pass
+    ``?raw=1`` to get the plain source instead."""
     if '/' in filename or '..' in filename:
         abort(404)
     target = REPORTS_DIR / filename
     if not target.is_file():
         abort(404)
+
+    if (target.suffix.lower() in _MARKDOWN_EXTS
+            and request.args.get("raw") != "1"):
+        try:
+            import markdown
+            body = markdown.markdown(target.read_text(encoding="utf-8"),
+                                     extensions=_MD_EXTENSIONS)
+        except ImportError:  # pragma: no cover - markdown is a dependency
+            body = ""
+        page = _REPORT_PAGE.format(title=target.name, raw=target.name,
+                                   body=body)
+        return Response(page, mimetype="text/html")
+
     resp = send_from_directory(REPORTS_DIR, target.name)
     if target.suffix.lower() in _REPORT_INLINE_EXTS:
         # Let Flask append the charset — a pre-baked one doubles up.

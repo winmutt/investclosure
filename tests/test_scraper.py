@@ -2119,7 +2119,10 @@ class TestReports:
         app.config["SECRET_KEY"] = "test-secret"
         reports = tmp_dir / "reports"
         reports.mkdir()
-        (reports / "nc_building_review.md").write_text("# Has a building\n")
+        (reports / "nc_building_review.md").write_text(
+            "# Has a building\n\n"
+            "- [#1968 132 Sparks Ridge Lane]"
+            "(http://192.168.1.154:5001/property/1968) — description\n")
         (reports / "export_2026-11-07.json").write_text("{}")
         monkeypatch.setattr("scraper.server.REPORTS_DIR", reports)
         token = base64.b64encode(b"winmutt:1234asdf").decode()
@@ -2140,12 +2143,33 @@ class TestReports:
         assert "export_2026-11-07.json" in html
         assert "/reports/nc_building_review.md" in html
 
-    def test_report_file_serves_markdown_inline(self, app):
+    def test_report_file_renders_markdown_with_links(self, app):
         with app.test_client() as client:
             resp = client.get("/reports/nc_building_review.md")
         assert resp.status_code == 200
+        assert resp.mimetype == "text/html"
+        html = resp.get_data(as_text=True)
+        # headings and bold render as HTML, not raw syntax (toc adds ids)
+        assert ">Has a building</h1>" in html
+        assert "<a href=" in html
+        # …and the dashboard links stay clickable
+        assert "/property/1968" in html
+
+    def test_report_markdown_tables_render(self, app, tmp_dir, monkeypatch):
+        reports = tmp_dir / "reports"
+        (reports / "table.md").write_text(
+            "| a | b |\n|---|---|\n| [#1](/property/1) | x |\n")
+        with app.test_client() as client:
+            html = client.get("/reports/table.md").get_data(as_text=True)
+        assert "<table>" in html
+        assert '<a href="/property/1">#1</a>' in html
+
+    def test_report_markdown_raw_query_serves_plain(self, app):
+        with app.test_client() as client:
+            resp = client.get("/reports/nc_building_review.md?raw=1")
+        assert resp.status_code == 200
         assert resp.mimetype == "text/plain"
-        assert "Has a building" in resp.get_data(as_text=True)
+        assert "# Has a building" in resp.get_data(as_text=True)
 
     def test_report_file_rejects_traversal(self, app):
         with app.test_client() as client:

@@ -7,3 +7,4 @@ camoufox[geoip]>=0.4.11
 pytest>=8.0
 pdfplumber>=0.11
 pytesseract>=0.3.10
+markdown>=3.5
