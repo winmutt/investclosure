@@ -440,6 +440,194 @@ def extract_detail(html: str) -> tuple[Optional[str], Optional[str]]:
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# HOA fee extraction (detail pages)
+# ---------------------------------------------------------------------------
+#
+# The county search payload carries no HOA data, so the search filter asks
+# Zillow to drop fee-paying listings (see build_paged_county_url). Existing
+# rows and anywhere the server filter misses are covered by reading the
+# detail page, which exposes the fee three different ways:
+#
+#   property.monthlyHoaFee        21            (number, USD/month)
+#   property.resoFacts.hoaFeeTotal "$250 annually" or "$21/mo"
+#   the listing description       "HOA Fee is $330 per year"
+#
+# The rendered fact card is NOT usable: the "HOA fees" accordion prints
+# "$0" for every listing and "$-- HOA" when the feed has no figure.
+
+_HOA_AMOUNT_RE = re.compile(r"\$?\s*([\d,]+(?:\.\d{1,2})?)")
+_HOA_PERIOD_RE = re.compile(
+    r"(/\s*mo(?:nth)?|per\s+month|monthly|a\s+month|"
+    r"per\s+year|per\s+annum|annually|annual|yearly|a\s+year|/\s*yr(?:ear)?)",
+    re.I)
+
+# "HOA fee is $330 per year" / "HOA dues of just $150 per year" /
+# "association dues: $50/mo" — a *dollar* amount bound to HOA/dues/fee.
+# The ``$`` is deliberate: without it "HOA fees but if divided into 3" and
+# "less than 10 minutes to the lake" matched bare integers (live 2026-11-07).
+_HOA_FEE_RE = re.compile(
+    r"\b(?:hoa|home\s*owners?\s+association|property\s+owners?\s+association|"
+    r"poa)\b[^.\n]{0,60}?"
+    r"\b(?:fee|fees|dues|assessment|assessments)\b[^.$]{0,30}?"
+    r"\$\s*([\d,]+(?:\.\d{1,2})?)"
+    r"\s*(?:/\s*mo(?:nth)?|per\s+month|monthly|a\s+month|"
+    r"per\s+year|per\s+annum|annually|annual|yearly|a\s+year|"
+    r"/\s*yr(?:ear)?)?",
+    re.I)
+# "$330 per year HOA" / "$50/month association dues"
+_HOA_PRICE_FIRST_RE = re.compile(
+    r"\$\s*([\d,]+(?:\.\d{1,2})?)\s*(?:/\s*mo(?:nth)?|per\s+month|monthly|"
+    r"a\s+month|per\s+year|per\s+annum|annually|annual|yearly|a\s+year|"
+    r"/\s*yr(?:ear)?)?[^.\n]{0,40}?"
+    r"\b(?:hoa|home\s*owners?\s+association|association\s+dues)\b",
+    re.I)
+# "no HOA", "without HOA fees", "HOA: none"
+_HOA_NONE_RE = re.compile(
+    r"\b(?:no|without|none|zero|free\s+of)\b[^.\n]{0,20}?"
+    r"\b(?:hoa|home\s*owners?\s+association|association\s+(?:fee|dues))\b",
+    re.I)
+
+# A description that states a figure but no period ("HOA dues are $425") is
+# almost always annual for mountain land (live: 35/mo in the payload); a
+# small figure is monthly. The payload fields win whenever they exist, so
+# this only shapes the evidence string and description-only verdicts.
+_HOA_UNSTATED_ANNUAL_THRESHOLD = 100.0
+
+
+def _hoa_period_monthly_divisor(text: str) -> float:
+    """12 for an annual figure, 1 for a monthly one, threshold if unstated."""
+    match = _HOA_PERIOD_RE.search(text or "")
+    if not match:
+        return 0.0
+    token = match.group(1).lower()
+    if "mo" == token.replace("/", "").strip() or "month" in token:
+        return 1.0
+    return 12.0
+
+
+def parse_hoa_total(value, default_period: str = "monthly"
+                    ) -> Optional[tuple[float, float, str]]:
+    """``"$250 annually"``/``21`` -> ``(monthly, amount, period)`` or None.
+
+    ``amount`` is the figure as published (per ``period``), ``monthly`` is
+    the normalised USD/month used to decide "does this property charge an
+    HOA fee". Zero/absent/garbage returns None so a ``$0`` card detail never
+    counts as a fee.
+
+    ``default_period`` is what an unqualified figure means: ``"monthly"`` for
+    the payload's ``monthlyHoaFee``, ``"auto"`` for prose (where an unstated
+    figure >= $100 is read as annual — "HOA dues are $425" on mountain land
+    is $35/mo, and the payload confirms that shape).
+    """
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    match = _HOA_AMOUNT_RE.search(text)
+    if not match:
+        return None
+    try:
+        amount = float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    if amount <= 0:
+        return None
+    divisor = _hoa_period_monthly_divisor(text)
+    if divisor == 0.0:
+        if default_period == "auto":
+            divisor = (12.0 if amount >= _HOA_UNSTATED_ANNUAL_THRESHOLD
+                       else 1.0)
+        else:
+            divisor = 12.0 if default_period.startswith("annual") else 1.0
+    period = "annually" if divisor == 12.0 else "monthly"
+    return amount / divisor, amount, period
+
+
+def hoa_from_description(text: Optional[str]) -> Optional[float]:
+    """Monthly HOA fee explicitly stated in a listing description, if any.
+
+    This is the fallback for feeds that describe the fee in prose while
+    leaving ``monthlyHoaFee``/``hoaFeeTotal`` empty (live example: 4647
+    Highway 52 #46, Chatsworth GA — "HOA Fee is $330 per year", both payload
+    fields None). "No HOA dues" is vetoed; a bare mention of "low HOA fees"
+    with no number is not a fee.
+    """
+    if not text:
+        return None
+    for pattern in (_HOA_FEE_RE, _HOA_PRICE_FIRST_RE):
+        for match in pattern.finditer(text):
+            start, end = match.span()
+            window = text[max(0, start - 40):min(len(text), end + 20)]
+            if _HOA_NONE_RE.search(window):
+                continue
+            # Parse from the captured figure onward, not the whole match:
+            # a long "HOA fees ... 3 ... HOA fee would be $2100" span would
+            # otherwise read the "3" as the amount.
+            tail = match.group(0)[match.start(1) - match.start(0):]
+            amount, _, _ = (parse_hoa_total(tail, default_period="auto")
+                            or (None, None, None))
+            if amount:
+                return amount
+    return None
+
+
+def extract_hoa(html: str) -> Optional[dict]:
+    """Read the HOA fee from a homedetails SSR payload.
+
+    Returns None when the page carries no ``gdpClientCache`` property (bot
+    wall or a removed listing), else::
+
+        {"monthly": 21.0, "amount": 250.0, "period": "annually",
+         "source": "hoaFeeTotal", "has_fee": True, "description_fee": None}
+
+    ``has_fee`` is True when *any* signal — payload field or description —
+    shows a positive fee. ``source`` names the winning signal.
+    """
+    match = _NEXT_DATA_RE.search(html or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1).strip())
+        cache_str = (data.get("props", {}).get("pageProps", {})
+                     .get("componentProps", {}).get("gdpClientCache", ""))
+        if not cache_str:
+            return None
+        cache = json.loads(cache_str)
+    except (KeyError, json.JSONDecodeError, TypeError, AttributeError):
+        return None
+    for value in cache.values():
+        if not (isinstance(value, dict) and isinstance(value.get("property"), dict)):
+            continue
+        prop = value["property"]
+        description = prop.get("description")
+        if isinstance(description, dict):
+            description = description.get("description")
+        description = description if isinstance(description, str) else None
+
+        result = {"monthly": None, "amount": None, "period": None,
+                  "source": None, "has_fee": False,
+                  "fee_total_raw": None, "description_fee": None}
+        fee_total = (prop.get("resoFacts") or {}).get("hoaFeeTotal")
+        if isinstance(fee_total, str) and fee_total.strip():
+            result["fee_total_raw"] = fee_total.strip()
+        for source, raw in (("monthlyHoaFee", prop.get("monthlyHoaFee")),
+                            ("hoaFeeTotal", fee_total)):
+            parsed = parse_hoa_total(raw)
+            if parsed:
+                result.update(monthly=parsed[0], amount=parsed[1],
+                              period=parsed[2], source=source, has_fee=True)
+                break
+        desc_fee = hoa_from_description(description)
+        if desc_fee:
+            result["description_fee"] = desc_fee
+            if not result["has_fee"]:
+                result.update(monthly=desc_fee, amount=desc_fee,
+                              period="monthly", source="description",
+                              has_fee=True)
+        return result
+    return None
+
+
 class ZillowScraper(BaseScraper):
     """Zillow land/property listings — county-by-county via Camoufox."""
 

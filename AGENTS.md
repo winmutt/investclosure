@@ -76,6 +76,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
 | `scraper/server.py` | Flask dashboard (branded **Mountains**) — port 5001, HTTP Basic Auth, Admin page, mountains|beach verticals |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
+| `scraper/zillow_hoa_sweep.py` | One-off Zillow detail-page HOA sweep for pre-filter rows — resumable JSONL checkpoint, then `--archive` replays the verdicts |
 | `scraper/geo_lookup.py` + `town_county.json` | town/ZIP→county cross-reference (4,917 ZIPs / 3,625 USPS towns, 6 states, from Census ZIP→county) — resolves town-only listings |
 | `nc_county_summary.md` | Per-county NC property/tax/GIS lookup systems + verified portal URLs |
 | `ga_county_summary.md` | Per-county GA qPublic (Schneider Corp) app IDs, pages, KeyValue spacing |
@@ -386,11 +387,33 @@ All paths configurable via env vars — **no hardcoded paths**:
     (24 qualifying, 6 pages, no bot page); Buncombe goes 552 → 303. Sample
     qualifying detail pages carry no HOA fee. `hoa_fee()` also skips a row
     if the search payload ever starts carrying a positive fee.
-  - **Existing DB rows are untouched**: only detail pages expose a fee, so a
-    backfill would need a per-row detail sweep; the filter applies to new
-    sweeps (and `enforce_thresholds()` still reaps price/acreage violators).
+  - **Existing DB rows are untouched by the filter itself**: only detail pages
+    expose a fee, so the pre-filter inventory is handled by
+    `scraper/zillow_hoa_sweep.py` (see below).
   - 33 tests in `tests/test_zillow.py` (URL state shape, pagination state,
     `hoa_fee` parsing, payload-level skip); full suite 708 pass, 8 skipped.
+  - **Backfill sweep** (`scraper/zillow_hoa_sweep.py`): opens all 3,230 active
+    Zillow detail pages once (~6 s each, ~5-6 h; the sweep pauses while a cron
+    zillow run holds a `scrape_runs` row open) and reads the fee from three
+    signals — `property.monthlyHoaFee` (USD/month), `resoFacts.hoaFeeTotal`
+    (`"$250 annually"`, `"$450 monthly"`), else an explicit fee sentence in
+    the description (`HOA Fee is $330 per year`). The rendered fact card is
+    **not** usable: its "HOA fees" accordion prints `$0` on every listing.
+    Verdicts checkpoint to `scraper/tmp/zillow_hoa_sweep.jsonl`; `--archive`
+    replays them through `db.archive_property()` (`archived_by='system'`,
+    `archive_reason='hoa_fee: $37.5/yr ($450 annually) …'`) so the sweep and
+    the data change can be reviewed separately. Calibration on 13 known rows
+    (9 with a fee, 4 clean) was 13/13.
+  - **Description parsing gotchas** (live, 2026-11-07): a bare integer is not
+    a fee — "HOA fees but if divided into 3" and "less than 10 minutes to the
+    lake" matched before the amount was required to carry a `$`; the amount
+    must also be read from the captured figure onward, not the whole match
+    span. `/year`, `/yr`, `a year`, `annual` count as annual periods, and an
+    unstated figure ≥ $100 in prose is read as annual ("HOA dues are $425" =
+    $35/mo, matching the payload). `monthlyHoaFee` is never re-interpreted.
+  - 17 tests in `tests/test_zillow_hoa.py` (`parse_hoa_total` units/zeros,
+    description forms and vetoes, payload precedence); full suite 725 pass,
+    8 skipped.
 
 
 - **2026-11-07 (NC building-detection pass)**: Answered "which NULL-bed/bath
