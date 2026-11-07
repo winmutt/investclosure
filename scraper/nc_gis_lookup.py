@@ -162,8 +162,8 @@ def _clean_features(feats: list[dict]) -> Optional[dict]:
     site = a.get("siteadd")
     result["site_address"] = str(site).strip() or None
 
-    lu_code = a.get("parusecd2")
-    lu_desc = a.get("parusedsc2")
+    lu_code = a.get("parusecd2") or a.get("parusecode")
+    lu_desc = a.get("parusedsc2") or a.get("parusedesc")
     if lu_code and lu_desc:
         result["land_use"] = f"{lu_code} — {lu_desc}"
     elif lu_code:
@@ -215,7 +215,7 @@ class NC1MapService:
                 nparno = f"37{fips}_{clean}"
                 feats = _nc1map_query({
                     "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
-                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                     "returnGeometry": "false",
                     "f": "json",
                     "resultRecordCount": "1",
@@ -230,7 +230,7 @@ class NC1MapService:
             if fips:
                 feats = _nc1map_query({
                     "where": f"cntyfips='{fips}' AND altparno='{clean}'",
-                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                     "returnGeometry": "false",
                     "f": "json",
                     "resultRecordCount": "1",
@@ -245,7 +245,7 @@ class NC1MapService:
             if fips:
                 feats = _nc1map_query({
                     "where": f"cntyfips='{fips}' AND parno='{clean}'",
-                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                    "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                     "returnGeometry": "false",
                     "f": "json",
                     "resultRecordCount": "1",
@@ -262,7 +262,7 @@ class NC1MapService:
             # Strategy 4: Query by parcel alone (no county filter)
             feats = _nc1map_query({
                 "where": f"parno='{clean}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -279,7 +279,7 @@ class NC1MapService:
             # Strategy 5: Query by altparno alone (no county filter)
             feats = _nc1map_query({
                 "where": f"altparno='{clean}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -409,7 +409,7 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
             nparno = f"37{fips}_{variant}"
             feats = _nc1map_query({
                 "where": f"cntyfips='{fips}' AND nparno='{nparno}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -423,7 +423,7 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
         if fips:
             feats = _nc1map_query({
                 "where": f"cntyfips='{fips}' AND altparno='{variant}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -437,7 +437,7 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
         if fips:
             feats = _nc1map_query({
                 "where": f"cntyfips='{fips}' AND parno='{variant}'",
-                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+                "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "1",
@@ -451,7 +451,7 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
         # otherwise a bare token can match an unrelated parcel in another county).
         feats = _nc1map_query({
             "where": f"parno='{variant}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
             "returnGeometry": "false",
             "f": "json",
             "resultRecordCount": "1",
@@ -464,7 +464,7 @@ def _lookup_parcel(parcel: str, county: Optional[str]) -> Optional[dict]:
         # Strategy 5: Query by altparno alone (require county match, same reason).
         feats = _nc1map_query({
             "where": f"altparno='{variant}'",
-            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname",
+            "outFields": "parno,altparno,nparno,cntyfips,cntyname,gisacres,recareano,siteadd,ownname,parusecd2,parusedsc2",
             "returnGeometry": "false",
             "f": "json",
             "resultRecordCount": "1",
