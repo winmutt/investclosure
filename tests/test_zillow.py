@@ -1,5 +1,6 @@
 """Tests for the ported Zillow scraper (pure parsing — no browser)."""
 import json
+from urllib.parse import parse_qs, urlparse
 
 from scraper.zillow import (
     build_county_url, county_slug, county_display, lot_acres,
@@ -173,18 +174,51 @@ def test_parse_applies_max_acres():
 
 def test_build_paged_county_url():
     from scraper.zillow import build_paged_county_url
-    root = "https://www.zillow.com/homes/for_sale/"
-    # page 1 has no _p/ segment; the -county- slug is preserved
-    assert build_paged_county_url("macon", "NC") == \
-        root + "macon-county-nc/"
-    assert build_paged_county_url("van_buren", "TN", page=3) == \
-        root + "van-buren-county-tn/3_p/"
-    # price cap becomes the legacy inline filter (the only form that works)
-    assert build_paged_county_url("macon", "NC", page=12, max_price=250000) == \
-        root + "macon-county-nc/0-250000_price/12_p/"
-    # no cap -> no price segment (0 means "no cap", never "0-0")
-    assert build_paged_county_url("ashe", "NC", max_price=0) == \
-        root + "ashe-county-nc/"
+
+    def state_of(url):
+        return json.loads(parse_qs(urlparse(url).query)["searchQueryState"][0])
+
+    # Modern county page: filters live in searchQueryState, which this page
+    # honours (the legacy /homes/for_sale/ path cannot express HOA).
+    url = build_paged_county_url("macon", "NC")
+    parsed = urlparse(url)
+    assert parsed.path == "/macon-county-nc/"
+    state = state_of(url)
+    assert state["pagination"]["currentPage"] == 1
+    assert "price" not in state["filterState"]          # 0 means no cap
+    assert state["filterState"]["hoa"] == {"min": 0, "max": 0}
+    assert state["filterState"]["includeHomesWithNoHoaData"] == {"value": True}
+
+    # -county- slug, page segment and price cap all survive.
+    url = build_paged_county_url("van_buren", "TN", page=3, max_price=250000)
+    assert urlparse(url).path == "/van-buren-county-tn/3_p/"
+    state = state_of(url)
+    assert state["pagination"]["currentPage"] == 3
+    assert state["filterState"]["price"] == {"min": 0, "max": 250000}
+
+    # HOA filtering can be turned off (diagnostics / if Zillow changes it).
+    url = build_paged_county_url("ashe", "NC", exclude_hoa=False)
+    assert "hoa" not in state_of(url)["filterState"]
+    assert "includeHomesWithNoHoaData" not in state_of(url)["filterState"]
+
+
+def test_hoa_fee_reads_a_declared_monthly_fee():
+    from scraper.zillow import hoa_fee
+    assert hoa_fee({"monthlyHoaFee": 301}) == 301
+    assert hoa_fee({"hoaFee": "125"}) == 125
+    assert hoa_fee({"monthlyHoaFee": 0}) is None
+    assert hoa_fee({"monthlyHoaFee": None}) is None
+    assert hoa_fee({"monthlyHoaFee": True}) is None   # bool is not a fee
+    assert hoa_fee({}) is None
+
+
+def test_listings_with_a_declared_hoa_fee_are_dropped():
+    """The URL filter is primary; a fee in the payload still never passes."""
+    with_fee = _listing(2, 100000, lot=10, home_type="SINGLE_FAMILY")
+    with_fee["hdpData"]["homeInfo"]["monthlyHoaFee"] = 275
+    items = [_listing(1, 100000, lot=10), with_fee]
+    props = parse_county_page(_page(items), "macon", "NC", min_acres=5.0)
+    assert [p["source_listing_id"] for p in props] == ["1"]
 
 
 def test_extract_list_results_distinguishes_wall_from_empty():
@@ -227,8 +261,12 @@ def test_county_walk_paginates_until_short_page(monkeypatch):
     }
 
     def fake_fetch(url, county, state, page_no, attempts=1):
-        assert "0-250000_price" in url, url
-        assert (f"/{page_no}_p/" in url) == (page_no > 1), url
+        parsed = urlparse(url)
+        state_json = json.loads(
+            parse_qs(parsed.query)["searchQueryState"][0])
+        assert state_json["filterState"]["price"] == {"min": 0, "max": 250000}
+        assert state_json["filterState"]["hoa"] == {"min": 0, "max": 0}
+        assert (f"/{page_no}_p/" in parsed.path) == (page_no > 1), url
         return _page(pages[page_no]) if page_no in pages else None
 
     scraper = _scraper(monkeypatch, fake_fetch)

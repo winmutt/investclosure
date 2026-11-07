@@ -98,7 +98,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `bellcarrington` | bellcarrington.com (Google Sheet CSV) | GA/NC/SC/AL/TN mountain | None | state map links |
 | `logs_nc` | logs.com NC report (PowerBI table visual) | 20 NC mountain | None | NC OneMap links |
 | `auction_com` | auction.com county pages + details | NC/GA/TN/SC/AL mountain | None | state map links |
-| `zillow` | zillow.com county search pages (legacy `/homes/for_sale/…/<n>_p/`, `__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile per page) | centroid guard + post-insert enrichers |
+| `zillow` | zillow.com county pages (modern `/<county>-county-<state>/` + `?searchQueryState=`, `N_p/` pages, `__NEXT_DATA__`) | 6 states (88 counties) | PerimeterX (fresh profile per page) | centroid guard + post-insert enrichers |
 
 The five trustee-sale scrapers (`rlselaw`, `brockandscott`,
 `foreclosuretennessee`, `bellcarrington`, `logs_nc`) share
@@ -360,6 +360,39 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-11-07 (zillow: ignore HOA properties)**: Zillow's **county search
+  page does not publish HOA data** (verified: zero HOA keys across 205
+  listings in 5 counties), so an HOA filter has to be applied by Zillow
+  itself or by fetching every detail page (where the fee *does* exist as
+  `monthlyHoaFee` / `$301/mo HOA` — ~30 s per row, unworkable for the whole
+  inventory).
+  - `build_paged_county_url()` now uses the **modern county page** —
+    `/<county>-county-<state>/[N_p/]?searchQueryState=…` — with
+    `"hoa": {"min": 0, "max": 0}` and
+    `"includeHomesWithNoHoaData": {"value": true}`. That drops listings that
+    *declare* a fee while keeping the many mountain parcels whose HOA data
+    is simply unknown.
+  - **Do not use the friendly `/no-hoa-fees/` path**: it sets
+    `includeHomesWithNoHoaData: false`, which discards unknown-HOA listings
+    too (Buncombe ≤$250k: 91 rows vs 303 with them kept). Inserting
+    `no-hoa-fees` into the legacy `/homes/for_sale/…` path is worse — Zillow
+    reads the segment as a location (live: `buncombe-county-nc/no-hoa-fees`
+    served **Marietta, GA**).
+  - The modern page **does** honour `?searchQueryState=` and `N_p/`
+    pagination (contrary to the 2026-11-03 note, which was measured on the
+    `/homes/…` form): price + HOA filters and pages return disjoint results.
+    `exclude_hoa=False` builds the old unfiltered URL for diagnostics.
+  - Live: Macon NC ≤$250k returns **211** raw listings instead of 485
+    (24 qualifying, 6 pages, no bot page); Buncombe goes 552 → 303. Sample
+    qualifying detail pages carry no HOA fee. `hoa_fee()` also skips a row
+    if the search payload ever starts carrying a positive fee.
+  - **Existing DB rows are untouched**: only detail pages expose a fee, so a
+    backfill would need a per-row detail sweep; the filter applies to new
+    sweeps (and `enforce_thresholds()` still reaps price/acreage violators).
+  - 33 tests in `tests/test_zillow.py` (URL state shape, pagination state,
+    `hoa_fee` parsing, payload-level skip); full suite 708 pass, 8 skipped.
+
+
 - **2026-11-07 (NC building-detection pass)**: Answered "which NULL-bed/bath
   NC Zillow rows actually have a house" (898 of 903 active NC rows harvested;
   per-property tiers + evidence live in `reports/nc_building_review.md`,
@@ -579,7 +612,10 @@ All paths configurable via env vars — **no hardcoded paths**:
   harvested. Fixes:
   - **Legacy `for_sale` URL form is the only one that filters *and*
     paginates**: `/homes/for_sale/<county>-county-<state>/0-<maxprice>_price/<n>_p/`
-    (`build_paged_county_url()`). Verified by probe: the modern
+    (`build_paged_county_url()`). **Superseded 2026-11-07** — the modern
+    `/<county>-county-<state>/` page does honour `?searchQueryState=`
+    (price + HOA + `N_p/` pages); the legacy form cannot express an HOA
+    filter. Verified by probe: the modern
     `/homes/<county>-county-<state>/` page always renders 41 listings with
     `filterState: null` and honours neither `?searchQueryState=` nor the
     price path segments; the legacy form applies the price cap server-side

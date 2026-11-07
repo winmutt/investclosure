@@ -9,9 +9,11 @@ same server-rendered ``__NEXT_DATA__`` JSON payload.
 Strategy: loops the qualifying county sets (config.QUALIFYING_COUNTIES),
 walks every page of each county's search (see
 :func:`build_paged_county_url`), extracts listings from the embedded Next.js
-searchResults JSON, applies the price / acreage filters, and rejects
+searchResults JSON, applies the price / acreage filters, rejects
 Zillow's cross-state name collisions (e.g. "Perry, KS" served for a Perry
-County, KY search).
+County, KY search), and — as of 2026-11-07 — asks Zillow itself to exclude
+listings that declare an HOA fee (``hoa`` max 0 on the modern county page,
+keeping listings whose HOA data is simply unknown).
 
 Detail-page enrichment (the listing description) is opt-in via
 ``fetch_details``. Zillow blocks framing its site (``X-Frame-Options: DENY``),
@@ -38,6 +40,7 @@ import re
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from .base import BaseScraper, PropertyData, camoufox_context
 from .config import config, QUALIFYING_COUNTIES
@@ -93,32 +96,83 @@ def build_county_url(county: str, state: str) -> str:
             f"{county_slug(county)}-county-{state.lower()}/")
 
 
-_FOR_SALE_ROOT = "https://www.zillow.com/homes/for_sale/"
+_COUNTY_ROOT = "https://www.zillow.com/"
+
+
+def build_county_search_state(page: int = 1, max_price: int = 0,
+                              exclude_hoa: bool = True) -> dict:
+    """The modern county page's ``searchQueryState``.
+
+    This is the filter the old legacy path could not express: ``hoa`` max 0
+    removes listings that *declare* an HOA fee, while
+    ``includeHomesWithNoHoaData`` keeps the majority of mountain land that
+    publishes no HOA figure at all (the friendly ``/no-hoa-fees/`` path sets
+    that flag to false and would discard them — Buncombe ≤$250k: 303 rows
+    with unknown kept vs 91 with it dropped).
+    """
+    filter_state: dict = {"sortSelection": {"value": "globalrelevanceex"}}
+    if max_price:
+        filter_state["price"] = {"min": 0, "max": int(max_price)}
+    if exclude_hoa:
+        filter_state["hoa"] = {"min": 0, "max": 0}
+        filter_state["includeHomesWithNoHoaData"] = {"value": True}
+    return {
+        "pagination": {"currentPage": page},
+        "isMapVisible": True,
+        "isListVisible": True,
+        "mapZoom": 11,
+        "filterState": filter_state,
+    }
 
 
 def build_paged_county_url(county: str, state: str, page: int = 1,
-                           max_price: int = 0) -> str:
-    """Build a *paged* county search URL (legacy ``/homes/for_sale/`` form).
+                           max_price: int = 0,
+                           exclude_hoa: bool = True) -> str:
+    """Build a paged county search URL on the modern county page.
 
-    Only this legacy form accepts an inline filter AND pagination. The modern
-    ``/homes/<county>-county-<state>/`` page always renders 41 listings with
-    ``filterState: null`` and honours neither ``?searchQueryState=`` nor
-    ``filterState``, while
+    The legacy ``/homes/for_sale/<county>/0-<price>_price/<n>_p/`` form was
+    the only working filter+pager until 2026-11-07, but it cannot express an
+    HOA filter: inserting ``no-hoa-fees`` into that path makes Zillow resolve
+    the *next* segment as a location (live: ``buncombe-county-nc/no-hoa-fees``
+    served Marietta, GA). The modern ``/<county>-county-<state>/`` page does
+    honour ``?searchQueryState=`` — price, HOA and pagination — verified live
+    on NC and TN counties (Buncombe ≤$250k: 552 rows, 303 with HOA=0 and
+    unknown-HOA kept; Macon: 485 → 211; pages ``2_p/``…``3_p/`` returned
+    disjoint listings).
 
-        /homes/for_sale/macon-county-nc/0-250000_price/3_p/
-
-    applies the price cap server-side and returns page 3 *of that filtered
-    set* (verified live 2026-11-02: unfiltered page 1 lacks 491 Otter
-    Mountain Rd; the price-filtered page 3 has it). Zillow accepts no working
-    acreage token on this path, so acreage bounds stay local to
+    Zillow has no working acreage token, so acreage bounds stay local to
     :func:`parse_county_page`.
     """
     parts = [f"{county_slug(county)}-county-{state.lower()}/"]
-    if max_price:
-        parts.append(f"0-{int(max_price)}_price/")
     if page > 1:
         parts.append(f"{page}_p/")
-    return _FOR_SALE_ROOT + "".join(parts)
+    state_json = json.dumps(
+        build_county_search_state(page, max_price, exclude_hoa),
+        separators=(",", ":"))
+    return f"{_COUNTY_ROOT}{''.join(parts)}?searchQueryState={quote(state_json)}"
+
+
+def hoa_fee(home_info: dict) -> Optional[float]:
+    """Monthly HOA fee declared on a search result, if any.
+
+    Zillow's county search publishes no HOA data today (2026-11-07: zero HOA
+    keys across 205 listings; the fee exists only on detail pages as
+    ``monthlyHoaFee``), so the URL filter above is what actually excludes
+    HOA properties. This guard skips a row the moment the search payload
+    starts carrying a positive fee, or if the server-side filter is ever
+    dropped.
+    """
+    for key in ("monthlyHoaFee", "hoaFee", "hoaFees", "hoaFeeMonthly"):
+        value = home_info.get(key)
+        if value is None or value == "" or isinstance(value, bool):
+            continue
+        try:
+            fee = float(value)
+        except (TypeError, ValueError):
+            continue
+        if fee > 0:
+            return fee
+    return None
 
 
 
@@ -223,6 +277,13 @@ def parse_listings(list_results: list, county: str, state: str,
         if not isinstance(price, (int, float)) or price <= 0:
             continue
         if max_price and price > max_price:
+            continue
+
+        # Belt-and-braces: the county URL asks Zillow for HOA=0 (unknown data
+        # kept), but skip immediately if a fee ever reaches the search payload.
+        if hoa_fee(home_info):
+            logger.debug("Skipping HOA property %s (%s, %s)",
+                         zpid, item.get("address", "?"), county)
             continue
 
         acres = lot_acres(home_info)
