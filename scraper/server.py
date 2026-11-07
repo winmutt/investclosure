@@ -21,7 +21,8 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                     jsonify, send_file, flash, abort, Response, g)
+                     jsonify, send_file, send_from_directory, flash, abort,
+                     Response, g)
 
 from scraper import db as scraper_db
 from scraper.config import config, VERTICALS, DEFAULT_VERTICAL
@@ -35,7 +36,11 @@ from scraper.gis_urls import (HOSTED_VIEWER_PATH, get_hosted_viewer_url,
                               get_nconemap_viewer_url)
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', str(config.data_dir)))
-REPORTS_DIR = Path(os.environ.get('REPORTS_DIR', str(config.data_dir / "reports")))
+# The repo-root reports/ dir (volume-mounted at /app/reports) — browsable at
+# /reports on the dashboard, and where the Export JSON route writes.
+REPORTS_DIR = Path(os.environ.get('REPORTS_DIR',
+                                  str(Path(__file__).resolve().parent.parent
+                                      / "reports")))
 
 _TEMPLATE_DIR = str(Path(__file__).resolve().parent.parent / "templates" / "investclosure")
 _STATIC_DIR = str(Path(__file__).resolve().parent.parent / "static")
@@ -999,6 +1004,47 @@ def export():
 
     flash(f'Exported {len(export_data)} properties to {filename}')
     return redirect(url_for('landing'))
+
+
+# Inline-renderable report formats: browsers download text/markdown by
+# default, so the file route forces text/plain for these.
+_REPORT_INLINE_EXTS = {".md", ".txt", ".csv", ".json", ".ics", ".html",
+                       ".htm", ".log"}
+
+
+@app.route('/reports')
+def reports():
+    """Directory listing of generated reports (auth-gated like all routes)."""
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    files = []
+    for p in sorted(REPORTS_DIR.iterdir(), key=lambda p: p.name.lower()):
+        if not p.is_file() or p.name.startswith('.'):
+            continue
+        st = p.stat()
+        files.append({
+            "name": p.name,
+            "size_kb": round(st.st_size / 1024, 1),
+            "modified": datetime.fromtimestamp(st.st_mtime).strftime(
+                "%Y-%m-%d %H:%M"),
+        })
+    return render_template('reports.html', files=files,
+                           reports_dir=str(REPORTS_DIR))
+
+
+@app.route('/reports/<path:filename>')
+def report_file(filename):
+    """Serve one report file from REPORTS_DIR (traversal-guarded)."""
+    if '/' in filename or '..' in filename:
+        abort(404)
+    target = REPORTS_DIR / filename
+    if not target.is_file():
+        abort(404)
+    resp = send_from_directory(REPORTS_DIR, target.name)
+    if target.suffix.lower() in _REPORT_INLINE_EXTS:
+        # Let Flask append the charset — a pre-baked one doubles up.
+        resp.mimetype = "text/plain"
+        resp.headers["Content-Disposition"] = "inline"
+    return resp
 
 
 class _ProxyImageCache:

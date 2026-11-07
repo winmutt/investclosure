@@ -2106,6 +2106,63 @@ class TestServerFlask:
         assert "page=2" in html
 
 
+class TestReports:
+    """The generated reports/ dir is browsable (auth-gated) at /reports."""
+
+    @pytest.fixture()
+    def app(self, tmp_dir, monkeypatch):
+        import base64
+        from scraper.server import app
+        from scraper.config import config as cfg
+        cfg.db_path = tmp_dir / "test.db"
+        app.config["TESTING"] = True
+        app.config["SECRET_KEY"] = "test-secret"
+        reports = tmp_dir / "reports"
+        reports.mkdir()
+        (reports / "nc_building_review.md").write_text("# Has a building\n")
+        (reports / "export_2026-11-07.json").write_text("{}")
+        monkeypatch.setattr("scraper.server.REPORTS_DIR", reports)
+        token = base64.b64encode(b"winmutt:1234asdf").decode()
+        _orig = app.test_client
+
+        def _authed(*a, **k):
+            c = _orig(*a, **k)
+            c.environ_base["HTTP_AUTHORIZATION"] = f"Basic {token}"
+            return c
+
+        monkeypatch.setattr(app, "test_client", _authed)
+        return app
+
+    def test_reports_listing_shows_files(self, app):
+        with app.test_client() as client:
+            html = client.get("/reports").get_data(as_text=True)
+        assert "nc_building_review.md" in html
+        assert "export_2026-11-07.json" in html
+        assert "/reports/nc_building_review.md" in html
+
+    def test_report_file_serves_markdown_inline(self, app):
+        with app.test_client() as client:
+            resp = client.get("/reports/nc_building_review.md")
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/plain"
+        assert "Has a building" in resp.get_data(as_text=True)
+
+    def test_report_file_rejects_traversal(self, app):
+        with app.test_client() as client:
+            resp = client.get("/reports/..%2f..%2fetc%2fpasswd")
+        assert resp.status_code in (404, 400)
+
+    def test_report_file_missing_404(self, app):
+        with app.test_client() as client:
+            assert client.get("/reports/nope.md").status_code == 404
+
+    def test_reports_requires_auth(self, tmp_dir):
+        from scraper.server import app
+        app.config["TESTING"] = True
+        with app.test_client() as client:
+            assert client.get("/reports").status_code == 401
+
+
 class TestRowToDict:
     """Test _row_to_dict conversion helper."""
 

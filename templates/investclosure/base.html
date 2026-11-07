@@ -45,6 +45,9 @@
                 <a href="{{ url_for('export') }}">
                     <span class="nav-icon">📤</span> Export JSON
                 </a>
+                <a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">
+                    <span class="nav-icon">📄</span> Reports
+                </a>
             </nav>
 
             {% if global_stats %}
