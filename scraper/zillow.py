@@ -175,6 +175,21 @@ def hoa_fee(home_info: dict) -> Optional[float]:
     return None
 
 
+def hoa_declared(home_info: dict) -> bool:
+    """True when a search result declares an HOA *without* a figure.
+
+    The URL filter (hoa max 0) only removes listings with a positive fee;
+    a payload that ever ships ``hoaFee: "Yes"`` with no amount must be
+    skipped by the same rule (mirrors the detail-page "Has HOA: Yes" fact).
+    """
+    for key in ("hoaFee", "hoaFees", "monthlyHoaFee"):
+        value = home_info.get(key)
+        if isinstance(value, str) and value.strip().lower() in (
+                "yes", "y", "true"):
+            return True
+    return False
+
+
 
 
 
@@ -280,8 +295,9 @@ def parse_listings(list_results: list, county: str, state: str,
             continue
 
         # Belt-and-braces: the county URL asks Zillow for HOA=0 (unknown data
-        # kept), but skip immediately if a fee ever reaches the search payload.
-        if hoa_fee(home_info):
+        # kept), but skip immediately if a fee — or a fee-less HOA flag ever —
+        # reaches the search payload.
+        if hoa_fee(home_info) or hoa_declared(home_info):
             logger.debug("Skipping HOA property %s (%s, %s)",
                          zpid, item.get("address", "?"), county)
             continue
@@ -571,7 +587,79 @@ def hoa_from_description(text: Optional[str]) -> Optional[float]:
     return None
 
 
-def extract_hoa(html: str) -> Optional[dict]:
+# ---------------------------------------------------------------------------
+# HOA *existence* without an amount
+#
+# Zillow's details card ("Community & HOA: Has HOA: Yes / HOA fee: $500
+# annually") is what a browser shows when the feed flags an HOA but no fee
+# figure exists. The card is fed by GraphQL POSTs that answer 403 to every
+# automated call (measured 2026-11-08, same wall as parcel Tax IDs), so the
+# scraper cannot read it — but the agent's description rides the SSR payload,
+# and the same HOA facts almost always appear there. These patterns turn a
+# plain assertion ("active HOA", "HOA Website", "HOA & ARC Approved") into a
+# verdict; denials, dissolutions and "buyer to verify" hedges never match.
+
+# The rendered card lines, from the v6 live capture (2026-11-08):
+#   "HOA Has HOA: Yes Amenities included: Gated, Park, Trail(s)
+#    HOA fee: $500 annually"
+_HOA_CARD_YES_RE = re.compile(r"\bHas HOA:\s*Yes\b", re.I)
+_HOA_CARD_NO_RE = re.compile(r"\bHas HOA:\s*No\b", re.I)
+_HOA_CARD_FEE_RE = re.compile(r"\bHOA fee:\s*([^\n]{1,60})", re.I)
+
+_HOA_ENTITY = (r"(?:hoa|poa|home\s*owners?\s+association|"
+               r"property\s*owners?\s+association)")
+
+_HOA_AFFIRM_RES = [
+    # "an active HOA ensuring the neighborhood stays pristine"
+    re.compile(rf"\bactive\s+{_HOA_ENTITY}\b", re.I),
+    # "HOA Website - https://www.brushcreekhoa.com/..."
+    re.compile(rf"\b{_HOA_ENTITY}\s*(?:website|site)\b", re.I),
+    # "There is a HOA with C & R..." / "part of an HOA" / "within the POA"
+    re.compile(rf"\b(?:there\s+(?:is|are)|there's|has|with|within|part\s+of|"
+               r"located\s+(?:in|within)|belongs?\s+to)\s+(?:an?|the)?\s*"
+               rf"{_HOA_ENTITY}\b", re.I),
+    # "river access through the community POA"
+    re.compile(rf"\b(?:community|subdivision)\s+{_HOA_ENTITY}\b", re.I),
+    # "HOA covenants allow..." / "HOA & ARC Approved" / "HOA dues support"
+    re.compile(rf"\b{_HOA_ENTITY}\s+(?:covenants|rules|regulations|dues|fees?|"
+               r"and\s+c&r|&\s*c&r|approval|approved|requirements?)\b", re.I),
+    # "benefiting from an extremely low HOA" — an HOA that simply costs little
+    re.compile(rf"\b(?:low|minimal|modest|small)\s+{_HOA_ENTITY}\b", re.I),
+]
+
+# Any of these in the sentence vetoes an affirmation: denials (incl. the
+# "NOo HOA" typo), dissolved/waived HOAs, "ditch the HOA rules" marketing,
+# and "buyer to verify ... HOA" hedges — presence stays uncertain, which
+# keeps the row (agreed policy: only affirmative statements remove).
+_HOA_ABSENT_RE = re.compile(
+    rf"\b(?:no\w{{0,2}}|without|none|zero|free\s+from|ditch|dissolv\w*|"
+    rf"waiv\w*|disband\w*|terminat\w*|suspend\w*|verify|verif\w*|confirm|"
+    rf"inquir\w*|confirm\w*)\b[^.\n]{{0,40}}?{_HOA_ENTITY}\b"
+    rf"|{_HOA_ENTITY}\b[^.\n]{{0,40}}?\b(?:dissolv\w*|waiv\w*|disband\w*|"
+    rf"terminat\w*|suspend\w*|to\s+verify|verify)\b",
+    re.I)
+
+
+def hoa_affirmed_in_description(text: Optional[str]) -> Optional[str]:
+    """The clause asserting an HOA/POA EXISTS (no amount needed), else None.
+
+    \"No HOA\"-style denials within the window are vetoed, and this returns
+    None (not a removal signal) for mere mentions like \"low HOA fees\" with
+    no entity word or hedges like \"Buyer to verify … HOA\".
+    """
+    if not text:
+        return None
+    for pattern in _HOA_AFFIRM_RES:
+        for match in pattern.finditer(text):
+            start, end = match.span()
+            window = text[max(0, start - 90):min(len(text), end + 60)]
+            if _HOA_ABSENT_RE.search(window):
+                continue
+            return re.sub(r"\s+", " ", window).strip()
+    return None
+
+
+def extract_hoa(html: str, rendered: Optional[str] = None) -> Optional[dict]:
     """Read the HOA fee from a homedetails SSR payload.
 
     Returns None when the page carries no ``gdpClientCache`` property (bot
@@ -606,12 +694,21 @@ def extract_hoa(html: str) -> Optional[dict]:
 
         result = {"monthly": None, "amount": None, "period": None,
                   "source": None, "has_fee": False,
-                  "fee_total_raw": None, "description_fee": None}
+                  "fee_total_raw": None, "description_fee": None,
+                  "hoa_present": False, "hoa_present_source": None,
+                  "hoa_absent": False}
         fee_total = (prop.get("resoFacts") or {}).get("hoaFeeTotal")
         if isinstance(fee_total, str) and fee_total.strip():
             result["fee_total_raw"] = fee_total.strip()
+        # The lazily rendered details card ("HOA fee: $500 annually") is the
+        # most explicit publisher of the figure when it happens to load.
+        card_fee = None
+        card_m = _HOA_CARD_FEE_RE.search(rendered or "")
+        if card_m:
+            card_fee = card_m.group(1).strip()
         for source, raw in (("monthlyHoaFee", prop.get("monthlyHoaFee")),
-                            ("hoaFeeTotal", fee_total)):
+                            ("hoaFeeTotal", fee_total),
+                            ("details card", card_fee)):
             parsed = parse_hoa_total(raw)
             if parsed:
                 result.update(monthly=parsed[0], amount=parsed[1],
@@ -624,6 +721,19 @@ def extract_hoa(html: str) -> Optional[dict]:
                 result.update(monthly=desc_fee, amount=desc_fee,
                               period="monthly", source="description",
                               has_fee=True)
+        # HOA *exists* without any amount (the details-card "Has HOA: Yes"
+        # the user sees in a real browser — see _HOA_CARD_* notes above).
+        card = _HOA_CARD_YES_RE.search(rendered or "")
+        card_no = _HOA_CARD_NO_RE.search(rendered or "")
+        if card and not card_no:
+            result["hoa_present"] = True
+            result["hoa_present_source"] = "details card"
+        elif not card and card_no:
+            result["hoa_absent"] = True
+        elif (not result["has_fee"]
+              and hoa_affirmed_in_description(description)):
+            result["hoa_present"] = True
+            result["hoa_present_source"] = "description"
         return result
     return None
 

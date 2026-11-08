@@ -13,11 +13,21 @@ second same-origin navigation), so a full sweep of ~3.2k rows takes hours.
 While a scheduled zillow sweep holds a ``scrape_runs`` row open the pass
 PAUSES, so the two never hit Zillow concurrently from one IP.
 
-Archiving is a separate mode that replays the checkpoint, so the fee verdicts
+Fee-less "HOA yes": the details card ("Community & HOA — Has HOA: Yes" with
+no fee figure) is what users see in a browser, but it is fed by GraphQL POSTs
+that 403 automated sessions. The sweep therefore removes a listing when the
+agent's description AFFIRMS an HOA/POA exists ("active HOA", "HOA Website",
+"HOA & ARC Approved" …) with no amount, or when the card happens to render
+(``fetch_hoa`` scrolls for it). Denials, dissolved HOAs and "buyer to verify"
+hedges stay active — see ``scraper.zillow.hoa_affirmed_in_description``.
+
+Archiving is a separate mode that replays the checkpoint, so the verdicts
 can be reviewed before any production row changes:
 
     python3 -m scraper.zillow_hoa_sweep --limit 20     # smoke test
     python3 -m scraper.zillow_hoa_sweep                # full sweep (hours)
+    python3 -m scraper.zillow_hoa_sweep --rejudge      # redo pre-HOA-presence
+                                                       # verdicts only
     python3 -m scraper.zillow_hoa_sweep --archive      # apply the verdicts
 """
 from __future__ import annotations
@@ -72,7 +82,13 @@ def append_record(rec: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def fetch_hoa(url: str) -> Optional[dict]:
-    """One fresh-profile detail load -> :func:`extract_hoa` result or None."""
+    """One fresh-profile detail load -> :func:`extract_hoa` result or None.
+
+    After the SSR parse the page gets a short scroll: the "Community & HOA"
+    details card is lazy-rendered. Its GraphQL feed 403s for automated
+    sessions (measured 2026-11-08) so it almost never appears, but when it
+    does we capture "Has HOA: Yes" / "HOA fee: $X annually" directly.
+    """
     for attempt in (1, 2):
         try:
             with camoufox_context() as page:
@@ -90,6 +106,17 @@ def fetch_hoa(url: str) -> Optional[dict]:
                     logger.warning("no property payload for %s%s", url,
                                    " — retrying" if attempt == 1 else "")
                     continue
+                rendered = ""
+                try:
+                    for _ in range(3):
+                        page.mouse.wheel(0, 2200)
+                        time.sleep(0.4)
+                    rendered = (page.evaluate(
+                        "() => document.body.innerText") or "")
+                except Exception:
+                    pass
+                if "Has HOA" in rendered or "HOA fee:" in rendered:
+                    result = extract_hoa(html, rendered) or result
                 return result
         except Exception as exc:
             logger.warning("detail fetch failed for %s (attempt %d): %s",
@@ -115,21 +142,27 @@ def target_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 # Main sweep
 # ---------------------------------------------------------------------------
 
-def run_pass(limit: Optional[int] = None,
-             ids: Optional[set[int]] = None) -> dict:
+def run_pass(limit: Optional[int] = None, ids: Optional[set[int]] = None,
+             rejudge: bool = False) -> dict:
     conn = _ensure_db()
     # A failed fetch is retried on the next pass: only "ok" verdicts count as
     # done, otherwise a bot wall would permanently leave a row unjudged.
+    # --rejudge: pre-HOA-presence verdicts are stale — re-fetch every row
+    # whose record lacks the hoa_present field (fee rows count as done; they
+    # leave target_rows once archived).
     done = {row_id: rec for row_id, rec in load_done().items()
-            if rec.get("status") == "ok"}
+            if rec.get("status") == "ok"
+            and (not rejudge or rec.get("has_fee")
+                 or "hoa_present" in rec)}
     rows = [r for r in target_rows(conn) if r["id"] not in done]
     if ids:
         rows = [r for r in rows if r["id"] in ids]
     if limit:
         rows = rows[:limit]
-    stats = {"target": len(rows), "fetched": 0, "failed": 0, "fee": 0}
-    logger.info("HOA sweep: %d row(s) to fetch (%d already done)",
-                len(rows), len(done))
+    stats = {"target": len(rows), "fetched": 0, "failed": 0, "fee": 0,
+             "hoa": 0}
+    logger.info("HOA sweep: %d row(s) to fetch (%d already done)%s",
+                len(rows), len(done), " [rejudge]" if rejudge else "")
     for i, row in enumerate(rows, 1):
         wait_for_sweep(conn)
         result = fetch_hoa(row["url"])
@@ -149,9 +182,12 @@ def run_pass(limit: Optional[int] = None,
             stats["fetched"] += 1
             if result.get("has_fee"):
                 stats["fee"] += 1
+            elif result.get("hoa_present"):
+                stats["hoa"] += 1
         if i % 20 == 0 or i == len(rows):
-            logger.info("HOA sweep %d/%d — ok=%d fee=%d fail=%d", i, len(rows),
-                        stats["fetched"], stats["fee"], stats["failed"])
+            logger.info("HOA sweep %d/%d — ok=%d fee=%d hoa=%d fail=%d", i,
+                        len(rows), stats["fetched"], stats["fee"],
+                        stats["hoa"], stats["failed"])
         time.sleep(random.uniform(*DELAY_BETWEEN_DETAILS))
     logger.info("HOA sweep DONE: %s", stats)
     return stats
@@ -161,15 +197,38 @@ def run_pass(limit: Optional[int] = None,
 # Archive replay
 # ---------------------------------------------------------------------------
 
+def verdict_reason(rec: dict) -> Optional[str]:
+    """The archive reason a checkpointed verdict justifies, else None.
+
+    Covers both HOA removal rules: a published fee, and the details-card
+    \"Has HOA: Yes\" / description assertion with **no amount** — listings
+    Zillow shows as HOA communities while the fee figure is absent.
+    """
+    if rec.get("status") != "ok":
+        return None
+    if rec.get("has_fee"):
+        return (f"hoa_fee: {format_fee(rec)} "
+                f"(zillow detail, {rec.get('source') or 'unknown'})")
+    if rec.get("hoa_present"):
+        return ("hoa_fee: HOA yes — no fee amount listed "
+                f"(zillow detail, {rec.get('hoa_present_source') or 'card'})")
+    return None
+
+
 def archive_fee_rows(dry_run: bool = False) -> dict:
-    """Archive active rows whose checkpointed verdict carries a fee."""
+    """Archive active rows whose checkpointed verdict carries a fee.
+
+    Also removes HOA-yes-without-amount verdicts (see :func:`verdict_reason`);
+    ambiguous HOA mentions are never flagged, so nothing uncertain is
+    archived."""
     conn = _ensure_db()
     records = load_done()
     stats = {"checked": 0, "fee": 0, "archived": 0, "already": 0,
              "missing": 0, "dry_run": dry_run}
     conn.row_factory = sqlite3.Row
     for row_id, rec in sorted(records.items()):
-        if rec.get("status") != "ok" or not rec.get("has_fee"):
+        reason = verdict_reason(rec)
+        if reason is None:
             continue
         stats["checked"] += 1
         stats["fee"] += 1
@@ -181,8 +240,6 @@ def archive_fee_rows(dry_run: bool = False) -> dict:
         if row["status"] != "active":
             stats["already"] += 1
             continue
-        reason = (f"hoa_fee: {format_fee(rec)} "
-                  f"(zillow detail, {rec.get('source') or 'unknown'})")
         logger.info("%s%s %s (%s %s) — %s",
                     "[dry-run] " if dry_run else "", row_id,
                     row["address"], row["county"], row["state"], reason)
@@ -218,6 +275,9 @@ def main() -> None:
                         help="comma-separated row ids to sweep")
     parser.add_argument("--archive", action="store_true",
                         help="archive checkpointed fee rows instead of fetching")
+    parser.add_argument("--rejudge", action="store_true",
+                        help="re-fetch rows whose verdict predates the "
+                             "HOA-presence field (fee-less \"HOA yes\")")
     parser.add_argument("--dry-run", action="store_true",
                         help="with --archive: print verdicts, change nothing")
     args = parser.parse_args()
@@ -227,7 +287,7 @@ def main() -> None:
         archive_fee_rows(dry_run=args.dry_run)
         return
     ids = {int(x) for x in args.ids.split(",") if x.strip()}
-    run_pass(limit=args.limit, ids=ids or None)
+    run_pass(limit=args.limit, ids=ids or None, rejudge=args.rejudge)
 
 
 if __name__ == "__main__":

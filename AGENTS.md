@@ -76,7 +76,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
 | `scraper/server.py` | Flask dashboard (branded **Mountains**) — port 5001, HTTP Basic Auth, Admin page, mountains|beach verticals |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
-| `scraper/zillow_hoa_sweep.py` | One-off Zillow detail-page HOA sweep for pre-filter rows — resumable JSONL checkpoint, then `--archive` replays the verdicts |
+| `scraper/zillow_hoa_sweep.py` | One-off Zillow detail-page HOA sweep — resumable JSONL checkpoint; `--rejudge` re-runs pre-HOA-presence verdicts; `--archive` replays fee AND fee-less-"HOA-yes" verdicts |
 | `scraper/geo_lookup.py` + `town_county.json` | town/ZIP→county cross-reference (4,917 ZIPs / 3,625 USPS towns, 6 states, from Census ZIP→county) — resolves town-only listings |
 | `nc_county_summary.md` | Per-county NC property/tax/GIS lookup systems + verified portal URLs |
 | `ga_county_summary.md` | Per-county GA qPublic (Schneider Corp) app IDs, pages, KeyValue spacing |
@@ -361,6 +361,38 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-11-08 (HOA yes, no fee listed)**: the detail page's **"Community &
+  HOA" card** prints `Has HOA: Yes` even when no fee figure exists — what a
+  browser user sees as "HOA yes". It is fed by GraphQL POSTs that answer
+  **403 on every automated call** (measured: `ForSaleNonPriorityQuery` + 11
+  other ops, 24/24 on a listing whose card renders for humans), and the SSR
+  HTML carries zero HOA keys when the amount is missing — the card is
+  unreadable from the scraper. Implemented instead:
+  - `zillow.hoa_affirmed_in_description()` — the agent's description (which
+    rides the SSR payload) must ASSERT an HOA/POA exists ("active HOA",
+    "HOA Website", "There is a HOA", "part of an HOA", "community POA",
+    "extremely low HOA"); denials (`no`/`NOo HOA`, "no covenants … or HOA
+    fees"), dissolved/waived HOAs, "Ditch the HOA rules" marketing and
+    "Buyer to verify … HOA" hedges are vetoed — uncertain presence KEEPS
+    the row. Verified 16/16 against live descriptions (7 affirm / 9 keep).
+  - `extract_hoa(html, rendered)` also parses the card **when it happens to
+    render** (`Has HOA: Yes/No`, `HOA fee: $X annually`; card No beats an
+    affirming description); `fetch_hoa` scrolls briefly to try.
+  - `zillow.hoa_declared()` extends the search-payload skip guard to a
+    `hoaFee: "Yes"` flag (no search payload carries one today —
+    future-proofing so a declared HOA is skipped the moment one appears).
+  - Sweep `--rejudge` re-fetches every active row whose verdict predates
+    the `hoa_present` checkpoint field; `--archive` removes both fee and
+    presence rows (`verdict_reason()`, reason
+    `hoa_fee: HOA yes — no fee amount listed (zillow detail, description)`).
+    Archived rows are never revived by `_upsert_property` re-sightings, and
+    a home re-listed under a fresh zpid re-enters the sweep queue. First
+    full re-judge (2,523 rows) runs detached via
+    `scraper/tmp/hoa_finish3.sh` (waits for the cron zillow run; pauses are
+    automatic via `wait_for_sweep`).
+  - 17 new tests (`TestHoaAffirmedInDescription`, `TestExtractHoaPresence`,
+    `TestHoaDeclaredGuard`, `TestVerdictReason`); full suite 751 pass,
+    8 skipped.
 - **2026-11-07 (zillow: ignore HOA properties)**: Zillow's **county search
   page does not publish HOA data** (verified: zero HOA keys across 205
   listings in 5 counties), so an HOA filter has to be applied by Zillow
