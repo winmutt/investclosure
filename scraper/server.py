@@ -825,7 +825,10 @@ def _viewer_map_url(prop: dict) -> Optional[str]:
         return gis
     lat = prop.get("latitude")
     lon = prop.get("longitude")
-    parcel = (prop.get("parcel_number") or "").strip() or None
+    # ``parcel_numbers`` (all PINs when a tract spans several) draws every
+    # polygon in the viewer; ``parcel_number`` is the single primary PIN.
+    parcel = ((prop.get("parcel_numbers") or "").strip()
+              or (prop.get("parcel_number") or "").strip()) or None
     state = (prop.get("state") or "").upper()
     if state == "NC" and ((lat is not None and lon is not None) or parcel):
         return get_nconemap_viewer_url(lon, lat, parcel, prop.get("county"))

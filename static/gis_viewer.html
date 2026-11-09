@@ -410,14 +410,15 @@
         view.popup.open({ features: [g], location: g.geometry });
       }
 
-      // Locate the parcel through the same-origin proxy and zoom to it, so
+      // Locate the parcels through the same-origin proxy and zoom to them, so
       // parcel-only links (no coordinates) are parcel-deep too. Mirrors the
       // Python variants in scraper/nc_gis_lookup._parcel_variants: raw,
-      // dash-stripped, and McDowell-style middle-segment zero-padded.
-      async function locateParcel() {
-        if (!service || !parcel || !/^[A-Za-z0-9\-\s]+$/.test(parcel)) return false;
-        const variants = [parcel, parcel.replace(/-/g, "")];
-        const m = parcel.match(/^(\d{4})-(\d{1,3})-(\d{4})$/);
+      // dash-stripped, and McDowell-style middle-segment zero-padded. The
+      // ``parcel`` param may carry several PINs (one tract split across tax
+      // parcels); every match is drawn and the view zooms to their union.
+      function pinVariants(pin) {
+        const variants = [pin, pin.replace(/-/g, "")];
+        const m = pin.match(/^(\d{4})-(\d{1,3})-(\d{4})$/);
         if (m) {
           // McDowell: middle segment padded to 4 digits; Buncombe: parent
           // PIN + 5-digit sub-parcel suffix (nc_gis_lookup._parcel_variants).
@@ -425,7 +426,15 @@
           const digits = m[1] + m[2] + m[3];
           if (!digits.endsWith("0000")) variants.push(digits + "00000");
         }
-        const where = variants
+        return variants;
+      }
+      async function locateParcel() {
+        if (!service) return false;
+        const pins = String(parcel || "").split(/[,\s;]+/)
+          .filter(p => /^[A-Za-z0-9\-]+$/.test(p));
+        if (!pins.length) return false;
+        const where = pins
+          .flatMap(pinVariants)
           .map(v => `parno='${v.replace(/'/g, "''")}' OR altparno='${v.replace(/'/g, "''")}'`)
           .join(" OR ");
         const qs = new URLSearchParams({
@@ -434,45 +443,73 @@
           returnGeometry: "true",
           outSR: "4326",
           f: "json",
-          resultRecordCount: "1"
+          resultRecordCount: String(pins.length * 4)
         });
         try {
           const res = await fetch(service + "/query?" + qs.toString());
           const data = await res.json();
-          const feat = (data.features || [])[0];
-          if (!feat || !feat.geometry || !feat.geometry.rings) return false;
-          const attrs = feat.attributes || {};
-          // ArcGIS REST puts spatialReference at the response root, not on
-          // each geometry — default to 4326 to match the requested outSR.
-          const sr = feat.geometry.spatialReference || data.spatialReference || { wkid: 4326 };
-          const poly = new Polygon({ rings: feat.geometry.rings, spatialReference: sr });
-          const pin = attrs.parno || parcel;
-          const owner = attrs.ownname || "—";
-          const acres = attrs.gisacres ?? "—";
-          const site = attrs.siteadd || "—";
-          const county = attrs.cntyname || "";
-          const g = new Graphic({
-            geometry: poly,
-            symbol: {
-              type: "simple-fill",
-              color: [226, 119, 40, 0.25],
-              outline: { color: [255, 80, 0], width: 3 }
-            },
-            popupTemplate: {
-              title: (county || "Parcel") + " Parcel",
-              content: "PIN: <b>" + pin + "</b><br>Owner: " + owner +
-                       "<br>GIS Acres: " + acres + "<br>Site: " + site
-            }
+          const seen = new Set();
+          const feats = (data.features || []).filter(f => {
+            const parno = (f.attributes || {}).parno || "";
+            if (!f.geometry || !f.geometry.rings || !parno || seen.has(parno))
+              return false;
+            seen.add(parno);
+            return true;
           });
-          view.graphics.add(g);
-          await view.goTo(g, { padding: { top: 60, left: 40, bottom: 40, right: 40 } });
-          view.popup.open({ features: [g], location: poly.centroid });
-          showCard(
-            [["PIN", pin], ["Owner", owner], ["Acres", acres],
-             ["Site", site], ["County", county || "—"]],
-            (county ? county + " Parcel" : "Parcel"));
-          info.textContent = "Parcel " + pin +
-                             (attrs.ownname ? " — " + attrs.ownname : "");
+          if (!feats.length) return false;
+          const gs = feats.map(feat => {
+            const attrs = feat.attributes || {};
+            // ArcGIS REST puts spatialReference at the response root, not on
+            // each geometry — default to 4326 to match the requested outSR.
+            const sr = feat.geometry.spatialReference
+                       || data.spatialReference || { wkid: 4326 };
+            const poly = new Polygon({ rings: feat.geometry.rings,
+                                       spatialReference: sr });
+            return new Graphic({
+              geometry: poly,
+              symbol: {
+                type: "simple-fill",
+                color: [226, 119, 40, 0.25],
+                outline: { color: [255, 80, 0], width: 3 }
+              },
+              popupTemplate: {
+                title: (attrs.cntyname || "Parcel") + " Parcel",
+                content: "PIN: <b>" + (attrs.parno || parcel) + "</b><br>Owner: "
+                         + (attrs.ownname || "—") +
+                         "<br>GIS Acres: " + (attrs.gisacres ?? "—") +
+                         "<br>Site: " + (attrs.siteadd || "—")
+              }
+            });
+          });
+          view.graphics.addMany(gs);
+          await view.goTo(gs.length > 1 ? gs : gs[0],
+                          { padding: { top: 60, left: 40, bottom: 40,
+                                       right: 40 } });
+          view.popup.open({ features: gs,
+                            location: gs[0].geometry.centroid });
+          if (gs.length === 1) {
+            const a = feats[0].attributes || {};
+            const pin = a.parno || parcel;
+            showCard(
+              [["PIN", pin], ["Owner", a.ownname || "—"],
+               ["Acres", a.gisacres ?? "—"], ["Site", a.siteadd || "—"],
+               ["County", a.cntyname || "—"]],
+              a.cntyname ? a.cntyname + " Parcel" : "Parcel");
+            info.textContent = "Parcel " + pin +
+                               (a.ownname ? " — " + a.ownname : "");
+          } else {
+            const total = feats.reduce(
+              (n, f) => n + (Number((f.attributes || {}).gisacres) || 0), 0);
+            showCard(
+              feats.map(f => {
+                const a = f.attributes || {};
+                return [a.parno, (a.gisacres ?? "—") + " ac — " +
+                        (a.ownname || "—")];
+              }),
+              gs.length + " Parcels (≈ " + total.toFixed(2) + " ac total)");
+            info.textContent = gs.length + " parcels — " +
+              ((feats[0].attributes || {}).ownname || "");
+          }
           return true;
         } catch (e) {
           // Swallowing this made "parcel not found" indistinguishable from a

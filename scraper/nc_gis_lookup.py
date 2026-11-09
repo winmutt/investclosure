@@ -735,7 +735,8 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
 
 def enrich_properties(source: Optional[str] = None,
                       status: str = "active",
-                      min_id: Optional[int] = None) -> dict:
+                      min_id: Optional[int] = None,
+                      ids: Optional[list] = None) -> dict:
     """Enrich properties in DB with GIS data.
 
     Queries NC OneMap for all properties that have a parcel_number but no GIS acres.
@@ -796,10 +797,16 @@ def enrich_properties(source: Optional[str] = None,
     if min_id is not None:
         where += " AND id > ?"
         params.append(int(min_id))
+    if ids:
+        # Operator escape hatch: re-enrich a named set of rows (verifying a
+        # multi-parcel fix on #2739 without replaying the backlog).
+        id_list = [int(i) for i in ids]
+        where += f" AND id IN ({','.join('?' * len(id_list))})"
+        params.extend(id_list)
 
     # Get properties (with a parcel OR an address) that need GIS enrichment
     rows = conn.execute(
-        f"SELECT id, source, county, parcel_number, address, city, state, acres_source, gis_url, google_maps_url "
+        f"SELECT id, source, county, parcel_number, address, city, state, acres_source, gis_url, google_maps_url, acres "
         f"FROM properties WHERE {where}",
         params,
     ).fetchall()
@@ -821,7 +828,7 @@ def enrich_properties(source: Optional[str] = None,
             break
 
         (row_id, src, county, parcel, address, city, state,
-         acres_src, gis_url, gmaps_url) = row
+         acres_src, gis_url, gmaps_url, row_acres) = row
 
         # NC OneMap only covers North Carolina — never touch other states'
         # rows (a past run overwrote TN TPAD deep links with generic URLs).
@@ -851,7 +858,17 @@ def enrich_properties(source: Optional[str] = None,
             parcel_data = _lookup_parcel_multi(parcel_raw, county)
         # 2) Fall back to an address-based NC OneMap search
         if not parcel_data and address:
-            parcel_data = search_address_in_nc1map(address, county)
+            if has_house_number(address):
+                parcel_data = search_address_in_nc1map(address, county)
+            else:
+                # No situs number to anchor on (placeholder "0 Leon Barron Rd"
+                # or a bare street name): a loose LIKE would bind a neighbour,
+                # so first require an owner group whose summed acreage matches
+                # the listing (26.02ac = 23.0 + 3.02, Jackson #2739), then fall
+                # back to the plain street search (token stripped) as before.
+                parcel_data = search_owner_parcels_in_nc1map(
+                    address, county, target_acres=row_acres) \
+                    or search_address_in_nc1map(address, county)
 
         update_fields: dict = {}
         got_acres = bool(parcel_data and parcel_data.get("acres", 0) > 0)
@@ -859,6 +876,12 @@ def enrich_properties(source: Optional[str] = None,
         coords_lat = (parcel_data or {}).get("latitude")
         coords_lng = (parcel_data or {}).get("longitude")
         parcel_ref = (parcel_data or {}).get("parno") or parcel_raw
+        # Tract spanning several PINs (owner-group match): the viewer link and
+        # the DB list all of them, ``parcel_number`` keeps the primary.
+        multi_pins = [p["parno"] for p in (parcel_data or {}).get("parcels") or []
+                      if p.get("parno")]
+        if len(multi_pins) > 1:
+            parcel_ref = ",".join(multi_pins)
 
         if got_acres:
             update_fields["acres"] = parcel_data["acres"]
@@ -868,6 +891,8 @@ def enrich_properties(source: Optional[str] = None,
             update_fields["land_use"] = parcel_data.get("land_use") or None
             if parcel_data.get("parno"):
                 update_fields["parcel_number"] = parcel_data["parno"]
+            if len(multi_pins) > 1:
+                update_fields["parcel_numbers"] = ",".join(multi_pins)
             if coords_lat and coords_lng:
                 update_fields["latitude"] = coords_lat
                 update_fields["longitude"] = coords_lng
@@ -986,6 +1011,108 @@ def _normalize_address(addr: str) -> Optional[str]:
     return " ".join(words[:3]) if words else None
 
 
+# Zillow renders vacant land whose parcel carries no assessor situs number as
+# "0 Leon Barron Rd" / "TBD Hart Rd" / "LOT 6 Chestnut Walk Dr" / "NULLD
+# Chestnut Walk Dr" (live token census 2026-11-09, active NC rows: 0 x65,
+# TBD x27, LOT x6, 00 x3, 000, 000A, 000A, NULLD). None of those is a house
+# number, and leaving the token in the LIKE pattern makes the house-number
+# guard reject every real parcel on the road — #2739 "0 Leon Barron Rd" never
+# enriched because OneMap stores that road's situs addresses with no number.
+_HOUSE_NUMBER_RE = re.compile(
+    r"^\s*(\d+[A-Za-z]?)(?:\s*-\s*\d+[A-Za-z]?)?\s+")
+# Zillow fills a missing situs number with zeros or nines — live sample:
+# "0 Hal Dr", "00 US 19 Highway", "000A …", "9999 Us Highway 441",
+# "99999 Morgan Hill Rd", "999999 Harwood Rd". Anchoring a LIKE on those
+# rejects every real parcel on the road, so they are not house numbers.
+_FAKE_HOUSE_RE = re.compile(r"^(?:0+[A-Z]?|9{4,}[A-Z]?)$", re.I)
+# Trailing address junk that no assessor situs address carries. The state
+# token is deliberately NC-only (this is the NC OneMap path): a bare
+# two-letter rule would eat the "Rd" of "Old Mill Rd".
+_ZIP_SUFFIX_RE = re.compile(r"[,\s]+(?:N\.?C\.?\s+)?\d{5}(?:-\d{4})?\s*$", re.I)
+_TRAILING_STATE_RE = re.compile(r"[,\s]+N\.?C\.?[.\s]*$|,\s*North Carolina\s*$",
+                                re.I)
+_UNIT_SUFFIX_RE = re.compile(
+    r"[,\s]+(?:#|unit|apt|ste|lot|tract|spc|bldg|no)\.?\s*"
+    r"[0-9][0-9A-Za-z/-]*\s*$", re.I)
+_PLACEHOLDER_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:0+|9{4,})[A-Z]?|tbd|tba|tb[dc]|null\w*|none|unassigned"
+    r"|lot|lots|tract)(?=[.\s]|$)[.\s]+"
+    r"(?:\d+(?=[.\s]|$)[.\s]+)?", re.I)
+
+
+def _drop_trailing_junk(text: str) -> str:
+    """Strip a trailing ZIP / state / unit off a street fragment."""
+    prev = None
+    while text and text != prev:
+        prev = text
+        text = _ZIP_SUFFIX_RE.sub("", text)
+        text = _TRAILING_STATE_RE.sub("", text)
+        text = _UNIT_SUFFIX_RE.sub("", text)
+    return text.strip(" ,")
+
+
+def street_only(address: Optional[str]) -> str:
+    """Return the street part of an address, without city / state / ZIP.
+
+    ``_normalize_address`` keeps the LAST three words, so a whole listing line
+    ("0 Leon Barron Rd, Sylva, NC 28779") searched OneMap for
+    ``SYLVA, NC 28779`` and matched nothing — the reason most NC rows never
+    enriched from their address (232 of the 241 active NC addresses are in
+    this form). Unit/lot suffixes are dropped for the same reason: the LIKE
+    pattern "RIVERVIEW RD #64" matches no assessor situs address.
+    """
+    text = (address or "").strip()
+    if not text:
+        return ""
+    # "…, City, ST ZIP" — the street is everything before the first comma.
+    head = text.split(",")[0].strip()
+    head = _drop_trailing_junk(head)
+    if head:
+        return head
+    # No comma at all ("Little Glade Creek Rd NC 28743"): peel the tail.
+    return _drop_trailing_junk(text)
+
+
+def has_house_number(address: Optional[str]) -> bool:
+    """True when the address carries a REAL assessor house number.
+
+    ``123``, ``123A`` and ``123-125`` count. Placeholders do not: Zillow's
+    zero/nine fill-ins (``0``, ``000A``, ``99999``), ``TBD``, ``LOT 6``,
+    ``NULLD``, and street-name-first addresses ("W Emory Rd",
+    "Tusquittee Mountain Rd", "5.93 Indian Creek Rd"). Anchoring a LIKE on a
+    fake number rejects every real parcel on the road, exactly like a missing
+    one — both cases must go through the acreage-guarded owner-group resolver.
+    """
+    m = _HOUSE_NUMBER_RE.match(address or "")
+    if not m:
+        return False
+    return not _FAKE_HOUSE_RE.match(m.group(1))
+
+
+def strip_placeholder_house(address: Optional[str]) -> str:
+    """Drop a placeholder house token so it cannot poison a LIKE pattern.
+
+    ``"LOT 6 Chestnut Walk Dr"`` -> ``"Chestnut Walk Dr"``: the 6 is a lot
+    number, not a situs number, so it goes with the token.
+    """
+    return _PLACEHOLDER_PREFIX_RE.sub("", address or "").strip()
+
+
+def _gap_variant(pattern: str) -> Optional[str]:
+    """Space-agnostic LIKE copy of a street pattern, or None.
+
+    OneMap situs addresses carry padded spacing — "2820   LAUREL PARK  HWY",
+    "210   MOUNTAIN VISTA   RD" — which an exact single-space LIKE can never
+    match. Joining the tokens with ``%`` matches any run of spaces (or words)
+    between them; the caller's house-number guard still rejects a wrong-house
+    hit, so this loosens only the query, never the acceptance rule.
+    """
+    tokens = [t for t in (pattern or "").split() if t]
+    if len(tokens) < 2:
+        return None
+    return "%".join(tokens)
+
+
 def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     """Try to find a parcel by normalized street address in NC OneMap.
 
@@ -997,11 +1124,17 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     """
     if not address or not county:
         return None
-    
+
+    # A placeholder token ("0", "TBD", "LOT 6") is not a house number, and it
+    # must not poison the LIKE pattern either — strip it from the search copy.
+    # City / state / ZIP go first: they are the tail the normalizer keeps.
+    address = street_only(address) or address
+    if not has_house_number(address):
+        address = strip_placeholder_house(address)
     normalized = _normalize_address(address)
     if not normalized:
         return None
-    
+
     fips = _COUNTY_FIPS.get((county or "").lower().strip())
     if not fips:
         return None
@@ -1046,7 +1179,13 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
         patterns.append(f"{house_num} {like_parts}")
         for variant in pattern_variants(like_parts, limit=6)[1:]:
             patterns.append(f"{house_num} {variant}")
+        gap = _gap_variant(f"{house_num} {like_parts}")
+        if gap:
+            patterns.append(gap)
     patterns.extend([like_parts, *pattern_variants(like_parts, limit=4)[1:]])
+    gap = _gap_variant(like_parts)
+    if gap:
+        patterns.append(gap)
     if house_num and first_word:
         patterns.append(f"{house_num} {first_word}")
     if two_tokens:
@@ -1070,6 +1209,97 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
             return result
 
     return None
+
+
+def search_owner_parcels_in_nc1map(address: str, county: str,
+                                   target_acres: Optional[float],
+                                   tolerance: float = 0.12
+                                   ) -> Optional[dict]:
+    """Resolve a placeholder-address tract to the OWNERSHIP GROUP it spans.
+
+    County rolls split one large tract ("0 Leon Barron Rd", 26.02ac listed)
+    into several PINs sharing a site address and owner — Jackson live case:
+    7528-56-9321 (23.0ac) + 7528-56-9996 (3.02ac), both GUFFEY, exactly
+    26.02ac. This groups every parcel found on the street by owner and picks
+    the group whose **total acreage** matches the listing's ``target_acres``
+    within ``tolerance`` — the acreage guard is what keeps a loose LIKE from
+    binding a neighbour's lot. No group matches -> None: no parcel beats a
+    WRONG parcel (link-depth policy).
+
+    Returns a ``_clean_features``-shaped dict for the group's largest parcel
+    (its centroid centers the viewer) plus ``parcels``:
+    ``[{"parno", "acres"}, …]`` sorted primary-first.
+    """
+    if not address or not county or not target_acres or target_acres <= 0:
+        return None
+    street = strip_placeholder_house(street_only(address))
+    normalized = _normalize_address(street)
+    if not normalized:
+        return None
+    fips = _COUNTY_FIPS.get((county or "").lower().strip())
+    if not fips:
+        return None
+
+    from .street_canon import canon_tokens, pattern_variants
+
+    like_parts = " ".join(normalized.split())
+    patterns = [like_parts, *pattern_variants(like_parts, limit=4)[1:]]
+    gap = _gap_variant(like_parts)
+    if gap and gap not in patterns:
+        patterns.append(gap)
+    two_tokens = "%".join(canon_tokens(like_parts)[:2])
+    if two_tokens and two_tokens not in patterns:
+        patterns.append(two_tokens)
+
+    seen: dict[str, dict] = {}
+    for pattern in patterns:
+        if not pattern:
+            continue
+        feats = _nc1map_query({
+            "where": f"cntyfips='{fips}' AND siteadd LIKE '%{pattern}%'",
+            "outFields": ("parno,altparno,cntyname,cntyfips,gisacres,"
+                          "recareano,siteadd,ownname,parusecd2,parusedsc2"),
+            "returnGeometry": "false",   # _nc1map_query forces geometry on
+            "f": "json",
+            "resultRecordCount": "100",
+        }, timeout=8)
+        for one in feats or []:
+            parno = ((one.get("attributes") or {}).get("parno") or "").strip()
+            if parno and parno not in seen:
+                seen[parno] = one
+        if seen:
+            break          # exact street phrase is the precise query
+
+    if not seen:
+        return None
+
+    best = None
+    groups: dict[str, list[dict]] = {}
+    for one in seen.values():
+        a = one.get("attributes") or {}
+        owner = re.sub(r"\s+", " ", str(a.get("ownname") or "")).strip().upper()
+        cleaned = _clean_features([one])
+        if not owner or cleaned is None:
+            continue
+        groups.setdefault(owner, []).append(cleaned)
+    for owner, clean in groups.items():
+        total = round(sum(c["acres"] for c in clean), 2)
+        if abs(total - target_acres) > target_acres * tolerance:
+            continue
+        score = abs(total - target_acres)
+        if best is None or score < best[0]:
+            best = (score, total, clean)
+    if best is None:
+        return None
+    _score, total, clean = best
+    primary = max(clean, key=lambda c: c["acres"])
+    result = dict(primary)
+    result["acres"] = total
+    result["parcels"] = [
+        {"parno": c["parno"], "acres": c["acres"]}
+        for c in sorted(clean, key=lambda c: -c["acres"]) if c.get("parno")
+    ]
+    return result
 
 
 # --- Cherokee County authoritative GIS (ArcGIS Open Data FeatureServer) ---

@@ -17,8 +17,12 @@ bucketed by `property_vertical()` in `scraper/server.py`.
 
 | Vertical | Status | Scope | Qualification |
 |---|---|---|---|
-| **Mountains** | active | mountain counties (elevation ≥1700ft, ≤250mi of Atlanta) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` |
+| **Mountains** | active | mountain counties (county peak ≥1700ft, ≤250mi of Atlanta) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` + **per-parcel `MIN_ELEVATION`** (1,700 ft, USGS 3DEP) |
 | **Beach** | stub (UI only) | ocean/lake-frontage counties (mapping upcoming) | **min distance-to-water** (no acreage/elevation) |
+
+The 1,700 ft rule is two-part: the county lists only encode each county's
+**peak** elevation, so the actual **parcel** is measured with USGS 3DEP and
+reaped below `INVESTCLOSURE_MIN_ELEVATION` (default 1,700 ft).
 
 The mountains|beach switch renders on the dashboard tab bar; **beach is a stub**
 — the water-front county map, the minimum-distance-to-water rule (a water GIS
@@ -140,6 +144,7 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `INVESTCLOSURE_LOGS_DIR` | `./data/logs` | Log files |
 | `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
+| `INVESTCLOSURE_MIN_ELEVATION` | `1700.0` | Per-parcel ground-elevation filter, feet (`0` disables) |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` (optional) |
 
 ## Scrapers

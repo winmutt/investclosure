@@ -78,6 +78,9 @@
                     <span title="Manually set on {{ prop.manual_acres_set }}" style="color:#f59e0b">&#128274;</span>
                     {% endif %}
                 </span>
+                {% if prop.elevation_ft %}
+                <span title="Ground elevation (USGS 3DEP)">{{ "%.0f"|format(prop.elevation_ft) }} ft</span>
+                {% endif %}
                 {% if prop.bedrooms or prop.bathrooms %}
                 <span>
                     {% if prop.bedrooms %}{{ prop.bedrooms }} bd{% endif %}

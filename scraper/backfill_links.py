@@ -26,7 +26,9 @@ from .nc_gis_lookup import (
     build_gis_url,
     build_google_maps_url,
     build_google_maps_topo_url,
+    has_house_number,
     search_address_in_nc1map,
+    search_owner_parcels_in_nc1map,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,9 +63,18 @@ def backfill_links(source: str = "all") -> dict:
         where += " AND source = ?"
         params.append(source)
 
+    # ``parcel_numbers`` (all PINs of a multi-parcel tract) is a migration
+    # column: this CLI opens its own connection, so the migration may not have
+    # run yet in a fresh checkout — degrade to the single-PIN shape instead of
+    # failing the whole rebuild on a missing column.
+    has_pins_col = any(r[1] == "parcel_numbers" for r in
+                       conn.execute("PRAGMA table_info(properties)"))
+    pins_select = "parcel_numbers" if has_pins_col else "NULL AS parcel_numbers"
+    pins_set = ", parcel_numbers = COALESCE(?, parcel_numbers)" if has_pins_col else ""
+
     rows = conn.execute(
-        f"SELECT id, source, status, county, parcel_number, address, city, state, "
-        f"latitude, longitude, tnmap_data FROM properties WHERE {where} ORDER BY "
+        f"SELECT id, source, status, county, parcel_number, {pins_select}, address, city, state, "
+        f"latitude, longitude, tnmap_data, acres FROM properties WHERE {where} ORDER BY "
         f"CASE WHEN status='active' THEN 0 ELSE 1 END, id",
         params,
     ).fetchall()
@@ -72,7 +83,8 @@ def backfill_links(source: str = "all") -> dict:
     api_calls = 0
     active_total = sum(1 for r in rows if r[2] == "active")
 
-    for i, (row_id, src, status, county, parcel, address, city, state, lat0, lng0, tnmap_data_raw) in enumerate(rows, 1):
+    for i, (row_id, src, status, county, parcel, pins, address, city, state,
+            lat0, lng0, tnmap_data_raw, row_acres) in enumerate(rows, 1):
         parcel_raw = (parcel or "").strip()
         county_raw = (county or "").strip()
         address_raw = (address or "").strip() or None
@@ -80,7 +92,10 @@ def backfill_links(source: str = "all") -> dict:
 
         lat = lat0
         lng = lng0
-        parcel_ref = parcel_raw or None
+        # The stored multi-PIN list wins: rebuilding from ``parcel_number``
+        # alone would redraw one polygon of a two-parcel tract (#2739).
+        pins_raw = (pins or "").strip()
+        parcel_ref = pins_raw or parcel_raw or None
 
         # Only run NC OneMap live lookups for NC rows. TN uses TNMap,
         # GA uses qPublic, and SC/AL have no parcel service — querying NC
@@ -98,12 +113,25 @@ def backfill_links(source: str = "all") -> dict:
                         parcel_ref = pd["parno"]
 
             if (not lat or not lng) and address_raw and county_raw:
-                pd = search_address_in_nc1map(address_raw, county_raw)
+                # A placeholder house number ("0 Leon Barron Rd") has no
+                # assessor number to anchor on: a loose LIKE would bind a
+                # neighbour, so require the owner group whose summed acreage
+                # matches the listing (mirrors nc_gis_lookup.enrich_properties).
+                if has_house_number(address_raw):
+                    pd = search_address_in_nc1map(address_raw, county_raw)
+                else:
+                    pd = search_owner_parcels_in_nc1map(
+                        address_raw, county_raw, target_acres=row_acres) \
+                        or search_address_in_nc1map(address_raw, county_raw)
                 api_calls += 1
                 if pd:
                     lat = pd.get("latitude")
                     lng = pd.get("longitude")
-                    if pd.get("parno"):
+                    group = [p["parno"] for p in pd.get("parcels") or []
+                             if p.get("parno")]
+                    if len(group) > 1:
+                        parcel_ref = ",".join(group)
+                    elif pd.get("parno"):
                         parcel_ref = pd["parno"]
 
             if api_calls > 0:
@@ -133,20 +161,30 @@ def backfill_links(source: str = "all") -> dict:
                 lat, lng, parcel_ref, address_raw, city_raw, county_raw, state
             )
 
+        # ``parcel_number`` keeps the primary PIN every existing consumer
+        # expects; ``parcel_numbers`` holds the whole list when a tract spans
+        # several (26.02ac = 23.0 + 3.02 in Jackson #2739).
+        pins_final = parcel_ref or parcel_raw or None
+        primary_pin = (pins_final or "").split(",")[0].strip() or None
+
         # Only touch rows where something actually changes.
         existing = conn.execute(
             "SELECT latitude, longitude, gis_url, google_maps_url, google_maps_topo_url "
-            "FROM properties WHERE id = ?",
+            f"FROM properties WHERE id = ?",
             (row_id,),
         ).fetchone()
-        if existing and tuple(existing) == (lat, lng, gis_url, maps_url, topo_url):
+        if existing and tuple(existing) == (lat, lng, gis_url, maps_url, topo_url) \
+                and (pins_final or None) == (pins_raw or None):
             continue
 
         conn.execute(
             "UPDATE properties SET latitude = ?, longitude = ?, gis_url = ?, "
-            "google_maps_url = ?, google_maps_topo_url = ?, parcel_number = COALESCE(?, parcel_number) "
+            "google_maps_url = ?, google_maps_topo_url = ?, parcel_number = COALESCE(?, parcel_number)"
+            f"{pins_set} "
             "WHERE id = ?",
-            (lat, lng, gis_url, maps_url, topo_url, parcel_ref or parcel_raw, row_id),
+            tuple([lat, lng, gis_url, maps_url, topo_url, primary_pin]
+                  + ([pins_final] if has_pins_col else [])
+                  + [row_id]),
         )
         updated += 1
         logger.info(

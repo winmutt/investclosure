@@ -70,7 +70,9 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/backfill_newspaper.py` | Re-derives newspaper row type/address/city/zip/auction-date from `raw_source_text` |
 | `scraper/al_publicnotice.py` | AL public-notice foreclosure scraper — alabamapublicnotices.com (IPA WebForms: per-category select + per-county checkbox), full notice text as raw source; no statewide parcel service → Maps links only |
 | `scraper/ky_publicnotice.py` | KY public-notice scraper — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only |
-| `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties |
+| `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties; `street_only`/`has_house_number` address prep, `search_owner_parcels_in_nc1map` multi-parcel tracts |
+| `scraper/elevation.py` | Per-parcel ground elevation from USGS 3DEP (key-free) — fills `elevation_ft`, archives below `MIN_ELEVATION` |
+| `scraper/backfill_elevation.py` | CLI: measure existing rows, report distribution, apply the 1,700 ft parcel rule (`--dry-run`, `--no-archive`, `--source`, `--refresh`) |
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
@@ -129,6 +131,15 @@ per-state Tax/Mtg/Re category tabs (`property_category()`).
 ## Qualified Counties
 
 Scope spans **6 states** (elevation >1700ft, within 250mi of Atlanta): **GA, AL, KY, NC, SC, TN**. Full county lists live in `scraper/config.py` (`QUALIFYING_COUNTIES`); the investclosure target sets are `NC_MOUNTAIN_COUNTIES` (21) and `GA_MOUNTAIN_COUNTIES` (7).
+
+**The 1,700 ft rule is now two-part.** The county lists were built from each
+county's **peak** elevation, which says nothing about a parcel sitting in a
+valley inside that county — a USGS sample of active rows measured **70% below
+1,700 ft** (all SC/AL, most GA/TN foothills). `scraper/elevation.py` measures
+each parcel from USGS 3DEP (`elevation_ft`), the scrapers archive anything
+below `config.MIN_ELEVATION` (`INVESTCLOSURE_MIN_ELEVATION`, default 1,700 ft,
+`0` disables), and `python3 -m scraper.backfill_elevation` backfills existing
+rows. Unknown elevation (no coordinates) is never disqualifying.
 
 ### NC — 20 mountain counties (investclosure target set)
 `alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
@@ -235,9 +246,44 @@ rebuilds all links; `scraper/tn_gis_enrich.py` fills TN TPAD links + acres/owner
 
 - **NC OneMap statewide service**: `https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1` — single query for all 100 NC counties
 - Primary acreage field: `gisacres` (Double type)
-- Key fields: `parno` (parcel number), `ownname` (owner), `siteaddr` (address), `usecd` (land use code)
+- Key fields: `parno` (parcel number), `ownname` (owner), `siteadd` (situs address — the column is **`siteadd`**, not `siteaddr`), `parusecd2`/`parusedsc2` (land use). `UPPER(siteadd) LIKE '%…%'` returns 0 rows on this service — query the column bare (`siteadd LIKE 'LEON%BARRON%'`).
 - GIS lookup via `scraper/nc_gis_lookup.py` with `NC1MapService.by_parcel(parcel_clean)` method
 - Falls back to Google Maps parcel search: `https://www.google.com/maps/search/parcel+{parcel}+in+{county}+NC`
+
+### Address → parcel resolution (placeholder numbers, multi-parcel tracts)
+
+Zillow land listings arrive with **no assessor situs number** — the house slot
+is filled with `0` (65 active rows), `TBD` (27), `LOT n` (6), `00`/`000`/`000A`,
+`NULLD`, or Zillow's nine-fillers (`9999`, `99999`, `999999`) — and the whole
+line carries city/state/ZIP ("`0 Leon Barron Rd, Sylva, NC 28779`"). Three
+rules in `scraper/nc_gis_lookup.py` fix the resolution that used to fail:
+
+- **`street_only()` cuts the city/state/ZIP and unit tails.** `_normalize_address`
+  keeps the **last three words**, so a full listing line searched OneMap for
+  `SYLVA, NC 28779` and matched nothing — 232 of the 241 active NC addresses
+  were in that form, which is why 436 of 447 had a NULL `parcel_number`.
+- **`has_house_number()` recognises a real number only** (`123`, `123A`,
+  `123-125`). Zero/nine fill-ins, `TBD`, `LOT 6`, `NULLD` and street-name-first
+  addresses return False, so they never anchor the house guard.
+  `strip_placeholder_house()` removes the token (and its lot number) from the
+  LIKE copy.
+- **`search_owner_parcels_in_nc1map()` resolves a number-less tract to its
+  ownership group**: every parcel found on the street is grouped by `ownname`
+  and the group whose **total acreage** matches the listing (±12%) wins —
+  which is also how a listing that spans **several tax parcels** is captured.
+  No group matches → None (no parcel beats a wrong parcel). Live 2026-11-09:
+  sample of 22 unresolvable NC rows went **1 hit → 11 hits**; the rest are
+  counties whose rolls hold no situs address for that street.
+- `_gap_variant()` adds a `%`-joined LIKE copy: OneMap pads its situs fields
+  (`"2820   LAUREL PARK  HWY"`, `"210   MOUNTAIN VISTA   RD"`), which an exact
+  single-space LIKE never matches.
+- **Multi-parcel rows store every PIN.** `properties.parcel_numbers` is a
+  comma list, primary-first (`7528-56-9321,7528-56-9996` = 23.0 ac + 3.02 ac =
+  the 26.02 ac listing #2739); `parcel_number` keeps the single primary PIN
+  every existing consumer expects. The hosted viewer takes a comma-separated
+  `parcel` param, draws every match and zooms to their union (card: "N Parcels
+  (≈ X ac total)"); the detail page renders "Parcel Numbers (N)".
+  `enrich_properties(ids=[...])` re-enriches a named set of rows.
 
 ### County knowledge base (markdown summaries)
 
@@ -356,10 +402,54 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_LOGS_DIR` | `./data/logs` | Log files directory |
 | `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
+| `INVESTCLOSURE_MIN_ELEVATION` | `1700.0` | Per-parcel ground-elevation filter (USGS 3DEP), feet; `0` disables |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 | `NCONEMAP_TLS_STRICT` | *(unset)* | Set `1` to refuse the unverified NC OneMap fallback while their cert is expired |
 
 ## Recent Updates
+
+- **2026-11-09 (multi-parcel tracts + NC address resolution fixed)**: "#2739's
+  map points at the wrong parcel, and sometimes there is more than one."
+  - **Root cause 1 — the address searches were querying the city.** Zillow
+    stores the whole line ("0 Leon Barron Rd, Sylva, NC 28779") and
+    `_normalize_address` keeps the **last three words**, so OneMap was searched
+    for `SYLVA, NC 28779`: 232 of 241 active NC addresses were in that form and
+    **436 of 447 had a NULL `parcel_number`**. New `street_only()` cuts
+    city/state/ZIP + unit tails ("64 Riverview Rd #64" → "64 Riverview Rd");
+    `_gap_variant()` adds a `%`-joined copy because the rolls pad their situs
+    fields ("2820   LAUREL PARK  HWY").
+  - **Root cause 2 — placeholder house numbers anchored the guard.** `0`, `00`,
+    `000A`, `TBD`, `LOT 6`, `NULLD` and Zillow's nine-fillers (`9999`, `99999`,
+    `999999`) are not situs numbers; 170 active NC rows carry them.
+    `has_house_number()` now returns False for all of them (and for
+    street-name-first addresses), and `strip_placeholder_house()` keeps the
+    token out of the LIKE pattern.
+  - **Multi-parcel tracts**: `search_owner_parcels_in_nc1map()` groups the
+    parcels on a street by `ownname` and requires the **group total** to match
+    the listing acreage (±12%) — #2739's 26.02 ac resolves to
+    **7528-56-9321 (23.0 ac) + 7528-56-9996 (3.02 ac)**, both GUFFEY. Zillow's
+    coordinates had landed in the neighbour 7528-46-9510 (ELDERS, 5.5 ac),
+    which is why the map looked wrong. New `properties.parcel_numbers`
+    (comma list, primary-first) holds every PIN while `parcel_number` keeps the
+    primary; `gis_viewer.html` splits the `parcel` param, highlights the union
+    and shows "N Parcels (≈ X ac total)"; the detail page shows
+    "Parcel Numbers (N)". `backfill_links` preserves and rebuilds them (and no
+    longer writes a comma list into `parcel_number`). `enrich_properties`
+    gained `ids=[...]` to re-enrich named rows.
+  - Measured on 22 previously-unresolvable NC rows: **1 → 11 hits**, each
+    acreage-checked (no neighbour bindings). 27 tests in
+    `tests/test_multi_parcel.py`; full suite 799 pass, 8 skipped. Verified live
+    through camoufox: `/property/2739` lists both PINs and its embedded map
+    draws both polygons ("2 Parcels (≈ 26.02 ac total)").
+  - **Also today**: an unattended `python3 -m scraper.backfill_elevation`
+    (writes + archives, no `--dry-run`) measured the active inventory and
+    archived **1,759 rows below 1,700 ft** at 12:11:40 — active went 2,667 →
+    901 (AL 68 · GA 73 · KY 4 · NC 257 · SC 27 · TN 472). The reap is a soft
+    delete tagged `archive_reason='below_min_elevation (1700 ft)'` (plus one
+    audit row each), so `UPDATE properties SET status='active', archived_at=NULL,
+    archive_reason=NULL WHERE archive_reason LIKE 'below_min_elevation%'`
+    reverses it. Snapshot: `data/backups/investclosure-pre-elevation-*.db`
+    (taken seconds after the reap).
 
 - **2026-11-08 (HOA yes, no fee listed)**: the detail page's **"Community &
   HOA" card** prints `Has HOA: Yes` even when no fee figure exists — what a

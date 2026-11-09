@@ -34,7 +34,7 @@ from typing import Optional
 from .base import camoufox_context
 from .building_detect import (classify_listing, existing_evidence,
                               needs_images)
-from .db import _ensure_db
+from .db import _ensure_db, fail_stale_runs
 from .zillow import _NEXT_DATA_RE
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,10 @@ def zillow_sweep_running(conn: sqlite3.Connection) -> bool:
 
 
 def wait_for_sweep(conn: sqlite3.Connection) -> None:
+    # A killed run leaves its row 'running' forever; clear those first or
+    # this loop never returns (live 2026-11-08: a dead Zillow run wedged the
+    # HOA rejudge for two days).
+    fail_stale_runs(conn)
     while zillow_sweep_running(conn):
         logger.info("zillow cron sweep is running — pausing harvest 120s")
         time.sleep(120)

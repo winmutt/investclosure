@@ -183,6 +183,11 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         ("land_use", "ALTER TABLE properties ADD COLUMN land_use TEXT"),
         ("bedrooms", "ALTER TABLE properties ADD COLUMN bedrooms INTEGER"),
         ("bathrooms", "ALTER TABLE properties ADD COLUMN bathrooms REAL"),
+        # One listing can span several tax parcels (26.02ac tract = 23.0 +
+        # 3.02 PINs, Jackson #2739). ``parcel_number`` keeps the primary PIN
+        # every existing consumer expects; this holds the full comma list.
+        ("parcel_numbers",
+         "ALTER TABLE properties ADD COLUMN parcel_numbers TEXT"),
     ]
     for col, sql in col_migrations:
         if col not in existing:
@@ -1120,6 +1125,84 @@ def archive_below_acres(    conn: sqlite3.Connection,
         )
     conn.commit()
     return archived
+
+
+def archive_below_elevation(conn: sqlite3.Connection,
+                            min_elevation_ft: float,
+                            source: Optional[str] = None,
+                            max_elevation_ft: Optional[float] = None) -> int:
+    """Archive active properties whose measured elevation is below the rule.
+
+    Mirrors :func:`archive_below_acres`: one bulk UPDATE plus one audit row
+    per property, so the reap shows up in each property's History and in the
+    dashboard's archived-by-system stats. Rows with NULL elevation are left
+    alone (unknown is not disqualifying — the enricher fills them first).
+    """
+    params: list[Any] = [min_elevation_ft]
+    source_filter = ""
+    if source:
+        source_filter = " AND source = ?"
+        params.append(source)
+    upper_filter = ""
+    if max_elevation_ft is not None:
+        upper_filter = " AND elevation_ft > ?"
+        params.append(max_elevation_ft)
+    where = (f"status = 'active' AND elevation_ft IS NOT NULL "
+             f"AND elevation_ft < ?{source_filter}{upper_filter}")
+    ids = [r[0] for r in conn.execute(
+        f"SELECT id FROM properties WHERE {where}", params).fetchall()]
+
+    from datetime import datetime
+    archived_at = datetime.now().isoformat()
+    reason = f"below_min_elevation ({int(min_elevation_ft)} ft)"
+    cur = conn.execute(
+        f"""UPDATE properties
+            SET status = 'archived', last_seen = ?, archived_by = 'system',
+                archived_at = ?, archive_reason = ?
+            WHERE {where}""",
+        [date.today().isoformat(), archived_at, reason] + params)
+    archived = cur.rowcount
+    for pid in ids:
+        log_audit(conn, actor="system", action="archive", property_id=pid,
+                  reason=reason, prev_status="active")
+    conn.commit()
+    return archived
+
+
+def fail_stale_runs(conn: sqlite3.Connection,
+                    max_age_hours: float = 3.0,
+                    source: Optional[str] = None) -> int:
+    """Mark long-'running' scrape runs as failed.
+
+    A run killed mid-flight never reaches :func:`update_scrape_run`, so its
+    row stays ``status='running'`` forever — and the detail-page sweepers
+    (``zillow_hoa_sweep``, ``nc_building_harvest``) pause while a run is
+    running, so one stale row wedges them permanently (live 2026-11-08: a
+    Zillow run left 'running' froze the HOA rejudge for two days).
+    Any legitimate run finishes well inside ``max_age_hours`` (the longest,
+    a full Zillow sweep, is ~75 minutes).
+    """
+    params: list[Any] = [f"-{float(max_age_hours)} hours"]
+    source_filter = ""
+    if source:
+        source_filter = " AND source = ?"
+        params.append(source)
+    rows = conn.execute(
+        f"SELECT id, source FROM scrape_runs "
+        f"WHERE status = 'running' AND started_at < datetime('now', ?)"
+        f"{source_filter}", params).fetchall()
+    if not rows:
+        return 0
+    conn.execute(
+        f"""UPDATE scrape_runs
+            SET status = 'failed', finished_at = datetime('now'),
+                error_message = 'stale: process ended without finishing'
+            WHERE status = 'running' AND started_at < datetime('now', ?)
+            {source_filter}""", params)
+    conn.commit()
+    for run_id, src in rows:
+        logger.warning("Marked stale scrape run %d (%s) as failed", run_id, src)
+    return len(rows)
 
 
 def archive_property(

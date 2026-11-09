@@ -114,7 +114,10 @@
                     <h3>Location</h3>
                     <p><strong>County:</strong> {{ prop.county or 'N/A' }} {{ prop.state }}</p>
                     <p><strong>Zip Code:</strong> {{ prop.zip_code or 'N/A' }}</p>
-                    {% if prop.parcel_number %}
+                    {% set _pins = (prop.parcel_numbers or prop.parcel_number or '').split(',') | map('trim') | select | list %}
+                    {% if _pins | length > 1 %}
+                    <p><strong>Parcel Numbers ({{ _pins | length }}):</strong> {{ _pins | join(', ') }}</p>
+                    {% elif prop.parcel_number %}
                     <p><strong>Parcel Number:</strong> {{ prop.parcel_number }}</p>
                     {% endif %}
                     {% if prop.latitude and prop.longitude %}
@@ -156,7 +159,7 @@
                     <p><strong>Deed / Plat:</strong> <code>{{ prop.extracted_deed_plat }}</code></p>
                     {% endif %}
                     {% if prop.parcel_number %}
-                    <p><strong>DB Parcel:</strong> <code>{{ prop.parcel_number }}</code></p>
+                    <p><strong>DB Parcel:</strong> <code>{{ prop.parcel_numbers or prop.parcel_number }}</code></p>
                     {% endif %}
                 </div>
 
@@ -180,6 +183,10 @@
         {{ prop.acres if prop.acres and prop.acres > 0 else 'N/A' }} acres
         {% endif %}
     </p>
+                    {% if prop.elevation_ft %}
+                    <p><strong>Elevation:</strong> {{ "%.0f"|format(prop.elevation_ft) }} ft
+                        <span class="muted">(USGS 3DEP)</span></p>
+                    {% endif %}
                     {% if prop.get('tnmap_deeded_acres') %}
                     <p><strong>Deeded Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_deeded_acres) }} acres</p>
                     {% endif %}

@@ -353,6 +353,7 @@ class Config:
     MIN_ACRES: float
     MAX_ACRES: float
     MAX_PRICE: int  # 0 = no cap (foreclosures typically have no price)
+    MIN_ELEVATION: float  # per-parcel ground elevation, feet (0 = disabled)
 
     # ---- proxy ----
     PROXY_URL: Optional[str]
@@ -430,6 +431,11 @@ class Config:
         self.MIN_ACRES = _opt_float("INVESTCLOSURE_MIN_ACRES", 1.1)
         self.MAX_ACRES = _opt_float("INVESTCLOSURE_MAX_ACRES", 1000.0)
         self.MAX_PRICE = _opt_int("INVESTCLOSURE_MAX_PRICE", 0)  # no cap for foreclosures
+        # Per-parcel ground elevation. The county lists only encode each
+        # county's PEAK elevation (>=1700ft), so valley parcels inside a
+        # qualifying county pass unless the parcel itself is measured. 0
+        # disables the rule. Env: INVESTCLOSURE_MIN_ELEVATION.
+        self.MIN_ELEVATION = _opt_float("INVESTCLOSURE_MIN_ELEVATION", 1700.0)
 
         # Proxy (env overridable)
         proxy = _opt_str("INVESTCLOSURE_PROXY", "winmutt.com:8088")

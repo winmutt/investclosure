@@ -52,6 +52,12 @@
                         N/A ac
                     {% endif %}
                 </span>
+                {% if prop.elevation_ft %}
+                <span class="tile-meta-divider">·</span>
+                <span class="tile-elevation" title="Ground elevation (USGS 3DEP)">
+                    {{ "%.0f"|format(prop.elevation_ft) }} ft
+                </span>
+                {% endif %}
                 {% if prop.bedrooms or prop.bathrooms %}
                 <span class="tile-meta-divider">·</span>
                 <span class="tile-beds-baths" title="Bedrooms / bathrooms">

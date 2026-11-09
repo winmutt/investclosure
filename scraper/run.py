@@ -438,6 +438,22 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
         except Exception as e:
             logger.warning("Zillow threshold reap failed: %s", e)
 
+    # Measure per-parcel ground elevation (USGS 3DEP) for this run's new
+    # rows and archive anything below the parcel rule. The qualifying county
+    # lists only encode each county's PEAK elevation, so a valley parcel
+    # inside a qualifying county must be measured rather than assumed (live
+    # sample: 70% of rows sat below 1,700 ft). Unknown elevation is kept.
+    try:
+        from scraper.elevation import enrich_elevations
+        elev = enrich_elevations(source=scraper_name, min_id=before_max_id,
+                                 archive=True)
+        if elev.get("target"):
+            print(f"  Elevation: {elev['measured']} measured, "
+                  f"{elev['unknown']} unknown, {elev['archived']} below "
+                  f"{int(elev['min_elevation'])} ft")
+    except Exception as e:
+        logger.warning("Elevation enrich failed: %s", e)
+
     # Track success
     _reset_failure_counter(scraper_name)
 
