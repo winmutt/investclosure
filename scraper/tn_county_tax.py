@@ -36,18 +36,15 @@ Row lifecycle / REAP:
 """
 from __future__ import annotations
 
-import io
 import json
 import logging
-import os
 import re
-import subprocess
-import tempfile
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
 from .base import BaseScraper, PropertyData, camoufox_context
+from . import pdftext
 from .config import config
 
 logger = logging.getLogger(__name__)
@@ -72,58 +69,27 @@ _CACHE_PATH = Path(__file__).parent / "tmp" / "blount_tax_cache.json"
 
 
 # ---------------------------------------------------------------------------
-# OCR (scanned PDF -> text), same approach as haywood_county.py
+# OCR (scanned PDF -> text) — machinery in scraper.pdftext
 # ---------------------------------------------------------------------------
 
 def _ocr_pdf_bytes(data: bytes) -> Optional[str]:
-    """OCR a scanned notice PDF via pdftoppm (PNG render) + tesseract."""
-    try:
-        import shutil
-        if not (shutil.which("pdftoppm") and shutil.which("tesseract")):
-            logger.error("Blount OCR unavailable (pdftoppm/tesseract missing)")
-            return None
-        with tempfile.TemporaryDirectory() as td:
-            pdf_path = os.path.join(td, "scan.pdf")
-            with open(pdf_path, "wb") as f:
-                f.write(data)
-            # 200 dpi covers Blount's large type; 300 dpi is the slow
-            # fallback for small print.
-            for dpi in (200, 300):
-                prefix = os.path.join(td, f"p{dpi}")
-                subprocess.run(
-                    ["pdftoppm", "-r", str(dpi), "-png", pdf_path, prefix],
-                    check=True, timeout=1800)
-                texts: List[str] = []
-                for png in sorted(os.listdir(td)):
-                    if not png.startswith(f"p{dpi}"):
-                        continue
-                    r = subprocess.run(
-                        ["tesseract", os.path.join(td, png),
-                         "stdout", "--psm", "6"],
-                        capture_output=True, text=True, timeout=300)
-                    texts.append(r.stdout or "")
-                joined = "\n".join(texts)
-                if len(joined.strip()) > 3000:
-                    return joined
-                logger.warning("Blount OCR @ %ddpi produced too little text "
-                               "(%d chars)", dpi, len(joined.strip()))
-            return None
-    except Exception as e:
-        logger.error("Blount OCR failed: %s", e)
-        return None
+    """OCR a scanned notice PDF via pdftoppm (PNG render) + tesseract.
+
+    200 dpi covers Blount's large type and reads in a third of the time; an
+    unlegible render escalates to 300. A render must clear 3,000 characters
+    before it is trusted — this is a 30-page tax list, and a partial read
+    would silently drop delinquents.
+    """
+    return pdftext.ocr_pdf_text(data, dpi=(200, 300), psm=6, min_chars=3000,
+                                label="Blount")
 
 
 def _pdf_text(data: bytes) -> Optional[str]:
     """Extract text layer when present, else OCR."""
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
-        if text and len(text.strip()) > 500:
-            return text
-    except Exception as e:
-        logger.warning("Blount pdfplumber extraction failed (scanned?): %s", e)
-    return _ocr_pdf_bytes(data)
+    # min_text_len 501 keeps the original rule: a text layer was accepted
+    # only above 500 characters.
+    return pdftext.pdf_text(data, min_text_len=501, ocr_dpi=(200, 300),
+                            psm=6, min_ocr_len=3000, label="Blount")
 
 
 # ---------------------------------------------------------------------------

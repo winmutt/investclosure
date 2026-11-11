@@ -29,18 +29,14 @@ GIS lookup can't resolve acres).
 """
 from __future__ import annotations
 
-import glob
-import io
 import logging
-import os
 import re
-import subprocess
-import tempfile
 import time
-from typing import Any, Optional
+from typing import Optional
 
 from .base import BaseScraper, PropertyData, camoufox_context
 from . import county_static as cs
+from . import pdftext
 from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
@@ -90,53 +86,16 @@ def _extract_address(text: str) -> Optional[str]:
 
 def _ocr_pdf(data: bytes) -> Optional[str]:
     """OCR a scanned notice PDF via pdftoppm (300dpi PNG) + tesseract."""
-    try:
-        import tempfile
-        tmpdir = tempfile.mkdtemp(prefix="haywood_ocr_")
-        pdf_path = os.path.join(tmpdir, "notice.pdf")
-        prefix = os.path.join(tmpdir, "pg")
-        with open(pdf_path, "wb") as f:
-            f.write(data)
-        subprocess.run(["pdftoppm", "-r", "300", "-png",
-                        pdf_path, prefix], check=True)
-        pages = sorted(glob.glob(f"{prefix}-*.png"))
-        texts: list[str] = []
-        for png in pages:
-            r = subprocess.run(["tesseract", png, "stdout", "--psm", "4"],
-                               capture_output=True, text=True)
-            texts.append(r.stdout or "")
-            try:
-                os.unlink(png)
-            except OSError:
-                pass
-        try:
-            os.remove(pdf_path)
-            os.rmdir(tmpdir)
-        except OSError:
-            pass
-        return "\n".join(texts) if texts else None
-    except FileNotFoundError as e:
-        logger.warning("Haywood OCR unavailable (pdftoppm/tesseract missing): %s", e)
-        return None
-    except Exception as e:
-        logger.warning("Haywood OCR failed: %s", e)
-        return None
+    return pdftext.ocr_pdf_text(data, psm=4, label="Haywood")
 
 
 def _pdf_notice_text(data: bytes) -> Optional[str]:
     """Notice PDF text; falls back to OCR when the text layer is (nearly) empty."""
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
-    except Exception as e:
-        logger.warning("Haywood notice PDF parse failed: %s", e)
-        text = ""
-    if len(text.strip()) < 200:  # scanned notice — OCR it
-        ocr = _ocr_pdf(data)
-        if ocr and len(ocr.strip()) > len(text.strip()):
-            text = ocr
-    return text or None
+    # 200 chars is Haywood's line between a real notice and the digital
+    # footer a scanned PDF still carries; prefer_longer keeps a thin text
+    # layer when the OCR of the picture above it reads even thinner.
+    return pdftext.pdf_text(data, min_text_len=200, prefer_longer=True,
+                            psm=4, label="Haywood notice")
 
 
 def _parse_detail(url: str, wait_ms: int = 2500) -> Optional[dict]:

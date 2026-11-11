@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 from .base import BaseScraper, PropertyData
 from . import county_static as cs
+from . import pdftext
 from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
@@ -49,18 +50,9 @@ ROW_RE = re.compile(
 
 
 def _extract_pdf_text(data: bytes) -> Optional[str]:
-    try:
-        import pdfplumber
-    except ImportError:
-        logger.error("pdfplumber not installed; cannot parse Ashe PDF")
-        return None
-    try:
-        import io
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            return "\n".join(p.extract_text() or "" for p in pdf.pages)
-    except Exception as e:
-        logger.warning("Ashe PDF parse failed: %s", e)
-        return None
+    """Sale-list PDF text. Ashe's list is born digital, but a scanned year
+    now OCRs instead of yielding nothing (the shared reader's fallback)."""
+    return pdftext.pdf_text(data, label="Ashe")
 
 
 class AsheCountyScraper(BaseScraper):

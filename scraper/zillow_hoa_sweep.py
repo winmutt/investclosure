@@ -33,7 +33,6 @@ can be reviewed before any production row changes:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import random
@@ -43,7 +42,7 @@ from typing import Optional
 
 from .base import camoufox_context
 from .db import _ensure_db, archive_property
-from .nc_building_harvest import wait_for_sweep
+from . import jsonl
 from .zillow import extract_hoa
 
 logger = logging.getLogger(__name__)
@@ -55,26 +54,16 @@ SWEEP_JSONL = os.path.join(os.path.dirname(__file__), "tmp",
 
 
 # ---------------------------------------------------------------------------
-# Checkpoint
+# Checkpoint (machinery in scraper.jsonl)
 # ---------------------------------------------------------------------------
 
 def load_done() -> dict:
     """Map of already-swept row id -> last JSONL record."""
-    done = {}
-    if os.path.exists(SWEEP_JSONL):
-        with open(SWEEP_JSONL, encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    rec = json.loads(line)
-                    done[int(rec["id"])] = rec
-                except (json.JSONDecodeError, KeyError, ValueError):
-                    continue
-    return done
+    return jsonl.load_done(SWEEP_JSONL)
 
 
 def append_record(rec: dict) -> None:
-    with open(SWEEP_JSONL, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    jsonl.append_record(SWEEP_JSONL, rec)
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +153,7 @@ def run_pass(limit: Optional[int] = None, ids: Optional[set[int]] = None,
     logger.info("HOA sweep: %d row(s) to fetch (%d already done)%s",
                 len(rows), len(done), " [rejudge]" if rejudge else "")
     for i, row in enumerate(rows, 1):
-        wait_for_sweep(conn)
+        jsonl.wait_for_source(conn, "zillow")
         result = fetch_hoa(row["url"])
         if result is None:
             append_record({

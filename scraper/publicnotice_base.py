@@ -13,17 +13,14 @@ This module factors that common behaviour into :class:`PublicNoticeScraper` so
 the three per-state modules stay thin and consistent.
 """
 from __future__ import annotations
-import glob
 import html as html_lib
-import io
 import logging
-import os
 import re
-import subprocess
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import List, Optional
 
+from . import pdftext
 from .base import BaseForeclosureScraper, PropertyData
 from .config import config
 
@@ -95,6 +92,9 @@ VIEW_NOTICE_BTN = 'input[name="ctl00$ContentPlaceHolder1$PublicNoticeDetailsBody
 DOWNLOAD_LINK = 'a[id*="lnkDownload"]'
 PER_PAGE_SELECT = 'select[name*="ddlPerPage"]'
 
+# --- shared PDF extraction ---------------------------------------------------
+# The machinery lives in scraper.pdftext (four modules needed it); these two
+# wrappers keep the names this module's callers and tests already import.
 def ocr_pdf_text(data: bytes) -> Optional[str]:
     """OCR a scanned notice PDF (pdftoppm 300dpi PNG render + tesseract).
 
@@ -102,77 +102,16 @@ def ocr_pdf_text(data: bytes) -> Optional[str]:
     300dpi scans — e.g. Grainger County's monthly delinquent-tax list).
     pdfplumber returns nothing for those; this recovers the full text.
     """
-    if not data or data[:4] != b"%PDF":
-        return None
-    try:
-        import subprocess
-        import tempfile
-        import glob
-        tmpdir = tempfile.mkdtemp(prefix="pn_ocr_")
-        pdf_path = os.path.join(tmpdir, "notice.pdf")
-        prefix = os.path.join(tmpdir, "pg")
-        with open(pdf_path, "wb") as f:
-            f.write(data)
-        try:
-            subprocess.run(["pdftoppm", "-r", "300", "-png",
-                            pdf_path, prefix], check=True)
-            pages = sorted(glob.glob(f"{prefix}-*.png"))
-            texts = []
-            for png in pages:
-                r = subprocess.run(
-                    ["tesseract", png, "stdout", "--psm", "4"],
-                    capture_output=True, text=True)
-                texts.append(r.stdout or "")
-                try:
-                    os.unlink(png)
-                except OSError:
-                    pass
-        finally:
-            try:
-                os.remove(pdf_path)
-                os.rmdir(tmpdir)
-            except OSError:
-                pass
-        text = "\n".join(t for t in texts if t).strip()
-        return text or None
-    except FileNotFoundError:
-        logger.warning("OCR unavailable (pdftoppm/tesseract missing)")
-        return None
-    except Exception as e:
-        logger.warning("PDF OCR failed: %s", e)
-        return None
+    return pdftext.ocr_pdf_text(data, psm=4, label="Notice")
 
 
-# --- shared PDF extraction ---------------------------------------------------
 def extract_pdf_text(data: bytes) -> Optional[str]:
-    """Extract text from PDF bytes via pdfplumber; OCR fallback for scans."""
-    if not data or data[:4] != b"%PDF":
-        return None
-    try:
-        import pdfplumber
-    except ImportError:
-        # Loud on purpose: a missing pdfplumber silently degrades every
-        # notice to truncated on-page text (see 2026-09-11 incident where a
-        # stale image without pdfplumber truncated all TN rows to 1,000
-        # chars). requirements.txt pins it; rebuild the image if this fires.
-        logger.error("pdfplumber not installed; cannot parse PDF")
-        print("ERROR: pdfplumber missing — notices will be truncated",
-              file=sys.stderr, flush=True)
-        return None
-    try:
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            pages = [p.extract_text() or "" for p in pdf.pages]
-        text = "\n".join(pages).strip()
-        if not text:
-            # No text layer — a scanned/image-only PDF. OCR it so the row
-            # keeps the full notice instead of the 1,000-char on-page
-            # fallback (e.g. TN Grainger delinquent-tax lists).
-            logger.info("PDF has no text layer; OCR fallback")
-            return ocr_pdf_text(data)
-        return text
-    except Exception as e:
-        logger.warning("PDF text extraction failed: %s", e)
-        return None
+    """Extract text from PDF bytes via pdfplumber; OCR fallback for scans.
+
+    ``strip`` matches what this family has always stored: the notice text as
+    ``raw_source_text``, without the PDF's leading/trailing whitespace.
+    """
+    return pdftext.pdf_text(data, strip=True, label="Notice")
 
 
 # --- shared tax / mortgage foreclosure classifier ----------------------------

@@ -34,7 +34,8 @@ from typing import Optional, Sequence
 from .base import camoufox_context
 from .building_detect import (classify_listing, existing_evidence,
                               needs_images)
-from .db import _ensure_db, fail_stale_runs
+from .db import _ensure_db
+from . import jsonl
 from .zillow import _NEXT_DATA_RE
 
 logger = logging.getLogger(__name__)
@@ -120,44 +121,26 @@ def extract_rich(html: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Checkpoint / lock helpers
+# Checkpoint / lock helpers — machinery in scraper.jsonl
 # ---------------------------------------------------------------------------
 
 def load_done() -> dict:
     """Map of already-harvested row id -> last JSONL record."""
-    done = {}
-    if os.path.exists(HARVEST_JSONL):
-        with open(HARVEST_JSONL, encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    rec = json.loads(line)
-                    done[rec["id"]] = rec
-                except (json.JSONDecodeError, KeyError):
-                    continue
-    return done
+    return jsonl.load_done(HARVEST_JSONL)
 
 
 def append_record(rec: dict) -> None:
-    with open(HARVEST_JSONL, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    jsonl.append_record(HARVEST_JSONL, rec)
 
 
 def zillow_sweep_running(conn: sqlite3.Connection) -> bool:
     """True while the cron pass holds an open 'zillow' scrape_run."""
-    row = conn.execute(
-        "SELECT COUNT(*) FROM scrape_runs "
-        "WHERE source='zillow' AND status='running'").fetchone()
-    return bool(row and row[0])
+    return jsonl.sweep_running(conn, "zillow")
 
 
 def wait_for_sweep(conn: sqlite3.Connection) -> None:
-    # A killed run leaves its row 'running' forever; clear those first or
-    # this loop never returns (live 2026-11-08: a dead Zillow run wedged the
-    # HOA rejudge for two days).
-    fail_stale_runs(conn)
-    while zillow_sweep_running(conn):
-        logger.info("zillow cron sweep is running — pausing harvest 120s")
-        time.sleep(120)
+    """Yield to the cron zillow sweep — both passes spend one bot budget."""
+    jsonl.wait_for_source(conn, "zillow")
 
 
 # ---------------------------------------------------------------------------
