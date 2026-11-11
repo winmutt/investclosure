@@ -34,22 +34,39 @@ def _insert(conn, **kw):
     return row["id"]
 
 
+def _sample(index, lat, lon, value):
+    """One getSamples answer in the shape the service really sends.
+
+    Measured live 2026-11-10: every sample carries the request index as
+    ``locationId`` plus the ``location`` it sampled, and the batch comes back
+    in an order that need not match the request.
+    """
+    return {
+        "locationId": index,
+        "location": {"x": lon, "y": lat,
+                     "spatialReference": {"wkid": 4326}},
+        "value": value,
+        "rasterId": 93006,
+        "resolution": 1,
+    }
+
+
 class TestSamplesBatch:
     def test_parses_metres_into_feet_and_nodata(self, monkeypatch):
         seen = {}
+        points = [(35.0, -83.0), (35.1, -83.1), (35.2, -83.2)]
 
         def fake_get(url, params=None):
             seen["url"] = url
             seen["params"] = params
             return {"samples": [
-                {"value": "304.8"},          # 1000 ft
-                {"value": "NoData"},
-                {"value": "0"},
+                _sample(0, 35.0, -83.0, "304.8"),      # 1000 ft
+                _sample(1, 35.1, -83.1, "NoData"),
+                _sample(2, 35.2, -83.2, "0"),
             ]}
 
         monkeypatch.setattr(elevation, "_get_json", fake_get)
-        values = elevation._samples_batch([(35.0, -83.0), (35.1, -83.1),
-                                           (35.2, -83.2)])
+        values = elevation._samples_batch(points)
         assert values == [1000.0, None, 0.0]
         assert "3DEPElevation" in seen["url"]
         assert seen["params"]["geometryType"] == "esriGeometryMultipoint"
@@ -58,13 +75,99 @@ class TestSamplesBatch:
     def test_short_response_is_padded_with_none(self, monkeypatch):
         monkeypatch.setattr(elevation, "_get_json",
                             lambda url, params=None: {"samples": [
-                                {"value": "304.8"}]})
+                                _sample(0, 1, 2, "304.8")]})
         assert elevation._samples_batch([(1, 2), (3, 4)]) == [1000.0, None]
 
     def test_failed_request_returns_empty(self, monkeypatch):
         monkeypatch.setattr(elevation, "_get_json", lambda *a, **k: None)
         # A failed request is indistinguishable from NoData: one slot per point.
         assert elevation._samples_batch([(1, 2)]) == [None]
+
+
+class TestSampleJoining:
+    """The mis-assignment bug: values must follow their own point.
+
+    Live 2026-11-10: a 7-point request answered with ``locationId``
+    4,3,6,0,1,2,5. Reading the values positionally gave every property some
+    other property's elevation — #2913 stored 1,478 ft (archived) while its own
+    point measures 2,652 ft.
+    """
+
+    POINTS = [(35.76805, -82.26802),    # 0  Mt Mitchell-ish   6,132 ft
+              (36.21678, -81.67454),    # 1  Boone-ish        3,218 ft
+              (35.43619, -82.54163)]    # 2  Asheville apt    2,145 ft
+
+    def test_out_of_order_response_keeps_each_points_own_value(self,
+                                                               monkeypatch):
+        meters = [1869.180786133, 980.914978027, 653.795532227]
+        # answered 1,0,2 — nothing like the request order
+        answered = [_sample(1, self.POINTS[1][0], self.POINTS[1][1],
+                            str(meters[1])),
+                    _sample(0, self.POINTS[0][0], self.POINTS[0][1],
+                            str(meters[0])),
+                    _sample(2, self.POINTS[2][0], self.POINTS[2][1],
+                            str(meters[2]))]
+        monkeypatch.setattr(elevation, "_get_json",
+                            lambda url, params=None: {"samples": answered})
+        values = elevation._samples_batch(self.POINTS)
+        assert [round(v, 1) for v in values] == [6132.5, 3218.2, 2145.0]
+
+    def test_mismatched_echo_is_dropped_for_epqs_retry(self, monkeypatch):
+        # the sample claims to be point 0 but reports a coordinate 0.01 deg away
+        monkeypatch.setattr(elevation, "_get_json", lambda url, params=None: {
+            "samples": [{"locationId": 0,
+                         "location": {"x": -82.26, "y": 35.77},
+                         "value": "1869.18"}]})
+        assert elevation._samples_batch(self.POINTS[:1]) == [None]
+
+    def test_sample_without_location_id_is_dropped(self, monkeypatch):
+        monkeypatch.setattr(elevation, "_get_json", lambda url, params=None: {
+            "samples": [{"location": {"x": -82.26802, "y": 35.76805},
+                         "value": "1869.18"}]})
+        assert elevation._samples_batch(self.POINTS[:1]) == [None]
+
+    def test_location_id_outside_the_request_is_dropped(self, monkeypatch):
+        monkeypatch.setattr(elevation, "_get_json", lambda url, params=None: {
+            "samples": [_sample(7, 35.76805, -82.26802, "1869.18")]})
+        assert elevation._samples_batch(self.POINTS) == [None, None, None]
+
+    def test_elevations_end_to_end_order_and_values(self, monkeypatch):
+        meters = [1869.180786133, 980.914978027, 653.795532227]
+
+        def fake_get(url, params=None):
+            return {"samples": [
+                _sample(1, self.POINTS[1][0], self.POINTS[1][1],
+                        str(meters[1])),
+                _sample(0, self.POINTS[0][0], self.POINTS[0][1],
+                        str(meters[0])),
+                # point 2 answered with a foreign coordinate -> EPQS retries
+                _sample(2, 34.0, -84.0, str(meters[2])),
+            ]}
+
+        monkeypatch.setattr(elevation, "_get_json", fake_get)
+        monkeypatch.setattr(elevation, "_sleep", lambda: None)
+        monkeypatch.setattr(elevation, "_epqs_point",
+                            lambda lat, lon: 500.0)
+        values = elevation.elevations(self.POINTS)
+        assert [round(v, 1) for v in values] == [6132.5, 3218.2, 500.0]
+
+
+class TestEpqsPoint:
+    def test_answers_in_feet_for_the_echoed_point(self, monkeypatch):
+        monkeypatch.setattr(elevation, "_get_json", lambda url, params=None: {
+            "location": {"x": "-82.54163", "y": "35.43619"},
+            "locationId": 0, "value": "2144.9985339516306"})
+        assert elevation._epqs_point(35.43619, -82.54163) == \
+            pytest.approx(2144.9985, abs=1e-3)
+
+    def test_foreign_echo_is_refused(self, monkeypatch):
+        monkeypatch.setattr(elevation, "_get_json", lambda url, params=None: {
+            "location": {"x": -81.0, "y": 34.0}, "value": "900.0"})
+        assert elevation._epqs_point(35.43619, -82.54163) is None
+
+    def test_no_answer(self, monkeypatch):
+        monkeypatch.setattr(elevation, "_get_json", lambda url, params=None: None)
+        assert elevation._epqs_point(35.43619, -82.54163) is None
 
 
 class TestBatchLimit:

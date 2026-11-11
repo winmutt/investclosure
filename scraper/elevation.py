@@ -48,6 +48,10 @@ EPQS_URL = ("https://epqs.nationalmap.gov/v1/json?x={lon}&y={lat}"
 MAX_POINTS_PER_REQUEST = 10
 WRITE_CHUNK = 100
 M_PER_FT = 0.3048
+# Both services echo the coordinate they sampled. They echo it exactly
+# (measured 2026-11-10), so anything further than this is a different point
+# and its value must not be used.
+ECHO_TOLERANCE_DEG = 1e-6
 REQUEST_DELAY = (0.25, 0.75)
 REQUEST_TIMEOUT = 60
 
@@ -89,7 +93,17 @@ def _get_json(url: str, params: Optional[dict] = None) -> Optional[dict]:
 
 def _samples_batch(points: Sequence[tuple[float, float]]
                    ) -> list[Optional[float]]:
-    """Elevations (feet) for up to MAX_POINTS_PER_REQUEST (lat, lon) pairs."""
+    """Elevations (feet) for up to MAX_POINTS_PER_REQUEST (lat, lon) pairs.
+
+    Results are joined by the service's own ``locationId`` and the echoed
+    position is verified — they are NOT read in response order. Measured live
+    2026-11-10: a 7-point request answered with ``locationId`` 4,3,6,0,1,2,5,
+    so a positional read hands every property some other property's elevation
+    (#2913 stored 1,478 ft and was archived while its own point measures
+    2,652 ft). ``locationId`` is the request index; the echoed X/Y matches it
+    exactly, so a sample whose echo points anywhere else is discarded (and the
+    caller retries that point through EPQS, which echoes the request exactly).
+    """
     encoded = ",".join(f"[{lon},{lat}]" for lat, lon in points)
     params = {
         "geometry": ('{"points":[%s],"spatialReference":{"wkid":4326}}'
@@ -98,22 +112,53 @@ def _samples_batch(points: Sequence[tuple[float, float]]
         "f": "json",
     }
     data = _get_json(SAMPLES_URL, params)
-    samples = (data or {}).get("samples") or []
-    out: list[Optional[float]] = []
-    for sample in samples[:len(points)]:
+    by_id: dict[int, Optional[float]] = {}
+    for sample in (data or {}).get("samples") or []:
+        raw_id = sample.get("locationId")
         try:
-            out.append(float(sample["value"]) / M_PER_FT)
+            index = int(raw_id)
+        except (TypeError, ValueError):
+            continue                        # unusable: cannot be joined
+        if not 0 <= index < len(points):
+            continue
+        loc = sample.get("location") or {}
+        want_lat, want_lon = points[index]
+        try:
+            got_lat, got_lon = float(loc["y"]), float(loc["x"])
         except (KeyError, TypeError, ValueError):
-            out.append(None)           # "NoData"
-    out += [None] * (len(points) - len(out))
-    return out
+            continue                        # no position to verify against
+        if (abs(got_lat - want_lat) > ECHO_TOLERANCE_DEG
+                or abs(got_lon - want_lon) > ECHO_TOLERANCE_DEG):
+            logger.debug("elevation: sample %s echoed %s,%s for %s,%s — dropped",
+                         index, got_lat, got_lon, want_lat, want_lon)
+            continue
+        value = sample.get("value")
+        try:
+            by_id[index] = float(value) / M_PER_FT
+        except (TypeError, ValueError):
+            by_id[index] = None             # "NoData"
+    return [by_id.get(i) for i in range(len(points))]
 
 
 def _epqs_point(lat: float, lon: float) -> Optional[float]:
-    """Single-point fallback; EPQS already returns feet."""
-    data = _get_json(EPQS_URL.format(lat=lat, lon=lon))
+    """Single point through EPQS; it answers in feet and echoes the request.
+
+    The echo is checked for the same reason as the batch service: a value for
+    some other coordinate is worse than no value at all.
+    """
+    data = _get_json(EPQS_URL.format(lat=lat, lon=lon)) or {}
+    loc = data.get("location") or {}
     try:
-        return float((data or {}).get("value"))
+        got_lat, got_lon = float(loc["y"]), float(loc["x"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (abs(got_lat - lat) > ECHO_TOLERANCE_DEG
+            or abs(got_lon - lon) > ECHO_TOLERANCE_DEG):
+        logger.debug("EPQS echoed %s,%s for %s,%s — dropped",
+                     got_lat, got_lon, lat, lon)
+        return None
+    try:
+        return float(data.get("value"))
     except (TypeError, ValueError):
         return None
 
