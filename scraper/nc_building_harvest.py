@@ -1,4 +1,4 @@
-"""Harvest Zillow detail pages for ACTIVE NC rows with no bed/bath facts.
+"""Harvest Zillow detail pages for ACTIVE rows with no bed/bath facts.
 
 Purpose: find the mountain parcels that carry an EXISTING (often run-down)
 structure while Zillow renders them as bare ``LOT`` listings — the case where
@@ -29,7 +29,7 @@ import os
 import random
 import sqlite3
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 from .base import camoufox_context
 from .building_detect import (classify_listing, existing_evidence,
@@ -223,16 +223,27 @@ def fetch_and_classify(url: str, base_name: str,
 # Main pass
 # ---------------------------------------------------------------------------
 
-def target_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+def target_rows(conn: sqlite3.Connection,
+                states: Optional[Sequence[str]] = None) -> list[sqlite3.Row]:
+    """Active Zillow rows with no bed/bath facts — the improved-or-not unknowns.
+
+    ``states`` narrows the sweep to a set of state codes; the default is every
+    state in the inventory. The pass began NC-only (2026-11-07); the 1,700 ft
+    parcel rule reshaped the inventory and the building review now covers all
+    six states, so the scope is a parameter rather than a hardcoded predicate.
+    """
     conn.row_factory = sqlite3.Row
-    return conn.execute(
-        "SELECT id, url, source_listing_id, address, city, county, "
-        "       price_cents, acres "
-        "FROM properties "
-        "WHERE status='active' AND state='NC' AND source='zillow' "
-        "  AND bedrooms IS NULL AND bathrooms IS NULL "
-        "  AND url IS NOT NULL "
-        "ORDER BY county, id").fetchall()
+    sql = ("SELECT id, url, source_listing_id, address, city, county, state, "
+           "       price_cents, acres "
+           "FROM properties "
+           "WHERE status='active' AND source='zillow' "
+           "  AND bedrooms IS NULL AND bathrooms IS NULL "
+           "  AND url IS NOT NULL ")
+    args: list = []
+    if states:
+        sql += "  AND UPPER(state) IN (" + ",".join("?" * len(states)) + ") "
+        args.extend(s.upper() for s in states)
+    return conn.execute(sql + "ORDER BY state, county, id", args).fetchall()
 
 
 def store_description(conn: sqlite3.Connection, row_id: int,
@@ -248,18 +259,20 @@ def store_description(conn: sqlite3.Connection, row_id: int,
 
 
 def run_pass(limit: Optional[int] = None, write_db: bool = True,
-             download_photos: bool = True) -> dict:
+             download_photos: bool = True,
+             states: Optional[Sequence[str]] = None) -> dict:
     os.makedirs(PHOTOS_DIR, exist_ok=True)
     conn = _ensure_db()
     done = load_done()
-    rows = [r for r in target_rows(conn) if r["id"] not in done]
+    rows = [r for r in target_rows(conn, states) if r["id"] not in done]
     if limit:
         rows = rows[:limit]
     stats = {"target": len(rows), "harvested": 0, "failed": 0,
              "has_building": 0, "no_building": 0, "ambiguous": 0,
              "photo_sets": 0}
-    logger.info("NC building harvest: %d row(s) to fetch (%d already done)",
-                len(rows), len(done))
+    scope = ",".join(states) if states else "ALL"
+    logger.info("building harvest [%s]: %d row(s) to fetch (%d already done)",
+                scope, len(rows), len(done))
     image_sets = sum(1 for r in done.values() if r.get("photos_saved"))
     for i, row in enumerate(rows, 1):
         wait_for_sweep(conn)
@@ -272,6 +285,7 @@ def run_pass(limit: Optional[int] = None, write_db: bool = True,
                 stats["photo_sets"] += 1
             out = {"id": row["id"], "zpid": row["source_listing_id"],
                    "url": row["url"], "county": row["county"],
+                   "state": row["state"],
                    "address": row["address"], "city": row["city"],
                    "status": "ok", "verdict": verdict,
                    "photos_saved": saved,
@@ -300,29 +314,33 @@ def run_pass(limit: Optional[int] = None, write_db: bool = True,
                            "address": row["address"], "status": "failed"})
             stats["failed"] += 1
         if i % 20 == 0 or i == len(rows):
-            logger.info("NC building harvest %d/%d — has=%d none=%d amb=%d "
+            logger.info("building harvest %d/%d — has=%d none=%d amb=%d "
                         "fail=%d photo_sets=%d", i, len(rows),
                         stats["has_building"], stats["no_building"],
                         stats["ambiguous"], stats["failed"], stats["photo_sets"])
         time.sleep(random.uniform(*DELAY_BETWEEN_DETAILS))
-    logger.info("NC building harvest DONE: %s", stats)
+    logger.info("building harvest DONE: %s", stats)
     return stats
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Harvest Zillow details for active NC no-bed/bath rows")
+        description="Harvest Zillow details for active no-bed/bath rows")
     parser.add_argument("--limit", type=int, default=None,
                         help="cap rows this invocation (smoke tests)")
+    parser.add_argument("--states", default="all",
+                        help="comma list of state codes (default: all)")
     parser.add_argument("--no-db", action="store_true",
                         help="skip the description backfill into SQLite")
     parser.add_argument("--no-photos", action="store_true",
                         help="skip downloading photos for ambiguous listings")
     args = parser.parse_args()
+    states = None if args.states.strip().lower() in ("all", "*", "") else [
+        s.strip().upper() for s in args.states.split(",") if s.strip()]
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     run_pass(limit=args.limit, write_db=not args.no_db,
-             download_photos=not args.no_photos)
+             download_photos=not args.no_photos, states=states)
 
 
 if __name__ == "__main__":

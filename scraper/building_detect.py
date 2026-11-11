@@ -841,3 +841,129 @@ def needs_images(verdict: str, photo_count: Optional[int]) -> bool:
     if verdict == AMBIGUOUS:
         return True
     return bool(photo_count and photo_count >= 6)
+
+
+# ---------------------------------------------------------------------------
+# Foreclosure-notice text (the non-Zillow sources)
+# ---------------------------------------------------------------------------
+# Notice wording is not listing copy. Every NC power-of-sale notice recites
+# "AS IS WHERE IS … no representations of warranty", HUD and VA deeds recite
+# "the principal residence of at least one surviving Borrower", and every sale
+# recites the courthouse steps it will be held on — sentences that name a
+# dwelling on a vacant parcel too. Measured on the active notice rows
+# (2026-11-11): :func:`classify_listing`'s collectors promoted 31 of 184, and
+# 14 of those were boilerplate, a sale venue, or a third-party display ad
+# interleaved in a newspaper column. A notice is evidence only when it CONVEYS
+# or IDENTIFIES a structure — "also conveyed, a 2001 mobile home, VIN …",
+# "Property Type Single Family … Year Built 1988" — so the notice path uses its
+# own collectors and refuses to conclude anything from silence.
+
+#: where the sale happens, not what is sold
+NOTICE_VENUE_RE = re.compile(
+    r"court[\s\-]?house|court\s+-\s+house|circuit court|superior court"
+    r"|office of the (?:clerk|court|register|judge)|front steps"
+    r"|front door of|sheriff'?s? (?:office|department|court)"
+    r"|public (?:sale|auction) (?:will be|to be) held", re.I)
+
+#: disclaimers and statute recitals — they name a dwelling on vacant land too
+NOTICE_BOILERPLATE_RE = re.compile(
+    r"as is where is|no representations? of warranty"
+    r"|principal residence of at least one surviving"
+    r"|secretary has the (?:right|option)|department of housing and urban"
+    r"|fincen|residential real[\s-]?estate (?:reporting|transfer)"
+    r"|45-21\.17\s*c|subject to all prior sales"
+    r"|improvements? (?:thereon|therein)?, if any", re.I)
+
+#: third-party display ads riding in the same newspaper column
+NOTICE_AD_RE = re.compile(
+    r"we buy (?:your |all your )?houses?|for rent|apartments?\b|applicants"
+    r"|\$\s?\d[\d,]*\s*(?:/|per)\s*(?:mo|month|week|yr)\b|now hiring"
+    r"|call \d{3}[-. ]\d{3}|submariner\b", re.I)
+
+#: what DOES prove a structure is part of this sale
+NOTICE_IDENT_RES = (
+    # a manufactured home identified as conveyance: make/model/VIN/serial
+    re.compile(r"(?:manufactured|mobile|modular|prefab(?:ricated)?)\s+home"
+               r"[\s\S]{0,140}?(?:serial|vin|title|affix\w*|convey\w*"
+               r"|described|\b19\d\d\b|\b20\d\d\b)|"
+               r"(?:serial|vin)\s*(?:no\.?|number)?\s*\S+\s*[\s\S]{0,60}?"
+               r"(?:manufactured|mobile|modular)\s+home", re.I),
+    # conveyance wording + a structure noun. Bare "improvements" is excluded:
+    # "together with improvements located thereon" is NC deed boilerplate that
+    # conveys whatever may or may not stand on raw ground.
+    re.compile(r"(?:also conveyed|conveyed herewith|together with"
+               r"|also (?:includes?|located|situated)|permanently affixed"
+               r"|shall also include)[\s\S]{0,140}?(?:manufactured|mobile"
+               r"|modular|brick|frame|log|double[\s-]?wide|cabin|house"
+               r"|home|dwelling|residence)", re.I),
+    # a structure noun pinned to THIS parcel
+    re.compile(r"(?:manufactured|mobile|modular|brick|frame|log)\s+"
+               r"(?:home|house|dwelling|cabin|residence)"
+               r"[\s\S]{0,90}?(?:situated on|located on|located in"
+               r"|standing on|affixed|conveyed|is on this property)", re.I),
+    # REO/trustee fact blocks (auction_com publishes the MLS fields)
+    re.compile(r"property\s+type\s*:?\s*single[\s\-]?family"
+               r"|year\s+built\s*:?\s*(?:1[89]|20)\d\d"
+               r"|(?:living|finished)\s+(?:area|sqft|square feet)\s*:?\s*"
+               r"[\d,]{3,}", re.I),
+    re.compile(r"occupied\s*:?\s*(?:by owner|by tenant|occupants"
+               r"|do not disturb)", re.I),
+)
+
+_WORD_JOIN_RE = re.compile(r"(\w)[ \t]*\n?[ \t]*-[ \t]*(\w)")
+
+
+def _dehyphenate_ocr(text: str) -> str:
+    """Undo the column-split that OCR'd notices produce ("manufac- tured").
+
+    Local copy of the AL scraper's trick: building_detect stays a leaf module.
+    Statutory cites are deliberately left alone — this copy is only ever used
+    to re-test a candidate sentence, never to match numbers.
+    """
+    return _WORD_JOIN_RE.sub(r"\1\2", text or "")
+
+
+def notice_evidence(text: Optional[str], limit: int = 3) -> list[str]:
+    """Quoted notice sentences that convey or identify a structure.
+
+    A sentence qualifies only when a :data:`NOTICE_IDENT_RES` collector hits
+    and no venue / boilerplate / display-ad pattern hits — in either the raw
+    or the de-hyphenated copy, because OCR splits words across lines in both
+    directions. Silence is NOT evidence of a vacant parcel: the return value
+    is empty for those, and the caller keeps the row unresolved.
+    """
+    if not text or not text.strip():
+        return []
+    flat = _dehyphenate_ocr(text)
+    quotes: list[str] = []
+    seen: set[str] = set()
+    for pattern in NOTICE_IDENT_RES:
+        for match in pattern.finditer(text):
+            sentence = _sentence(text, match.start(), match.end())
+            flat_sentence = _dehyphenate_ocr(sentence)
+            if any(NOTICE_VENUE_RE.search(s) or NOTICE_BOILERPLATE_RE.search(s)
+                   or NOTICE_AD_RE.search(s)
+                   for s in (sentence, flat_sentence)):
+                continue
+            key = " ".join(sentence.lower().split())[:120]
+            if key in seen:
+                continue
+            seen.add(key)
+            quotes.append(" ".join(sentence.split()))
+            if len(quotes) >= limit:
+                return quotes
+        if quotes:
+            break        # one collector is enough — the others repeat it
+    return quotes
+
+
+def notice_verdict(text: Optional[str]) -> str:
+    """HAS_BUILDING when the notice conveys a structure, else AMBIGUOUS.
+
+    Never NO_BUILDING: the absence of conveyance language in a legal notice
+    proves nothing about the parcel (most vacant-lot notices simply describe
+    metes and bounds), so those rows stay unresolved for the photo pass or the
+    tax-roll land use.
+    """
+    return HAS_BUILDING if notice_evidence(text, limit=1) else AMBIGUOUS
+

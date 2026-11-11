@@ -15,7 +15,8 @@ import pytest
 
 from scraper.building_detect import (
     AMBIGUOUS, HAS_BUILDING, NO_BUILDING, classify_listing,
-    description_verdict, existing_evidence, insights_verdict, needs_images)
+    description_verdict, existing_evidence, insights_verdict, needs_images,
+    notice_evidence, notice_verdict)
 
 HAS = [
     "The well-maintained, older manufactured home sits on 8 acres with creek.",
@@ -177,3 +178,119 @@ class TestSentenceAwareness:
             == NO_BUILDING
         assert description_verdict("Cleared home site, ready to build.") \
             == NO_BUILDING
+
+
+# ---------------------------------------------------------------------------
+# Notice text (non-Zillow sources) — snippets quoted from live active rows
+# ---------------------------------------------------------------------------
+# The 2026-11-11 audit of the active notice inventory: the Zillow-path
+# collectors promoted 31 of 184 rows and 14 were boilerplate, a sale venue or a
+# display ad. These fixtures keep both halves of that result.
+
+NOTICE_HAS = [
+    # AL — the manufactured home is part of what is conveyed
+    ("Blount AL 877", "Situated in Blount County, Alabama. Together with a "
+     "multiwide manufactured home which Is permanently affixed and attached "
+     "to the land and is part of the real property."),
+    ("Talladega AL 1141", "Lot 39 Book 3 Page 162 Parcel No. 03-05-22-3-005-"
+     "039.000 ALSO, one (1) 2003 Cavalier 80' x 28' manufactured home, "
+     "Serial No. CV03AL0260562AB; together with the hereditaments."),
+    # TN — trustee notices titled SALE OF REAL ESTATE AND AFFIXED HOME
+    ("Knox TN 503", "TRUSTEE'S NOTICE OF SALE OF REAL ESTATE AND AFFIXED "
+     "MANUFACTURED HOME. Pursuant to T.C.A. §47-9-604 this sale shall also "
+     "include the affixed manufactured home described as one (1) 2001 CMH "
+     "Manufactured Home bearing Serial No. FL58X1409285."),
+    ("Warren TN 541", "ALSO CONVEYED IS A 1998 OAKWOOD MOBILE HOME, MODEL "
+     "FRE, BEARING VIN NO. H0NC02233152AB WHICH HAS BECOME a fixture."),
+    ("Polk TN 520", "Also conveyed herewith, a 2001 Jagu Jag Manufactured "
+     "Home VIN No. GMHGA4190128142AB, Title No. 64760524."),
+    # KY — newspaper columns interleave, but the mobile home is the subject
+    ("Harlan KY 1223", "the mobile home situated on and attorney fees, until "
+     "paid SERVICING, LLC, THE HEREIN DESCRIBED estate located in Harlan "
+     "County, COMMISSIONER'S SALE."),
+    # REO/trustee fact blocks (auction_com publishes the MLS fields)
+    ("Blount AL 5830", "Square Footage 1782 Lot Size (Acres) 19 Property "
+     "Type Single Family... Year Built 1994 File No 26-02851-LC-A."),
+    ("Monroe TN 5798", "Square Footage 2356 Lot Size (Acres) 9.21 Property "
+     "Type Single Family... Year Built 1988 Occupied: Do not disturb "
+     "occupants. Trespassing is a criminal offense."),
+    # a genuine conveyance survives a venue sentence elsewhere in the notice
+    ("Sullivan TN 542", "CONVEYED UNTO THE GRANTORS, A 55 X 27, 1999 HOMES "
+     "OF LEGEND, INC. MOBILE HOME, MODEL #: AL L1408SB, SERIAL #: HL 58795 "
+     "A, WITH A VIN # OF NTA998476998477. Sale will be held at the front of "
+     "the Circuit Court building for the County of Washington located at "
+     "189 E. Main Street, Abingdon, Virginia 24210."),
+]
+
+NOTICE_NOT_EVIDENCE = [
+    # the AS-IS disclaimer appears on vacant parcels too
+    ("NC as-is clause 5530", "The Trustee under Deed of Trust will offer the "
+     "Property for sale, transfer and conveyance \"AS IS WHERE IS.\" There "
+     "are no representations of warranty relating to the condition of the "
+     "Property or improvements."),
+    # HUD reverse-mortgage recital
+    ("NC HUD clause 1129", "should the Property not remain the principal "
+     "residence of at least one surviving Borrower, the Secretary has the "
+     "right to foreclose this security instrument."),
+    # the sale venue, not the property
+    ("AL courthouse 884", "Sale will be held for cash at the front steps to "
+     "the DeKalb county court- house located at 300 Grand Avenue SW, Fort "
+     "Payne, AL 35967 in Fort Payne, Alabama."),
+    # third-party display ads sharing a newspaper column
+    ("KY apartment ad 1159", "APARTMENTS APARTMENTS deposit test. Duties "
+     "include We Buy Houses for Cash AS antee and lifetime transfer-."),
+    ("KY watch/rental ad 1159", "Let us make your tona, GMT, Submariner and "
+     "3 bedrooms, 1 Applicants must be internet included. $2,200 per month."),
+    # deed boilerplate: conveys whatever may or may not stand there
+    ("NC improvements clause 5600", "Together with improvements located "
+     "hereon; said property being located at 1877 Chandler Creek Road, "
+     "Mars Hill, NC 28754 Tax ID: 9759-37-9558."),
+    ("NC improvements if any", "Being further subject to all prior sales and "
+     "releases and to all deeds of trust, liens, unpaid taxes, matters of "
+     "record, and improvements, if any."),
+    # FinCEN residential-real-estate reporting clause
+    ("FinCEN recital", "This report is filed under the FinCEN residential "
+     "real estate reporting rule; the transferee is a legal entity."),
+    # nothing at all — a metes-and-bounds description
+    ("metes only", "Beginning at a iron pin on the west line of the highway, "
+     "thence North 42 degrees West 180 poles to a stone, thence South 50 "
+     "poles to the beginning."),
+]
+
+
+class TestNoticeEvidence:
+    @pytest.mark.parametrize("name,text", NOTICE_HAS)
+    def test_conveyed_structure_is_evidence(self, name, text):
+        quotes = notice_evidence(text)
+        assert quotes, name
+        assert notice_verdict(text) == HAS_BUILDING
+
+    @pytest.mark.parametrize("name,text", NOTICE_NOT_EVIDENCE)
+    def test_boilerplate_venue_and_ads_are_refused(self, name, text):
+        assert notice_evidence(text) == [], name
+        assert notice_verdict(text) == AMBIGUOUS
+
+    def test_notice_path_never_declares_vacant(self):
+        # silence in a legal notice proves nothing about the ground
+        assert notice_verdict("Beginning at a iron pin, thence 180 poles.") \
+            == AMBIGUOUS
+        assert notice_verdict("") == AMBIGUOUS
+        assert notice_verdict(None) == AMBIGUOUS
+
+    def test_venue_sentence_does_not_void_a_real_conveyance(self):
+        quotes = notice_evidence(dict(NOTICE_HAS)["Sullivan TN 542"])
+        assert len(quotes) == 1
+        assert "MOBILE HOME" in quotes[0].upper()
+        assert "Circuit Court" not in quotes[0]
+
+    def test_hyphen_split_ocr_still_reads(self):
+        # notices OCR as "manufac- tured"; the scan re-joins the word
+        assert notice_verdict(
+            "Also conveyed herewith, a 2001 Jagu Jag Manufac- tured Home "
+            "VIN No. GMHGA4190128142AB.") == HAS_BUILDING
+
+    def test_the_zillow_path_is_what_over_promotes(self):
+        """The reason a separate notice path exists."""
+        name, text = NOTICE_NOT_EVIDENCE[0]
+        assert existing_evidence(text)          # Zillow path: hits
+        assert notice_evidence(text) == []      # notice path: refuses
