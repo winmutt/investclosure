@@ -10,7 +10,7 @@ import re
 from typing import Optional, Any
 
 from .base import BaseScraper, PropertyData, camoufox_context
-from .config import config, NC_FORECLOSURE_COUNTIES
+from .config import config, NC_MOUNTAIN_COUNTIES
 
 logger = logging.getLogger(__name__)
 
@@ -150,19 +150,15 @@ class ZLSNCScraper(BaseScraper):
 
     def _filter_counties(self, properties: list[PropertyData]) -> list[PropertyData]:
         """Filter to NC mountain counties only."""
-        NC_FORECLOSURE_COUNTIES = {
-            "alleghany", "ashe", "avery", "buncombe", "burke",
-            "cherokee", "clay", "graham", "haywood",
-            "henderson", "jackson", "madison", "mcdowell", "mitchell",
-            "swain", "transylvania", "watauga", "yancey",
-            "polk", "macon",
-        }
-        
+        # Derived from config so the scope prune of 2026-11-17 (distance rule)
+        # lands here too; this was a third hand copy of the same list.
+        NC_MOUNTAIN = {c.lower() for c in NC_MOUNTAIN_COUNTIES}
+
         filtered = []
         skipped = 0
         for prop in properties:
             county = prop.get("county") or ""
-            if county.lower() in NC_FORECLOSURE_COUNTIES:
+            if county.lower() in NC_MOUNTAIN:
                 filtered.append(prop)
             else:
                 skipped += 1

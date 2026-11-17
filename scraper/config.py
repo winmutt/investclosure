@@ -173,9 +173,16 @@ KYFORECLOSURES_BASE_URL = _site_env("KYFORECLOSURES", "BASE_URL", "https://kypub
 
 
 # ---------------------------------------------------------------------------
-# Full qualifying county lists (5-state scope)
+# Full qualifying county lists
 # Source: realestate/scraper/config.py QUALIFYING_COUNTIES
-# Criteria: within 250mi of Atlanta, peak elevation >= 1700ft
+# Criteria (both enforced, not assumed):
+#   * county PEAK elevation >= 1700ft — the parcel itself is then measured with
+#     USGS 3DEP and reaped below config.MIN_ELEVATION (scraper/elevation.py)
+#   * county ENTIRELY within config.RADIUS_MILES of the origin address — nearest
+#     boundary point from USGS polygons, scraper/county_radius.json
+# Pruned 2026-11-17 by the distance rule. Distances are the county's nearest
+# point to the origin; a county returns if RADIUS_MILES is raised above it and
+# `python3 -m scraper.backfill_radius` un-archives (or the rows are re-scraped).
 # ---------------------------------------------------------------------------
 
 # GA counties (11)
@@ -189,28 +196,31 @@ AL_FORECLOSURE_COUNTIES = [
     "blount", "cherokee", "cleburne", "dekalb", "talladega",
 ]
 
-# KY counties (5)
-KY_FORECLOSURE_COUNTIES = [
-    "bell", "harlan", "knox", "perry", "whitley",
-]
+# KY counties (0) — retired 2026-11-17: every Kentucky county is outside the
+# radius, so a KY row can never qualify. Former set with its nearest ground to
+# the origin: whitley 180.1, bell 180.9, knox 187.2, harlan 191.6, perry 212.9.
+# Whitley and Bell miss by less than a mile, so raising RADIUS_MILES to 181
+# brings two of them back — that also means re-registering the scraper
+# (see SCRAPER_MODULES in run.py) and re-adding the names here.
+KY_FORECLOSURE_COUNTIES: list[str] = []
 
-# NC counties (26)
+# NC counties (17) — was 25; removed 2026-11-17: alleghany 237.9, ashe 216.3,
+# wilkes 212.9, watauga 203.1, catawba 195.1, avery 186.8, burke 182.8
 NC_FORECLOSURE_COUNTIES = [
-    "alleghany", "ashe", "avery", "buncombe", "burke",
-    "catawba", "cherokee", "clay", "cleveland",
-    "franklin", "graham", "haywood", "henderson", "jackson",
+    "buncombe", "cherokee", "clay", "cleveland",
+    "graham", "haywood", "henderson", "jackson",
     "macon", "madison", "mcdowell", "mitchell", "polk", "rutherford",
-    "swain", "transylvania", "watauga", "wilkes", "yancey",
+    "swain", "transylvania", "yancey",
 ]
 
-# NC mountain counties (21) — the investclosure target set
-# (same list Kania Law uses; excludes river-valley/urban counties)
+# NC mountain counties (15) — the investclosure target set
+# (same list Kania Law uses; excludes river-valley/urban counties).
+# Removed 2026-11-17 by the distance rule: alleghany 237.9, ashe 216.3,
+# watauga 203.1, avery 186.8, burke 182.8.
 NC_MOUNTAIN_COUNTIES = [
-    "alleghany", "ashe", "avery", "buncombe", "burke",
-    "cherokee", "clay", "graham", "haywood",
+    "buncombe", "cherokee", "clay", "graham", "haywood",
     "henderson", "jackson", "macon", "madison", "mcdowell",
-    "mitchell", "polk", "swain", "transylvania", "watauga",
-    "yancey",
+    "mitchell", "polk", "swain", "transylvania", "yancey",
 ]
 
 # SC counties (4)
@@ -218,14 +228,16 @@ SC_FORECLOSURE_COUNTIES = [
     "anderson", "greenville", "oconee", "pickens",
 ]
 
-# TN counties (38) — mountain counties only
+# TN counties (35) — mountain counties only.
+# Removed 2026-11-17 by the distance rule: johnson 205.4, sullivan 191.8,
+# carter 186.8.
 TN_FORECLOSURE_COUNTIES = [
-    "anderson", "bledsoe", "blount", "campbell", "carter", "claiborne",
+    "anderson", "bledsoe", "blount", "campbell", "claiborne",
     "cocke", "coffee", "cumberland", "fentress", "grainger", "greene",
     "grundy", "hamblen", "hamilton", "hancock", "hawkins", "jefferson",
-    "johnson", "knox", "marion", "mcminn", "monroe", "morgan", "overton",
+    "knox", "marion", "mcminn", "monroe", "morgan", "overton",
     "pickett", "polk", "roane", "scott", "sequatchie", "sevier",
-    "sullivan", "unicoi", "union", "van_buren", "warren", "washington", "white",
+    "unicoi", "union", "van_buren", "warren", "washington", "white",
 ]
 
 # GA mountain counties (7) — N GA high-country core, averaging well above

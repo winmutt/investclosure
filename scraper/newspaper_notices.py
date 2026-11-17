@@ -29,18 +29,16 @@ from typing import Any, Optional
 from urllib.parse import urljoin
 
 from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
-from .config import config, NC_FORECLOSURE_COUNTIES
+from .config import config, NC_MOUNTAIN_COUNTIES
 from .rawlog import log_raw
 
 logger = logging.getLogger(__name__)
 
-# NC mountain counties we care about
-NC_FORECLOSURE_COUNTIES = {
-    "alleghany", "ashe", "avery", "buncombe", "burke",
-    "cherokee", "clay", "graham", "haywood",
-    "henderson", "jackson", "madison", "mcdowell", "mitchell",
-    "polk", "macon", "swain", "transylvania", "watauga", "yancey",
-}
+# NC mountain counties we care about. Derived from the one list that defines
+# the target set — this literal shadowed the `NC_FORECLOSURE_COUNTIES` import
+# (a different, broader list) and drifted from it, so the scope prune of
+# 2026-11-17 is applied in config.py alone.
+NC_FORECLOSURE_COUNTIES = {c.lower() for c in NC_MOUNTAIN_COUNTIES}
 
 # Slug patterns that indicate real-property-relevant notices
 PROPERTY_RELEVANT_SLUGS = [

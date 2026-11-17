@@ -135,10 +135,21 @@ def test_trustee_apply_acre_policy(monkeypatch):
     assert [p["source_listing_id"] for p in kept] == ["y", "c"]
 
 
-def test_all_four_registered():
+def test_county_scrapers_registered():
+    """The in-scope NC county scrapers are wired into ``python3 -m scraper``."""
     from scraper.run import SCRAPER_MODULES
-    for name in ("ashe_county", "haywood_county", "macon_county", "mcdowell_county"):
+    for name in ("haywood_county", "macon_county", "mcdowell_county",
+                 "swain_county"):
         assert name in SCRAPER_MODULES, f"{name} not registered"
+
+
+def test_ashe_county_retired():
+    """Ashe NC is 216.3 mi from the origin at its nearest ground, so every row
+    it produced was archived downstream; retired 2026-11-17 (module kept)."""
+    from scraper.config import NC_MOUNTAIN_COUNTIES
+    from scraper.run import SCRAPER_MODULES
+    assert "ashe" not in NC_MOUNTAIN_COUNTIES
+    assert "ashe_county" not in SCRAPER_MODULES
 
 
 def test_haywood_notice_parsers_real_text():

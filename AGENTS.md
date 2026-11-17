@@ -69,7 +69,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/newspaper_notices.py` | Newspaper legal-notice scraper — full notice text as raw source |
 | `scraper/backfill_newspaper.py` | Re-derives newspaper row type/address/city/zip/auction-date from `raw_source_text` |
 | `scraper/al_publicnotice.py` | AL public-notice foreclosure scraper — alabamapublicnotices.com (IPA WebForms: per-category select + per-county checkbox), full notice text as raw source; no statewide parcel service → Maps links only |
-| `scraper/ky_publicnotice.py` | KY public-notice scraper — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only |
+| `scraper/ky_publicnotice.py` | **RETIRED 2026-11-17** (all 5 KY counties outside the radius) — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only. Module kept, unregistered in `run.py` |
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties; `street_only`/`has_house_number` address prep, `search_owner_parcels_in_nc1map` multi-parcel tracts |
 | `scraper/elevation.py` | Per-parcel ground elevation from USGS 3DEP (key-free) — fills `elevation_ft`, archives below `MIN_ELEVATION` |
 | `scraper/backfill_elevation.py` | CLI: measure existing rows, report distribution, apply the 1,700 ft parcel rule (`--dry-run`, `--no-archive`, `--source`, `--refresh`) |
@@ -134,7 +134,7 @@ per-state Tax/Mtg/Re category tabs (`property_category()`).
 
 ## Qualified Counties
 
-Scope spans **6 states** (elevation >1700ft, within 250mi of Atlanta): **GA, AL, KY, NC, SC, TN**. Full county lists live in `scraper/config.py` (`QUALIFYING_COUNTIES`); the investclosure target sets are `NC_MOUNTAIN_COUNTIES` (21) and `GA_MOUNTAIN_COUNTIES` (7).
+Scope spans **6 states** — **GA, AL, NC, SC, TN** plus **KY, retired 2026-11-17** (every Kentucky county is outside the radius). Full county lists live in `scraper/config.py` (`QUALIFYING_COUNTIES`, 72 counties); the investclosure target sets are `NC_MOUNTAIN_COUNTIES` (15) and `GA_MOUNTAIN_COUNTIES` (7).
 
 **Qualification is three-part: acreage, ground elevation, and distance.**
 The county lists were built from each county's **peak** elevation, which says
@@ -160,17 +160,20 @@ the table was built for they report `unknown` and the row is kept, with
 `python3 -m scraper.fetch_county_radius --radius <new>` to re-measure. A
 missing table degrades to `unknown` (keep), never to "out".
 
-13 of the 79 scraper target counties are entirely outside 180 mi — NC
-`alleghany 237.9, ashe 216.3, avery 186.8, burke 182.8, watauga 203.1`; TN
-`carter 186.8, johnson 205.4, sullivan 191.8`; **all 5 KY** counties
-`whitley 180.1, bell 180.9, knox 187.2, harlan 191.6, perry 212.9`. GA/AL/SC
-target sets are entirely inside. The lists still hold those counties (rows are
-archived by the rule instead); pruning the scrape scope is a separate step.
+13 of the 79 scraper target counties were **removed from scrape scope on
+2026-11-17** — NC `alleghany 237.9, ashe 216.3, avery 186.8, burke 182.8,
+watauga 203.1`; TN `carter 186.8, johnson 205.4, sullivan 191.8`; **all 5 KY**
+`whitley 180.1, bell 180.9, knox 187.2, harlan 191.6, perry 212.9` (miles =
+nearest county ground to the origin). GA/AL/SC target sets are entirely inside.
+Two scrapers produced only those counties and are **retired** (registration
+commented out in `run.py`, modules kept): `ky_publicnotice` (87 rows, 0 active)
+and `ashe_county`. `tests/test_scraper.py::TestCountyLists::test_every_target_county_is_in_radius`
+fails if a removed county is pasted back without checking the distance.
 
-### NC — 20 mountain counties (investclosure target set)
-`alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
+### NC — 15 mountain counties (investclosure target set)
+`buncombe, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, yancey`
 
-**Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).
+**Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside the radius); and since 2026-11-17 alleghany, ashe, avery, burke, watauga, wilkes (distance rule — see above).
 
 ### GA — 7 mountain counties (ga_publicnotice target set)
 `fannin, gilmer, lumpkin, rabun, towns, union, white`
@@ -179,9 +182,9 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 
 ### Other states (defined in `config.py`)
 - **AL** (5): `blount, cherokee, cleburne, dekalb, talladega`
-- **KY** (5): `bell, harlan, knox, perry, whitley`
+- **KY** (0 — retired 2026-11-17): every county outside the radius; former set `bell, harlan, knox, perry, whitley` with revival notes in `config.py`
 - **SC** (4): `anderson, greenville, oconee, pickens`
-- **TN** (38): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
+- **TN** (35): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
 
 **GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources). `ga_publicnotice` acreage is enriched per-county from qPublic parcel reports via camoufox page loads (`scraper/ga_gis_enrich.py`, auto-run after each GA scrape); plain HTTP gets Cloudflare-403 so reports are browser-only. Rabun Sky Valley lots report Acres 0 at source and keep `acres=NULL`.
 
@@ -440,6 +443,38 @@ All paths configurable via env vars — **no hardcoded paths**:
 
 ## Recent Updates
 
+- **2026-11-17 (scrape scope pruned to the radius; KY and Ashe retired)**: The
+  distance rule made 13 of 79 target counties unable to qualify, so scraping
+  them was pure waste — every row archived downstream.
+  - **Pruned from `config.py`:** NC 20 → 15 (alleghany, ashe, avery, burke,
+    watauga) and NC_FORECLOSURE_COUNTIES 25 → 17 (also catawba, wilkes);
+    TN 38 → 35 (carter, johnson, sullivan); **KY 5 → 0**.
+    `QUALIFYING_COUNTIES` (which drives the Zillow county sweep) is 88 → **72**,
+    so Zillow stops walking pages in 16 counties whose inventory always dies at
+    the rule — Franklin NC alone is 355 mi out.
+  - **Retired scrapers** (registration commented out in `run.py` with a revival
+    recipe; modules and tests kept): **`ky_publicnotice`** — 87 KY rows in the
+    DB, 0 active, each run costing a browser session plus a Turnstile solve per
+    detail for a state that cannot qualify — and **`ashe_county`**, a
+    single-county scraper for Ashe NC (216.3 mi). `govease` stays live: its
+    county filter reads `TN_FORECLOSURE_COUNTIES`, so it now skips Sullivan
+    rows on its own.
+  - **Three hand copies of the NC list removed.** `kania_law`, `newspaper_notices`
+    and `zls_nc` each carried a literal of the mountain set — and
+    `newspaper_notices`' literal *shadowed* its own `NC_FORECLOSURE_COUNTIES`
+    import, a different list. All three now derive from
+    `config.NC_MOUNTAIN_COUNTIES`, so a scope change happens in one place.
+  - **KY's edge case is recorded, not hidden**: Whitley (180.1) and Bell
+    (180.9) miss 180 mi by less than a mile, so `RADIUS_MILES=181` would bring
+    two KY counties back — `config.py` says exactly that next to the empty list.
+  - Pins: `test_every_target_county_is_in_radius` fails if a pruned county is
+    re-added without checking its USGS distance;
+    `test_distance_prune_removed_the_far_counties` pins the removed set and its
+    mileages; `test_ashe_county_retired` keeps the retirement honest. Fixtures
+    that used out-of-scope counties (integration's Ashe rows, GovEase's and
+    Foreclosure Tennessee's Sullivan rows) moved to in-scope ones, with the
+    excluded case asserted too. Full suite **897 pass, 8 skipped**.
+
 - **2026-11-17 (distance rule: within 180 mi of the office)**: The product rule
   is now **ground ≥ `MIN_ELEVATION` *and* ≤ 180 mi from 1690 Little Willeo Rd,
   Marietta GA 30068**. The county lists came from a loose "mountains within
@@ -493,10 +528,9 @@ All paths configurable via env vars — **no hardcoded paths**:
     `carto.`/`elevation.`/`hydro.`/`epqs.nationalmap.gov`.
   - 35 tests in `tests/test_radius.py` (USGS figures pinned, boundary-vs-centre,
     unmeasured-county semantics, audited + reversible reap, missing table).
-    `tests/test_integration.py` now disables `RADIUS_MILES` in its offline
-    harness — its fixtures live in Ashe NC (216 mi) and Wake/Davidson, so the
-    rule reaped them; that harness proves ingestion. Full suite **892 pass,
-    8 skipped**.
+    `tests/test_integration.py`'s offline harness disables `RADIUS_MILES`: its
+    fixtures carry no coordinates, so the rule would judge them by county, and
+    that harness exists to prove ingestion. Full suite **892 pass, 8 skipped**.
 
 - **2026-11-09 (multi-parcel tracts + NC address resolution fixed)**: "#2739's
   map points at the wrong parcel, and sometimes there is more than one."
@@ -1260,7 +1294,7 @@ All paths configurable via env vars — **no hardcoded paths**:
 - **2026-09-10/11**: Dashboard collapsed to per-state **Tax + Mtg tabs** (`property_category()`); TN/NC/newspaper scrapers retain mortgage/deed-of-trust sales as `mortgage_foreclosure` instead of dropping them; per-notice JSONL raw-text logs in `scraper/tmp/<source>_raw_<date>.jsonl`. Five trustee-sale scrapers added sharing `scraper/trustee_base.py` (`rlselaw`, `brockandscott`, `foreclosuretennessee`, `bellcarrington`, `logs_nc` — 49 Mtg rows on trial runs).
 - **2026-09-11**: Turnstile solving moved in-browser (camoufox passive wait + checkbox click); 2captcha code deleted after `ERROR_ZERO_BALANCE` (passes off-peak, e.g. 4am cron: 51 classified notices). `pdfplumber` post-mortem: stale image predated the requirement so all PDFs silently fell back to truncated HTML — live-installed, `extract_pdf_text` now ERRORs when missing.
 - **2026-09-11**: Append-only `audit_log` table (dashboard archive/unarchive now logged; detail pages show History); search matches parcel/case/listing-id. GA acreage from qPublic reports (`scraper/ga_gis_enrich.py`), TN TPAD/owner/acres (`scraper/tn_gis_enrich.py`); link-depth policy (parcel-deep or nothing; SC/AL get no viewer links). Camp Wahsega #341 + Fern Forest #42 unarchived. **MIN_ACRES 2.0 → 1.1** (55 archived rows sit in [1.1, 2.0)). Rabun Sky Valley lots report Acres 0 at source (kept NULL, not a bug).
-- **County-count corrections**: NC mountain set is **20** (Caldwell removed 8/28, docs said 21); TN mountain set is **38** (docs said 37).
+- **County-count corrections**: NC mountain set is **15** (was 20 until the 2026-11-17 radius prune; Caldwell removed 8/28, docs once said 21); TN mountain set is **35** (was 38; docs once said 37); KY set is **0** (state retired 2026-11-17).
 - **Dashboard auth**: HTTP Basic Auth on all routes except `/health` (+ static); `users` table with werkzeug hashes, auto-seeded `winmutt` on first request; Admin page (list/add/change-password) and `--add-user` / `--set-password` CLI.
 
 ## Tests

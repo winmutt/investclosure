@@ -109,24 +109,24 @@ class TestForeclosureTennessee:
 
     BODY = ("Listing Details\nSubmission ID: 999\nPosted: 09/01/2026\n"
             "Sale Date: 12/15/2029\nTrustee Name: Test Trustee, PLLC\n"
-            "Property Address: 495 Emmett Rd\nCity/State: Blountville, TN\n"
-            "Zipcode: 37617\nCounty: Sullivan\nNotice Content sale text here")
+            "Property Address: 495 Emmett Rd\nCity/State: Rogersville, TN\n"
+            "Zipcode: 37857\nCounty: Hawkins\nNotice Content sale text here")
 
     def test_mountain_detail_kept(self):
-        rec = {"link": "http://x?a=1", "county": "Sullivan",
-               "address": "495 Emmett Rd", "city": "Blountville",
+        rec = {"link": "http://x?a=1", "county": "Hawkins",
+               "address": "495 Emmett Rd", "city": "Rogersville",
                "zip": "37617", "sale": "12/15/2029", "cont": "",
                "firm": "Test Trustee"}
         prop = self._s()._parse_detail(self.BODY, rec)
         assert prop["property_type"] == "mortgage_foreclosure"
         assert prop["state"] == "TN"
-        assert prop["county"] == "Sullivan"
+        assert prop["county"] == "Hawkins"
         assert prop["auction_date"] == "2029-12-15"
         assert prop["source_listing_id"] == "ftn:999"
 
     def test_past_sale_dropped(self):
         body = self.BODY.replace("12/15/2029", "01/10/2020")
-        rec = {"link": "http://x", "county": "Sullivan", "address": "a",
+        rec = {"link": "http://x", "county": "Hawkins", "address": "a",
                "city": "b", "zip": "c", "sale": "", "cont": "", "firm": ""}
         assert self._s()._parse_detail(body, rec) is None
 

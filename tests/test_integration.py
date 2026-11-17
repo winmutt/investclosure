@@ -48,11 +48,14 @@ from scraper.tn_publicnotice import TNPublicNoticeScraper
 # Registry: every scraper wired into `python3 -m scraper`
 # ---------------------------------------------------------------------------
 SCRAPERS = {
-    "kania_law":        {"cls": KaniaLawScraper,        "state": "NC", "in": "Ashe",         "out": "Wake"},
-    "zls_nc":           {"cls": ZLSNCScraper,           "state": "NC", "in": "Ashe",         "out": "Wake"},
+    # "in" counties must be inside BOTH the scraper's own county filter and the
+    # 180 mi product rule — Ashe/Watauga et al. were removed from scope on
+    # 2026-11-17, which silently dropped these fixtures' rows.
+    "kania_law":        {"cls": KaniaLawScraper,        "state": "NC", "in": "Buncombe",     "out": "Wake"},
+    "zls_nc":           {"cls": ZLSNCScraper,           "state": "NC", "in": "Buncombe",     "out": "Wake"},
     "newspaper_notices": {"cls": NewspaperNoticesScraper, "state": "NC", "in": "Transylvania", "out": "Wake"},
     "buncombe_tax":     {"cls": BuncombeTaxScraper,     "state": "NC", "in": "Buncombe",     "out": "Wake"},
-    "nc_publicnotice":  {"cls": NCPublicNoticeScraper,  "state": "NC", "in": "Ashe",         "out": "Wake"},
+    "nc_publicnotice":  {"cls": NCPublicNoticeScraper,  "state": "NC", "in": "Haywood",      "out": "Wake"},
     "ga_publicnotice":  {"cls": GAPublicNoticeScraper,  "state": "GA", "in": "Fannin",       "out": "Fulton"},
     "tn_publicnotice":  {"cls": "tn_publicnotice",      "state": "TN", "in": "Sevier",       "out": "Davidson"},
 }
@@ -166,11 +169,9 @@ class _OfflineRunner:
             patch.object(run_mod, "_is_scraper_disabled", return_value=False),
             patch.object(run_mod, "_reset_failure_counter", return_value=None),
             patch.object(run_mod, "_inc_failure_counter", return_value=None),
-            # These fixtures are county scaffolding (Ashe/Wake/Davidson), and
-            # they carry no coordinates, so the distance rule judges them by
-            # county and reaps every row — Ashe NC's nearest ground is 216 mi
-            # from the origin. Ingestion is what this harness proves; the
-            # radius rule itself is covered in tests/test_radius.py.
+            # The distance rule is a product rule, not part of ingestion, and
+            # these fixtures carry no coordinates — judged by county they would
+            # depend on the USGS table for. tests/test_radius.py covers it.
             patch.object(config, "RADIUS_MILES", 0.0),
         ]
         if self.name == "tn_publicnotice":

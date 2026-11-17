@@ -135,12 +135,21 @@ class TestCitizenTimesCounties:
     """Test that only NC mountain counties are returned."""
 
     def test_county_filter(self):
-        """Verify NC mountain counties are in the filter set."""
+        """Verify the filter set is the current NC mountain target set."""
         from scraper.newspaper_notices import NC_FORECLOSURE_COUNTIES
-        
-        # All expected counties should be present
-        for c in ["ashe", "buncombe", "transylvania", "watauga", "mitchell", "jackson"]:
+        from scraper.config import NC_MOUNTAIN_COUNTIES
+
+        assert NC_FORECLOSURE_COUNTIES == {c.lower()
+                                           for c in NC_MOUNTAIN_COUNTIES}
+        for c in ["buncombe", "transylvania", "mitchell", "jackson"]:
             assert c in NC_FORECLOSURE_COUNTIES
+
+    def test_out_of_radius_counties_excluded(self):
+        """The 180 mi rule removed these from scrape scope on 2026-11-17."""
+        from scraper.newspaper_notices import NC_FORECLOSURE_COUNTIES
+
+        for c in ["ashe", "watauga", "alleghany", "avery", "burke"]:
+            assert c not in NC_FORECLOSURE_COUNTIES
 
     def test_coastal_excluded(self):
         """Coastal counties should NOT be in the filter set."""

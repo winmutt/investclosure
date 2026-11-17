@@ -267,10 +267,16 @@ class TestConfig:
 
 
 class TestCountyLists:
-    """Test county list definitions."""
+    """County list definitions, pruned 2026-11-17 by the distance rule.
+
+    Every list is now scoped by TWO measured rules: peak elevation (the old
+    geographic notion) and ``config.RADIUS_MILES`` from the origin address.
+    ``test_every_target_county_is_in_radius`` is the pin that stops a removed
+    county being pasted back in without checking the distance.
+    """
 
     def test_nc_foreclosure_counties(self):
-        assert len(NC_FORECLOSURE_COUNTIES) == 25
+        assert len(NC_FORECLOSURE_COUNTIES) == 17
 
     def test_ga_foreclosure_counties(self):
         assert len(GA_FORECLOSURE_COUNTIES) == 11
@@ -279,13 +285,46 @@ class TestCountyLists:
         assert len(AL_FORECLOSURE_COUNTIES) == 5
 
     def test_ky_foreclosure_counties(self):
-        assert len(KY_FORECLOSURE_COUNTIES) == 5
+        """Retired: all five KY counties are outside the radius (Whitley is
+        the closest miss at 180.1 mi), so no KY row can qualify."""
+        assert KY_FORECLOSURE_COUNTIES == []
 
     def test_sc_foreclosure_counties(self):
         assert len(SC_FORECLOSURE_COUNTIES) == 4
 
     def test_tn_foreclosure_counties(self):
-        assert len(TN_FORECLOSURE_COUNTIES) == 38
+        assert len(TN_FORECLOSURE_COUNTIES) == 35
+
+    def test_distance_prune_removed_the_far_counties(self):
+        """The 13 counties the 180 mi rule took out of scrape scope."""
+        from scraper.config import NC_MOUNTAIN_COUNTIES
+        removed = {
+            "NC": {"alleghany": 237.9, "ashe": 216.3, "wilkes": 212.9,
+                   "watauga": 203.1, "catawba": 195.1, "avery": 186.8,
+                   "burke": 182.8},
+            "TN": {"johnson": 205.4, "sullivan": 191.8, "carter": 186.8},
+            "KY": {"whitley": 180.1, "bell": 180.9, "knox": 187.2,
+                   "harlan": 191.6, "perry": 212.9},
+        }
+        sets = {"NC": set(NC_FORECLOSURE_COUNTIES) | set(NC_MOUNTAIN_COUNTIES),
+                "TN": set(TN_FORECLOSURE_COUNTIES),
+                "KY": set(KY_FORECLOSURE_COUNTIES)}
+        for state, names in removed.items():
+            for county in names:
+                assert county not in sets[state], f"{county} left in {state}"
+
+    def test_every_target_county_is_in_radius(self):
+        """A county may be in a scrape list only if its nearest ground to the
+        origin is inside RADIUS_MILES (boundary, not centroid)."""
+        from scraper import radius
+
+        offenders = []
+        for state, counties in QUALIFYING_COUNTIES.items():
+            for county in counties:
+                verdict, miles = radius.county_verdict(state, county)
+                if verdict != radius.IN:
+                    offenders.append(f"{county},{state} ({verdict} {miles})")
+        assert offenders == []
 
     def test_qualifying_states(self):
         assert set(QUALIFYING_STATES) == {"GA", "AL", "KY", "NC", "SC", "TN"}
@@ -296,6 +335,7 @@ class TestCountyLists:
     def test_target_counties_flat(self):
         total = sum(len(v) for v in QUALIFYING_COUNTIES.values())
         assert len(TARGET_COUNTIES) == total
+        assert total == 72   # GA 11 + AL 5 + KY 0 + NC 17 + SC 4 + TN 35
 
 
 class TestGISParcelURLs:
@@ -1356,11 +1396,19 @@ class TestZLSNCSrcrapeFilter:
     def test_filter_mixed_counties(self):
         scraper = ZLSNCScraper(delay_range=(0, 0))
         props = [
-            {"source": "zls_nc", "county": "Ashe", "parcel_number": "P1"},
-            {"source": "zls_nc", "county": "Burke", "parcel_number": "P2"},
+            {"source": "zls_nc", "county": "Buncombe", "parcel_number": "P1"},
+            {"source": "zls_nc", "county": "Haywood", "parcel_number": "P2"},
         ]
         result = scraper._filter_counties(props)
         assert len(result) == 2
+
+    def test_filter_removes_out_of_radius_counties(self):
+        """Removed from scrape scope 2026-11-17 by the 180 mi rule."""
+        scraper = ZLSNCScraper(delay_range=(0, 0))
+        props = [{"source": "zls_nc", "county": c, "parcel_number": f"P{i}"}
+                 for i, c in enumerate(
+                     ["Ashe", "Burke", "Watauga", "Avery", "Alleghany"])]
+        assert scraper._filter_counties(props) == []
 
     def test_filter_removes_onslow(self):
         scraper = ZLSNCScraper(delay_range=(0, 0))

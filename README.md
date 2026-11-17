@@ -172,20 +172,21 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `tn_publicnotice` | tnpublicnotice.com (IPA WebForms) | 38 TN mountain | Turnstile | TNMap enrichment |
 | `ga_publicnotice` | georgiapublicnotice.com (IPA WebForms) | 7 GA mountain | Turnstile | qPublic acreage |
 | `al_publicnotice` | alabamapublicnotices.com (IPA WebForms) | 5 AL mountain | Turnstile | Maps links only |
-| `ky_publicnotice` | kypublicnotice.com (Newz Group) | 5 KY mountain | None | Maps links only |
+| `ky_publicnotice` | kypublicnotice.com (Newz Group) | **retired 2026-11-17** (all KY outside the radius) | — | — |
 
 ### Selection Criteria
 
-Properties filtered to **20 NC mountain counties** (county peak >1700ft), each
-parcel then measured for ground elevation and distance to the office (see
+Properties filtered to **15 NC mountain counties** (county peak >1700ft and the
+whole county inside 180 mi of the office), each parcel then measured for ground
+elevation and distance (see
 [Product Verticals](#product-verticals-branding)):
 
-`alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
+`buncombe, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, yancey`
 
 - **Kania Law**: NC tax foreclosure auctions — scrapes ALL records from API, filters to qualifying counties
 - **ZLS-NC / Zacchaeus Legal Services**: NC tax foreclosure listings — filters to mountain counties only
 
-**Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside 250mi radius).
+**Excluded from NC**: Rowan, Rutherford, Cleveland, Catawba, Gaston (foothills, <1700ft), Stokes, Davie, Harnett (outside the 180 mi radius); plus alleghany, ashe, avery, burke, watauga, wilkes — removed by the distance rule on 2026-11-17.
 
 **GA data unavailable**: Georgia's state data hub (data-hub.gio.georgia.gov) contains 0 parcel data sources. Would require per-county research.
 

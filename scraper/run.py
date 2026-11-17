@@ -101,11 +101,19 @@ try:
 except ImportError as e:
     logger.warning("al_publicnotice not available: %s", e)
 
-try:
-    from scraper.ky_publicnotice import KYPublicNoticeScraper
-    SCRAPER_MODULES["ky_publicnotice"] = KYPublicNoticeScraper
-except ImportError as e:
-    logger.warning("ky_publicnotice not available: %s", e)
+# ky_publicnotice RETIRED 2026-11-17 by the distance rule: all five Kentucky
+# counties sit outside config.RADIUS_MILES (whitley 180.1, bell 180.9, knox
+# 187.2, harlan 191.6, perry 212.9 mi from the origin), so every notice it
+# harvested was archived after the fact — 87 rows, 0 of them active. Running it
+# cost a browser session plus Turnstile solves per detail for a state that
+# cannot qualify. The module stays in the tree; to revive it, restore
+# KY_FORECLOSURE_COUNTIES in config.py (or raise RADIUS_MILES past 181 for
+# Whitley and Bell) and uncomment this registration.
+# try:
+#     from scraper.ky_publicnotice import KYPublicNoticeScraper
+#     SCRAPER_MODULES["ky_publicnotice"] = KYPublicNoticeScraper
+# except ImportError as e:
+#     logger.warning("ky_publicnotice not available: %s", e)
 
 try:
     from scraper.rlselaw import RLSelawScraper
@@ -161,11 +169,16 @@ try:
 except ImportError as e:
     logger.warning("swain_county not available: %s", e)
 
-try:
-    from scraper.ashe_county import AsheCountyScraper
-    SCRAPER_MODULES["ashe_county"] = AsheCountyScraper
-except ImportError as e:
-    logger.warning("ashe_county not available: %s", e)
+# ashe_county RETIRED 2026-11-17 by the distance rule: it monitors one county,
+# Ashe NC, whose nearest ground is 216.3 mi from the origin — every row it
+# produced was archived downstream. Module kept in the tree; re-add
+# "ashe" to NC_MOUNTAIN_COUNTIES (and raise RADIUS_MILES past 216.3) and
+# uncomment this registration to revive it.
+# try:
+#     from scraper.ashe_county import AsheCountyScraper
+#     SCRAPER_MODULES["ashe_county"] = AsheCountyScraper
+# except ImportError as e:
+#     logger.warning("ashe_county not available: %s", e)
 
 try:
     from scraper.haywood_county import HaywoodCountyScraper

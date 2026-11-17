@@ -22,11 +22,11 @@ def _row(*texts, hrefs=None):
     return cells
 
 
-SULLIVAN_JUDICIAL = _row(
-    "Sullivan", "TN", "9/29/2026", "11/10/2026", "8:30:00 AM",
+HAWKINS_JUDICIAL = _row(
+    "Hawkins", "TN", "9/29/2026", "11/10/2026", "8:30:00 AM",
     "11/10/2026", "10:00:00 AM", "Judicial Sale",
-    "Sullivan Parcel List", "location_on\nBlountville",
-    hrefs=["https://liveauctions.govease.com/tn/tnsullivan/1432/auctions/refresh"],
+    "Hawkins Parcel List", "location_on\nRogersville",
+    hrefs=["https://liveauctions.govease.com/tn/tnhawkins/1432/auctions/refresh"],
 )
 
 
@@ -52,25 +52,30 @@ class TestHelpers:
         assert _parse_liveauctions_url("", "Hawkins") == ("hawkins", "0")
 
     def test_normalize_county(self):
-        assert _normalize_county("Sullivan") == "Sullivan"
         assert _normalize_county("Hawkins") == "Hawkins"
+        assert _normalize_county("Knox") == "Knox"
         assert _normalize_county("Gibson County - Trenton Chancery") is None
         assert _normalize_county("Madison") is None  # not in target set
         assert _normalize_county("Weakley") is None
+        # Removed from scope 2026-11-17 by the 180 mi rule (nearest ground
+        # 191.8 mi); GovEase still lists Sullivan judicial sales, we skip them.
+        assert _normalize_county("Sullivan") is None
+        assert _normalize_county("Johnson") is None
+        assert _normalize_county("Carter") is None
 
 
 class TestRowParse:
-    def test_sullivan_judicial_row(self):
+    def test_hawkins_judicial_row(self):
         s = GovEaseScraper()
-        prop = s._parse_row(SULLIVAN_JUDICIAL)
+        prop = s._parse_row(HAWKINS_JUDICIAL)
         assert prop is not None
         assert prop["source"] == "govease"
-        assert prop["source_listing_id"] == "tnsullivan-1432-judicial-sale"
-        assert prop["county"] == "Sullivan"
+        assert prop["source_listing_id"] == "tnhawkins-1432-judicial-sale"
+        assert prop["county"] == "Hawkins"
         assert prop["state"] == "TN"
         assert prop["property_type"] == "tax_foreclosure"
         assert prop["auction_date"] == "2026-11-10"
-        assert prop["city"] == "Blountville"
+        assert prop["city"] == "Rogersville"
         assert "liveauctions.govease.com" in prop["url"]
         assert "Judicial Sale" in prop["description"]
         # address-less: no maps/gis links (link-depth policy)
@@ -101,10 +106,10 @@ class TestRowParse:
 
 class TestReapSignals:
     def test_finalize_observed_collects_target_ids(self):
-        rows = [SULLIVAN_JUDICIAL]
+        rows = [HAWKINS_JUDICIAL]
         s = GovEaseScraper()
         s._finalize_observed(rows)
-        assert s.observed_listing_ids == {"tnsullivan-1432-judicial-sale"}
+        assert s.observed_listing_ids == {"tnhawkins-1432-judicial-sale"}
 
     def test_reap_registration(self):
         from scraper.db import EMPTY_REAP_ALLOWED, REAP_SOURCES

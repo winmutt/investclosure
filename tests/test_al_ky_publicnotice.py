@@ -439,10 +439,12 @@ def test_ky_labeled_address_stops_at_junk():
 
 
 def test_ky_county_set_matches_config():
+    """KY is retired (every county is outside the 180 mi radius, Whitley the
+    closest miss at 180.1), so the scraper targets nothing. The parsers above
+    stay tested because the module is kept for a wider radius."""
     from scraper.config import KY_FORECLOSURE_COUNTIES
-    assert KY_FORECLOSURE_COUNTIES == [
-        "bell", "harlan", "knox", "perry", "whitley"]
-    assert _ky()._get_target_counties() == set(KY_FORECLOSURE_COUNTIES)
+    assert KY_FORECLOSURE_COUNTIES == []
+    assert _ky()._get_target_counties() == set()
 
 
 def test_ky_publication_notice_patterns():

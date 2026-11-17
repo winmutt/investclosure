@@ -24,7 +24,7 @@ import random
 from typing import Optional, Any
 
 from .base import BaseScraper, PropertyData, camoufox_context, CamoufoxFetcher
-from .config import config, QUALIFYING_COUNTIES
+from .config import config, NC_MOUNTAIN_COUNTIES
 from .nc_gis_lookup import build_gis_url, build_google_maps_url, build_google_maps_topo_url
 
 logger = logging.getLogger(__name__)
@@ -49,13 +49,11 @@ class KaniaLawScraper(BaseScraper):
         super().__init__(delay_range=delay_range, use_selenium=False)
 
     def scrape(self) -> list[PropertyData]:
-        """Fetch all records from the Kania law firm API in a single call, filtered to qualifying NC counties."""
-        # NC mountain counties only (from qualifying_counties.json NON_QUALIFYING list inverted)
-        NC_QUALIFYING = {
-            "alleghany", "ashe", "avery", "buncombe", "burke", "cherokee",
-            "clay", "graham", "haywood", "henderson", "jackson", "macon", "madison",
-            "mcdowell", "mitchell", "polk", "swain", "transylvania", "watauga", "yancey",
-        }
+        """Fetch all records from the Kania Law firm API in a single call, filtered to qualifying NC counties."""
+        # NC mountain counties, from the one list that defines the target set
+        # (this used to be a hand copy of it, which drifted when the distance
+        # rule pruned the scope on 2026-11-17).
+        NC_QUALIFYING = {c.lower() for c in NC_MOUNTAIN_COUNTIES}
 
         logger.info("Fetching Kania Law tax foreclosure listings ...")
 
