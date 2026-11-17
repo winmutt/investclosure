@@ -454,6 +454,21 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     except Exception as e:
         logger.warning("Elevation enrich failed: %s", e)
 
+    # Distance half of the parcel rule: the row must also sit within
+    # config.RADIUS_MILES of the origin address. Judged from its own pin when
+    # it has one, otherwise from its county's nearest point to the origin
+    # (USGS boundary table), so a pin-less notice row in a county that is
+    # entirely out of range does not survive. Runs after elevation because a
+    # fresh GIS match is what supplies most coordinates.
+    try:
+        from scraper.radius import apply_radius_rule
+        rad = apply_radius_rule(conn, archive=True, min_id=before_max_id)
+        if rad.get("checked") and (rad["outside"] or rad["unknown"]):
+            print(f"  Distance: {rad['outside']} outside "
+                  f"{int(rad['radius_mi'])} mi, {rad['unknown']} undecidable")
+    except Exception as e:
+        logger.warning("Distance rule failed: %s", e)
+
     # Track success
     _reset_failure_counter(scraper_name)
 

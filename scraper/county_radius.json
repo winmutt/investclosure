@@ -1,0 +1,4708 @@
+{
+ "counties": {
+  "AL/autauga": {
+   "boundary_mi": 146.0,
+   "centroid_mi": 163.9,
+   "county": "Autauga",
+   "fips": "01001",
+   "gnis_id": "161526",
+   "measured": true
+  },
+  "AL/baldwin": {
+   "boundary_mi": 252.6,
+   "centroid_mi": 301.8,
+   "county": "Baldwin",
+   "fips": "01003",
+   "gnis_id": "161527",
+   "measured": false
+  },
+  "AL/barbour": {
+   "boundary_mi": 136.5,
+   "centroid_mi": 157.3,
+   "county": "Barbour",
+   "fips": "01005",
+   "gnis_id": "161528",
+   "measured": true
+  },
+  "AL/bibb": {
+   "boundary_mi": 156.6,
+   "centroid_mi": 171.3,
+   "county": "Bibb",
+   "fips": "01007",
+   "gnis_id": "161529",
+   "measured": true
+  },
+  "AL/blount": {
+   "boundary_mi": 109.1,
+   "centroid_mi": 124.1,
+   "county": "Blount",
+   "fips": "01009",
+   "gnis_id": "161530",
+   "measured": true
+  },
+  "AL/bullock": {
+   "boundary_mi": 135.1,
+   "centroid_mi": 151.1,
+   "county": "Bullock",
+   "fips": "01011",
+   "gnis_id": "161531",
+   "measured": true
+  },
+  "AL/butler": {
+   "boundary_mi": 183.0,
+   "centroid_mi": 203.3,
+   "county": "Butler",
+   "fips": "01013",
+   "gnis_id": "161532",
+   "measured": false
+  },
+  "AL/calhoun": {
+   "boundary_mi": 64.6,
+   "centroid_mi": 83.1,
+   "county": "Calhoun",
+   "fips": "01015",
+   "gnis_id": "161533",
+   "measured": true
+  },
+  "AL/chambers": {
+   "boundary_mi": 77.4,
+   "centroid_mi": 93.7,
+   "county": "Chambers",
+   "fips": "01017",
+   "gnis_id": "161534",
+   "measured": true
+  },
+  "AL/cherokee": {
+   "boundary_mi": 57.1,
+   "centroid_mi": 70.0,
+   "county": "Cherokee",
+   "fips": "01019",
+   "gnis_id": "161535",
+   "measured": true
+  },
+  "AL/chilton": {
+   "boundary_mi": 139.0,
+   "centroid_mi": 155.2,
+   "county": "Chilton",
+   "fips": "01021",
+   "gnis_id": "161536",
+   "measured": true
+  },
+  "AL/choctaw": {
+   "boundary_mi": 234.7,
+   "centroid_mi": 261.8,
+   "county": "Choctaw",
+   "fips": "01023",
+   "gnis_id": "161537",
+   "measured": false
+  },
+  "AL/clarke": {
+   "boundary_mi": 226.5,
+   "centroid_mi": 255.2,
+   "county": "Clarke",
+   "fips": "01025",
+   "gnis_id": "161538",
+   "measured": false
+  },
+  "AL/clay": {
+   "boundary_mi": 79.1,
+   "centroid_mi": 97.6,
+   "county": "Clay",
+   "fips": "01027",
+   "gnis_id": "161539",
+   "measured": true
+  },
+  "AL/cleburne": {
+   "boundary_mi": 56.7,
+   "centroid_mi": 67.7,
+   "county": "Cleburne",
+   "fips": "01029",
+   "gnis_id": "161540",
+   "measured": true
+  },
+  "AL/coffee": {
+   "boundary_mi": 182.6,
+   "centroid_mi": 201.1,
+   "county": "Coffee",
+   "fips": "01031",
+   "gnis_id": "161541",
+   "measured": false
+  },
+  "AL/colbert": {
+   "boundary_mi": 179.5,
+   "centroid_mi": 200.2,
+   "county": "Colbert",
+   "fips": "01033",
+   "gnis_id": "161542",
+   "measured": true
+  },
+  "AL/conecuh": {
+   "boundary_mi": 202.7,
+   "centroid_mi": 232.3,
+   "county": "Conecuh",
+   "fips": "01035",
+   "gnis_id": "161543",
+   "measured": false
+  },
+  "AL/coosa": {
+   "boundary_mi": 110.9,
+   "centroid_mi": 128.9,
+   "county": "Coosa",
+   "fips": "01037",
+   "gnis_id": "161544",
+   "measured": true
+  },
+  "AL/covington": {
+   "boundary_mi": 199.2,
+   "centroid_mi": 223.8,
+   "county": "Covington",
+   "fips": "01039",
+   "gnis_id": "161545",
+   "measured": false
+  },
+  "AL/crenshaw": {
+   "boundary_mi": 173.4,
+   "centroid_mi": 191.4,
+   "county": "Crenshaw",
+   "fips": "01041",
+   "gnis_id": "161546",
+   "measured": true
+  },
+  "AL/cullman": {
+   "boundary_mi": 118.8,
+   "centroid_mi": 141.5,
+   "county": "Cullman",
+   "fips": "01043",
+   "gnis_id": "161547",
+   "measured": true
+  },
+  "AL/dale": {
+   "boundary_mi": 174.0,
+   "centroid_mi": 190.2,
+   "county": "Dale",
+   "fips": "01045",
+   "gnis_id": "161548",
+   "measured": true
+  },
+  "AL/dallas": {
+   "boundary_mi": 171.7,
+   "centroid_mi": 194.1,
+   "county": "Dallas",
+   "fips": "01047",
+   "gnis_id": "161549",
+   "measured": true
+  },
+  "AL/dekalb": {
+   "boundary_mi": 73.4,
+   "centroid_mi": 86.4,
+   "county": "Dekalb",
+   "fips": "01049",
+   "gnis_id": "161550",
+   "measured": true
+  },
+  "AL/elmore": {
+   "boundary_mi": 120.6,
+   "centroid_mi": 139.4,
+   "county": "Elmore",
+   "fips": "01051",
+   "gnis_id": "161551",
+   "measured": true
+  },
+  "AL/escambia": {
+   "boundary_mi": 230.7,
+   "centroid_mi": 254.9,
+   "county": "Escambia",
+   "fips": "01053",
+   "gnis_id": "161552",
+   "measured": false
+  },
+  "AL/etowah": {
+   "boundary_mi": 76.5,
+   "centroid_mi": 93.6,
+   "county": "Etowah",
+   "fips": "01055",
+   "gnis_id": "161553",
+   "measured": true
+  },
+  "AL/fayette": {
+   "boundary_mi": 174.7,
+   "centroid_mi": 192.3,
+   "county": "Fayette",
+   "fips": "01057",
+   "gnis_id": "161554",
+   "measured": true
+  },
+  "AL/franklin": {
+   "boundary_mi": 180.2,
+   "centroid_mi": 199.1,
+   "county": "Franklin",
+   "fips": "01059",
+   "gnis_id": "161555",
+   "measured": false
+  },
+  "AL/geneva": {
+   "boundary_mi": 202.8,
+   "centroid_mi": 216.8,
+   "county": "Geneva",
+   "fips": "01061",
+   "gnis_id": "161556",
+   "measured": false
+  },
+  "AL/greene": {
+   "boundary_mi": 198.8,
+   "centroid_mi": 219.3,
+   "county": "Greene",
+   "fips": "01063",
+   "gnis_id": "161557",
+   "measured": false
+  },
+  "AL/hale": {
+   "boundary_mi": 186.7,
+   "centroid_mi": 204.6,
+   "county": "Hale",
+   "fips": "01065",
+   "gnis_id": "161558",
+   "measured": false
+  },
+  "AL/henry": {
+   "boundary_mi": 159.2,
+   "centroid_mi": 177.8,
+   "county": "Henry",
+   "fips": "01067",
+   "gnis_id": "161559",
+   "measured": true
+  },
+  "AL/houston": {
+   "boundary_mi": 188.0,
+   "centroid_mi": 202.9,
+   "county": "Houston",
+   "fips": "01069",
+   "gnis_id": "161560",
+   "measured": false
+  },
+  "AL/jackson": {
+   "boundary_mi": 89.2,
+   "centroid_mi": 106.2,
+   "county": "Jackson",
+   "fips": "01071",
+   "gnis_id": "161561",
+   "measured": true
+  },
+  "AL/jefferson": {
+   "boundary_mi": 123.2,
+   "centroid_mi": 146.4,
+   "county": "Jefferson",
+   "fips": "01073",
+   "gnis_id": "161562",
+   "measured": true
+  },
+  "AL/lamar": {
+   "boundary_mi": 203.1,
+   "centroid_mi": 212.4,
+   "county": "Lamar",
+   "fips": "01075",
+   "gnis_id": "161563",
+   "measured": false
+  },
+  "AL/lauderdale": {
+   "boundary_mi": 170.2,
+   "centroid_mi": 195.7,
+   "county": "Lauderdale",
+   "fips": "01077",
+   "gnis_id": "161564",
+   "measured": true
+  },
+  "AL/lawrence": {
+   "boundary_mi": 156.3,
+   "centroid_mi": 170.1,
+   "county": "Lawrence",
+   "fips": "01079",
+   "gnis_id": "161565",
+   "measured": true
+  },
+  "AL/lee": {
+   "boundary_mi": 95.7,
+   "centroid_mi": 110.6,
+   "county": "Lee",
+   "fips": "01081",
+   "gnis_id": "161566",
+   "measured": true
+  },
+  "AL/limestone": {
+   "boundary_mi": 141.8,
+   "centroid_mi": 157.7,
+   "county": "Limestone",
+   "fips": "01083",
+   "gnis_id": "161567",
+   "measured": true
+  },
+  "AL/lowndes": {
+   "boundary_mi": 165.6,
+   "centroid_mi": 181.7,
+   "county": "Lowndes",
+   "fips": "01085",
+   "gnis_id": "161568",
+   "measured": true
+  },
+  "AL/macon": {
+   "boundary_mi": 119.2,
+   "centroid_mi": 133.6,
+   "county": "Macon",
+   "fips": "01087",
+   "gnis_id": "161569",
+   "measured": true
+  },
+  "AL/madison": {
+   "boundary_mi": 115.4,
+   "centroid_mi": 133.7,
+   "county": "Madison",
+   "fips": "01089",
+   "gnis_id": "161570",
+   "measured": true
+  },
+  "AL/marengo": {
+   "boundary_mi": 203.4,
+   "centroid_mi": 230.0,
+   "county": "Marengo",
+   "fips": "01091",
+   "gnis_id": "161572",
+   "measured": false
+  },
+  "AL/marion": {
+   "boundary_mi": 185.2,
+   "centroid_mi": 199.7,
+   "county": "Marion",
+   "fips": "01093",
+   "gnis_id": "161573",
+   "measured": false
+  },
+  "AL/marshall": {
+   "boundary_mi": 98.4,
+   "centroid_mi": 112.0,
+   "county": "Marshall",
+   "fips": "01095",
+   "gnis_id": "161574",
+   "measured": true
+  },
+  "AL/mobile": {
+   "boundary_mi": 282.6,
+   "centroid_mi": 318.1,
+   "county": "Mobile",
+   "fips": "01097",
+   "gnis_id": "161575",
+   "measured": false
+  },
+  "AL/monroe": {
+   "boundary_mi": 208.2,
+   "centroid_mi": 239.9,
+   "county": "Monroe",
+   "fips": "01099",
+   "gnis_id": "161576",
+   "measured": false
+  },
+  "AL/montgomery": {
+   "boundary_mi": 143.3,
+   "centroid_mi": 160.8,
+   "county": "Montgomery",
+   "fips": "01101",
+   "gnis_id": "161577",
+   "measured": true
+  },
+  "AL/morgan": {
+   "boundary_mi": 126.5,
+   "centroid_mi": 143.7,
+   "county": "Morgan",
+   "fips": "01103",
+   "gnis_id": "161578",
+   "measured": true
+  },
+  "AL/perry": {
+   "boundary_mi": 170.7,
+   "centroid_mi": 191.3,
+   "county": "Perry",
+   "fips": "01105",
+   "gnis_id": "161579",
+   "measured": true
+  },
+  "AL/pickens": {
+   "boundary_mi": 199.8,
+   "centroid_mi": 217.7,
+   "county": "Pickens",
+   "fips": "01107",
+   "gnis_id": "161580",
+   "measured": false
+  },
+  "AL/pike": {
+   "boundary_mi": 159.6,
+   "centroid_mi": 175.5,
+   "county": "Pike",
+   "fips": "01109",
+   "gnis_id": "161581",
+   "measured": true
+  },
+  "AL/randolph": {
+   "boundary_mi": 62.6,
+   "centroid_mi": 77.5,
+   "county": "Randolph",
+   "fips": "01111",
+   "gnis_id": "161582",
+   "measured": true
+  },
+  "AL/russell": {
+   "boundary_mi": 107.9,
+   "centroid_mi": 126.0,
+   "county": "Russell",
+   "fips": "01113",
+   "gnis_id": "161583",
+   "measured": true
+  },
+  "AL/shelby": {
+   "boundary_mi": 118.4,
+   "centroid_mi": 139.3,
+   "county": "Shelby",
+   "fips": "01117",
+   "gnis_id": "161584",
+   "measured": true
+  },
+  "AL/stclair": {
+   "boundary_mi": 95.3,
+   "centroid_mi": 111.4,
+   "county": "St. Clair",
+   "fips": "01115",
+   "gnis_id": "164997",
+   "measured": true
+  },
+  "AL/sumter": {
+   "boundary_mi": 209.7,
+   "centroid_mi": 239.6,
+   "county": "Sumter",
+   "fips": "01119",
+   "gnis_id": "161585",
+   "measured": false
+  },
+  "AL/talladega": {
+   "boundary_mi": 84.7,
+   "centroid_mi": 109.8,
+   "county": "Talladega",
+   "fips": "01121",
+   "gnis_id": "161586",
+   "measured": true
+  },
+  "AL/tallapoosa": {
+   "boundary_mi": 91.8,
+   "centroid_mi": 112.0,
+   "county": "Tallapoosa",
+   "fips": "01123",
+   "gnis_id": "161587",
+   "measured": true
+  },
+  "AL/tuscaloosa": {
+   "boundary_mi": 161.0,
+   "centroid_mi": 186.0,
+   "county": "Tuscaloosa",
+   "fips": "01125",
+   "gnis_id": "161588",
+   "measured": true
+  },
+  "AL/walker": {
+   "boundary_mi": 146.7,
+   "centroid_mi": 166.5,
+   "county": "Walker",
+   "fips": "01127",
+   "gnis_id": "161589",
+   "measured": true
+  },
+  "AL/washington": {
+   "boundary_mi": 256.8,
+   "centroid_mi": 284.2,
+   "county": "Washington",
+   "fips": "01129",
+   "gnis_id": "161590",
+   "measured": false
+  },
+  "AL/wilcox": {
+   "boundary_mi": 185.2,
+   "centroid_mi": 217.8,
+   "county": "Wilcox",
+   "fips": "01131",
+   "gnis_id": "161591",
+   "measured": false
+  },
+  "AL/winston": {
+   "boundary_mi": 155.2,
+   "centroid_mi": 170.4,
+   "county": "Winston",
+   "fips": "01133",
+   "gnis_id": "161592",
+   "measured": true
+  },
+  "GA/appling": {
+   "boundary_mi": 180.5,
+   "centroid_mi": 197.4,
+   "county": "Appling",
+   "fips": "13001",
+   "gnis_id": "349113",
+   "measured": true
+  },
+  "GA/atkinson": {
+   "boundary_mi": 192.0,
+   "centroid_mi": 206.0,
+   "county": "Atkinson",
+   "fips": "13003",
+   "gnis_id": "345784",
+   "measured": false
+  },
+  "GA/bacon": {
+   "boundary_mi": 188.1,
+   "centroid_mi": 202.8,
+   "county": "Bacon",
+   "fips": "13005",
+   "gnis_id": "344784",
+   "measured": false
+  },
+  "GA/baker": {
+   "boundary_mi": 175.1,
+   "centroid_mi": 184.0,
+   "county": "Baker",
+   "fips": "13007",
+   "gnis_id": "342832",
+   "measured": true
+  },
+  "GA/baldwin": {
+   "boundary_mi": 78.9,
+   "centroid_mi": 91.9,
+   "county": "Baldwin",
+   "fips": "13009",
+   "gnis_id": "345255",
+   "measured": true
+  },
+  "GA/banks": {
+   "boundary_mi": 48.7,
+   "centroid_mi": 57.5,
+   "county": "Banks",
+   "fips": "13011",
+   "gnis_id": "349230",
+   "measured": true
+  },
+  "GA/barrow": {
+   "boundary_mi": 30.5,
+   "centroid_mi": 39.5,
+   "county": "Barrow",
+   "fips": "13013",
+   "gnis_id": "356976",
+   "measured": true
+  },
+  "GA/bartow": {
+   "boundary_mi": 16.0,
+   "centroid_mi": 30.4,
+   "county": "Bartow",
+   "fips": "13015",
+   "gnis_id": "351604",
+   "measured": true
+  },
+  "GA/benhill": {
+   "boundary_mi": 157.4,
+   "centroid_mi": 168.6,
+   "county": "Ben Hill",
+   "fips": "13017",
+   "gnis_id": "351606",
+   "measured": true
+  },
+  "GA/berrien": {
+   "boundary_mi": 182.4,
+   "centroid_mi": 199.5,
+   "county": "Berrien",
+   "fips": "13019",
+   "gnis_id": "326638",
+   "measured": false
+  },
+  "GA/bibb": {
+   "boundary_mi": 81.3,
+   "centroid_mi": 91.3,
+   "county": "Bibb",
+   "fips": "13021",
+   "gnis_id": "1672039",
+   "measured": true
+  },
+  "GA/bleckley": {
+   "boundary_mi": 117.6,
+   "centroid_mi": 124.1,
+   "county": "Bleckley",
+   "fips": "13023",
+   "gnis_id": "347451",
+   "measured": true
+  },
+  "GA/brantley": {
+   "boundary_mi": 218.7,
+   "centroid_mi": 238.9,
+   "county": "Brantley",
+   "fips": "13025",
+   "gnis_id": "351605",
+   "measured": false
+  },
+  "GA/brooks": {
+   "boundary_mi": 204.7,
+   "centroid_mi": 222.7,
+   "county": "Brooks",
+   "fips": "13027",
+   "gnis_id": "345518",
+   "measured": false
+  },
+  "GA/bryan": {
+   "boundary_mi": 193.8,
+   "centroid_mi": 219.2,
+   "county": "Bryan",
+   "fips": "13029",
+   "gnis_id": "350496",
+   "measured": false
+  },
+  "GA/bulloch": {
+   "boundary_mi": 168.3,
+   "centroid_mi": 189.0,
+   "county": "Bulloch",
+   "fips": "13031",
+   "gnis_id": "350302",
+   "measured": true
+  },
+  "GA/burke": {
+   "boundary_mi": 132.5,
+   "centroid_mi": 152.4,
+   "county": "Burke",
+   "fips": "13033",
+   "gnis_id": "347944",
+   "measured": true
+  },
+  "GA/butts": {
+   "boundary_mi": 46.1,
+   "centroid_mi": 54.8,
+   "county": "Butts",
+   "fips": "13035",
+   "gnis_id": "352295",
+   "measured": true
+  },
+  "GA/calhoun": {
+   "boundary_mi": 162.6,
+   "centroid_mi": 170.5,
+   "county": "Calhoun",
+   "fips": "13037",
+   "gnis_id": "344074",
+   "measured": true
+  },
+  "GA/camden": {
+   "boundary_mi": 241.9,
+   "centroid_mi": 266.2,
+   "county": "Camden",
+   "fips": "13039",
+   "gnis_id": "1671316",
+   "measured": false
+  },
+  "GA/candler": {
+   "boundary_mi": 165.1,
+   "centroid_mi": 173.6,
+   "county": "Candler",
+   "fips": "13043",
+   "gnis_id": "342852",
+   "measured": true
+  },
+  "GA/carroll": {
+   "boundary_mi": 32.1,
+   "centroid_mi": 48.0,
+   "county": "Carroll",
+   "fips": "13045",
+   "gnis_id": "326650",
+   "measured": true
+  },
+  "GA/catoosa": {
+   "boundary_mi": 68.5,
+   "centroid_mi": 75.8,
+   "county": "Catoosa",
+   "fips": "13047",
+   "gnis_id": "353230",
+   "measured": true
+  },
+  "GA/charlton": {
+   "boundary_mi": 232.0,
+   "centroid_mi": 258.0,
+   "county": "Charlton",
+   "fips": "13049",
+   "gnis_id": "357747",
+   "measured": false
+  },
+  "GA/chatham": {
+   "boundary_mi": 212.1,
+   "centroid_mi": 236.9,
+   "county": "Chatham",
+   "fips": "13051",
+   "gnis_id": "1694477",
+   "measured": false
+  },
+  "GA/chattahoochee": {
+   "boundary_mi": 101.4,
+   "centroid_mi": 115.6,
+   "county": "Chattahoochee",
+   "fips": "13053",
+   "gnis_id": "351012",
+   "measured": true
+  },
+  "GA/chattooga": {
+   "boundary_mi": 54.1,
+   "centroid_mi": 63.5,
+   "county": "Chattooga",
+   "fips": "13055",
+   "gnis_id": "352213",
+   "measured": true
+  },
+  "GA/cherokee": {
+   "boundary_mi": 5.9,
+   "centroid_mi": 18.1,
+   "county": "Cherokee",
+   "fips": "13057",
+   "gnis_id": "1685718",
+   "measured": true
+  },
+  "GA/clarke": {
+   "boundary_mi": 49.6,
+   "centroid_mi": 59.3,
+   "county": "Clarke",
+   "fips": "13059",
+   "gnis_id": "1672699",
+   "measured": true
+  },
+  "GA/clay": {
+   "boundary_mi": 156.2,
+   "centroid_mi": 166.7,
+   "county": "Clay",
+   "fips": "13061",
+   "gnis_id": "344805",
+   "measured": true
+  },
+  "GA/clayton": {
+   "boundary_mi": 23.6,
+   "centroid_mi": 31.0,
+   "county": "Clayton",
+   "fips": "13063",
+   "gnis_id": "1672399",
+   "measured": true
+  },
+  "GA/clinch": {
+   "boundary_mi": 211.0,
+   "centroid_mi": 234.3,
+   "county": "Clinch",
+   "fips": "13065",
+   "gnis_id": "351285",
+   "measured": false
+  },
+  "GA/cobb": {
+   "boundary_mi": 0.0,
+   "centroid_mi": 10.5,
+   "county": "Cobb",
+   "fips": "13067",
+   "gnis_id": "1686112",
+   "measured": true
+  },
+  "GA/coffee": {
+   "boundary_mi": 172.8,
+   "centroid_mi": 191.2,
+   "county": "Coffee",
+   "fips": "13069",
+   "gnis_id": "347456",
+   "measured": true
+  },
+  "GA/colquitt": {
+   "boundary_mi": 184.8,
+   "centroid_mi": 197.0,
+   "county": "Colquitt",
+   "fips": "13071",
+   "gnis_id": "343936",
+   "measured": false
+  },
+  "GA/columbia": {
+   "boundary_mi": 115.2,
+   "centroid_mi": 126.6,
+   "county": "Columbia",
+   "fips": "13073",
+   "gnis_id": "348865",
+   "measured": true
+  },
+  "GA/cook": {
+   "boundary_mi": 188.5,
+   "centroid_mi": 203.9,
+   "county": "Cook",
+   "fips": "13075",
+   "gnis_id": "343878",
+   "measured": false
+  },
+  "GA/coweta": {
+   "boundary_mi": 35.4,
+   "centroid_mi": 48.6,
+   "county": "Coweta",
+   "fips": "13077",
+   "gnis_id": "326666",
+   "measured": true
+  },
+  "GA/crawford": {
+   "boundary_mi": 80.4,
+   "centroid_mi": 91.3,
+   "county": "Crawford",
+   "fips": "13079",
+   "gnis_id": "342918",
+   "measured": true
+  },
+  "GA/crisp": {
+   "boundary_mi": 137.7,
+   "centroid_mi": 147.4,
+   "county": "Crisp",
+   "fips": "13081",
+   "gnis_id": "351607",
+   "measured": true
+  },
+  "GA/dade": {
+   "boundary_mi": 77.9,
+   "centroid_mi": 86.7,
+   "county": "Dade",
+   "fips": "13083",
+   "gnis_id": "347465",
+   "measured": true
+  },
+  "GA/dawson": {
+   "boundary_mi": 25.3,
+   "centroid_mi": 34.1,
+   "county": "Dawson",
+   "fips": "13085",
+   "gnis_id": "351312",
+   "measured": true
+  },
+  "GA/decatur": {
+   "boundary_mi": 201.0,
+   "centroid_mi": 215.2,
+   "county": "Decatur",
+   "fips": "13087",
+   "gnis_id": "352234",
+   "measured": false
+  },
+  "GA/dekalb": {
+   "boundary_mi": 3.4,
+   "centroid_mi": 18.1,
+   "county": "Dekalb",
+   "fips": "13089",
+   "gnis_id": "1687424",
+   "measured": true
+  },
+  "GA/dodge": {
+   "boundary_mi": 127.7,
+   "centroid_mi": 144.4,
+   "county": "Dodge",
+   "fips": "13091",
+   "gnis_id": "348116",
+   "measured": true
+  },
+  "GA/dooly": {
+   "boundary_mi": 120.9,
+   "centroid_mi": 131.3,
+   "county": "Dooly",
+   "fips": "13093",
+   "gnis_id": "351608",
+   "measured": true
+  },
+  "GA/dougherty": {
+   "boundary_mi": 163.2,
+   "centroid_mi": 170.0,
+   "county": "Dougherty",
+   "fips": "13095",
+   "gnis_id": "351259",
+   "measured": true
+  },
+  "GA/douglas": {
+   "boundary_mi": 18.0,
+   "centroid_mi": 28.9,
+   "county": "Douglas",
+   "fips": "13097",
+   "gnis_id": "1686467",
+   "measured": true
+  },
+  "GA/early": {
+   "boundary_mi": 173.4,
+   "centroid_mi": 186.5,
+   "county": "Early",
+   "fips": "13099",
+   "gnis_id": "345041",
+   "measured": true
+  },
+  "GA/echols": {
+   "boundary_mi": 227.6,
+   "centroid_mi": 243.0,
+   "county": "Echols",
+   "fips": "13101",
+   "gnis_id": "348092",
+   "measured": false
+  },
+  "GA/effingham": {
+   "boundary_mi": 190.9,
+   "centroid_mi": 209.5,
+   "county": "Effingham",
+   "fips": "13103",
+   "gnis_id": "350219",
+   "measured": false
+  },
+  "GA/elbert": {
+   "boundary_mi": 75.4,
+   "centroid_mi": 89.8,
+   "county": "Elbert",
+   "fips": "13105",
+   "gnis_id": "347828",
+   "measured": true
+  },
+  "GA/emanuel": {
+   "boundary_mi": 140.4,
+   "centroid_mi": 155.1,
+   "county": "Emanuel",
+   "fips": "13107",
+   "gnis_id": "347508",
+   "measured": true
+  },
+  "GA/evans": {
+   "boundary_mi": 181.3,
+   "centroid_mi": 193.0,
+   "county": "Evans",
+   "fips": "13109",
+   "gnis_id": "345923",
+   "measured": false
+  },
+  "GA/fannin": {
+   "boundary_mi": 44.1,
+   "centroid_mi": 60.6,
+   "county": "Fannin",
+   "fips": "13111",
+   "gnis_id": "351094",
+   "measured": true
+  },
+  "GA/fayette": {
+   "boundary_mi": 30.4,
+   "centroid_mi": 40.1,
+   "county": "Fayette",
+   "fips": "13113",
+   "gnis_id": "1687740",
+   "measured": true
+  },
+  "GA/floyd": {
+   "boundary_mi": 37.7,
+   "centroid_mi": 50.2,
+   "county": "Floyd",
+   "fips": "13115",
+   "gnis_id": "353665",
+   "measured": true
+  },
+  "GA/forsyth": {
+   "boundary_mi": 11.6,
+   "centroid_mi": 22.7,
+   "county": "Forsyth",
+   "fips": "13117",
+   "gnis_id": "1673358",
+   "measured": true
+  },
+  "GA/franklin": {
+   "boundary_mi": 62.0,
+   "centroid_mi": 72.1,
+   "county": "Franklin",
+   "fips": "13119",
+   "gnis_id": "349324",
+   "measured": true
+  },
+  "GA/fulton": {
+   "boundary_mi": 0.8,
+   "centroid_mi": 14.3,
+   "county": "Fulton",
+   "fips": "13121",
+   "gnis_id": "1694833",
+   "measured": true
+  },
+  "GA/gilmer": {
+   "boundary_mi": 38.7,
+   "centroid_mi": 48.6,
+   "county": "Gilmer",
+   "fips": "13123",
+   "gnis_id": "351260",
+   "measured": true
+  },
+  "GA/glascock": {
+   "boundary_mi": 107.5,
+   "centroid_mi": 115.7,
+   "county": "Glascock",
+   "fips": "13125",
+   "gnis_id": "345642",
+   "measured": true
+  },
+  "GA/glynn": {
+   "boundary_mi": 232.1,
+   "centroid_mi": 255.8,
+   "county": "Glynn",
+   "fips": "13127",
+   "gnis_id": "1671513",
+   "measured": false
+  },
+  "GA/gordon": {
+   "boundary_mi": 32.6,
+   "centroid_mi": 44.6,
+   "county": "Gordon",
+   "fips": "13129",
+   "gnis_id": "356672",
+   "measured": true
+  },
+  "GA/grady": {
+   "boundary_mi": 201.1,
+   "centroid_mi": 215.4,
+   "county": "Grady",
+   "fips": "13131",
+   "gnis_id": "351261",
+   "measured": false
+  },
+  "GA/greene": {
+   "boundary_mi": 60.6,
+   "centroid_mi": 76.4,
+   "county": "Greene",
+   "fips": "13133",
+   "gnis_id": "348672",
+   "measured": true
+  },
+  "GA/gwinnett": {
+   "boundary_mi": 7.5,
+   "centroid_mi": 21.8,
+   "county": "Gwinnett",
+   "fips": "13135",
+   "gnis_id": "1688166",
+   "measured": true
+  },
+  "GA/habersham": {
+   "boundary_mi": 54.4,
+   "centroid_mi": 66.6,
+   "county": "Habersham",
+   "fips": "13137",
+   "gnis_id": "351383",
+   "measured": true
+  },
+  "GA/hall": {
+   "boundary_mi": 23.0,
+   "centroid_mi": 40.3,
+   "county": "Hall",
+   "fips": "13139",
+   "gnis_id": "1686953",
+   "measured": true
+  },
+  "GA/hancock": {
+   "boundary_mi": 83.1,
+   "centroid_mi": 94.7,
+   "county": "Hancock",
+   "fips": "13141",
+   "gnis_id": "348209",
+   "measured": true
+  },
+  "GA/haralson": {
+   "boundary_mi": 36.9,
+   "centroid_mi": 48.3,
+   "county": "Haralson",
+   "fips": "13143",
+   "gnis_id": "350637",
+   "measured": true
+  },
+  "GA/harris": {
+   "boundary_mi": 80.0,
+   "centroid_mi": 91.4,
+   "county": "Harris",
+   "fips": "13145",
+   "gnis_id": "326700",
+   "measured": true
+  },
+  "GA/hart": {
+   "boundary_mi": 75.9,
+   "centroid_mi": 85.9,
+   "county": "Hart",
+   "fips": "13147",
+   "gnis_id": "1687995",
+   "measured": true
+  },
+  "GA/heard": {
+   "boundary_mi": 52.5,
+   "centroid_mi": 63.5,
+   "county": "Heard",
+   "fips": "13149",
+   "gnis_id": "347067",
+   "measured": true
+  },
+  "GA/henry": {
+   "boundary_mi": 24.6,
+   "centroid_mi": 39.7,
+   "county": "Henry",
+   "fips": "13151",
+   "gnis_id": "1671894",
+   "measured": true
+  },
+  "GA/houston": {
+   "boundary_mi": 98.3,
+   "centroid_mi": 114.0,
+   "county": "Houston",
+   "fips": "13153",
+   "gnis_id": "1671693",
+   "measured": true
+  },
+  "GA/irwin": {
+   "boundary_mi": 163.7,
+   "centroid_mi": 177.4,
+   "county": "Irwin",
+   "fips": "13155",
+   "gnis_id": "352302",
+   "measured": true
+  },
+  "GA/jackson": {
+   "boundary_mi": 34.7,
+   "centroid_mi": 48.8,
+   "county": "Jackson",
+   "fips": "13157",
+   "gnis_id": "349570",
+   "measured": true
+  },
+  "GA/jasper": {
+   "boundary_mi": 50.5,
+   "centroid_mi": 62.0,
+   "county": "Jasper",
+   "fips": "13159",
+   "gnis_id": "346144",
+   "measured": true
+  },
+  "GA/jeffdavis": {
+   "boundary_mi": 174.3,
+   "centroid_mi": 182.3,
+   "county": "Jeff Davis",
+   "fips": "13161",
+   "gnis_id": "1687999",
+   "measured": true
+  },
+  "GA/jefferson": {
+   "boundary_mi": 116.6,
+   "centroid_mi": 131.2,
+   "county": "Jefferson",
+   "fips": "13163",
+   "gnis_id": "345714",
+   "measured": true
+  },
+  "GA/jenkins": {
+   "boundary_mi": 151.9,
+   "centroid_mi": 163.2,
+   "county": "Jenkins",
+   "fips": "13165",
+   "gnis_id": "342985",
+   "measured": true
+  },
+  "GA/johnson": {
+   "boundary_mi": 119.4,
+   "centroid_mi": 134.3,
+   "county": "Johnson",
+   "fips": "13167",
+   "gnis_id": "346664",
+   "measured": true
+  },
+  "GA/jones": {
+   "boundary_mi": 68.2,
+   "centroid_mi": 82.4,
+   "county": "Jones",
+   "fips": "13169",
+   "gnis_id": "345367",
+   "measured": true
+  },
+  "GA/lamar": {
+   "boundary_mi": 56.0,
+   "centroid_mi": 64.9,
+   "county": "Lamar",
+   "fips": "13171",
+   "gnis_id": "326713",
+   "measured": true
+  },
+  "GA/lanier": {
+   "boundary_mi": 206.1,
+   "centroid_mi": 218.3,
+   "county": "Lanier",
+   "fips": "13173",
+   "gnis_id": "348102",
+   "measured": false
+  },
+  "GA/laurens": {
+   "boundary_mi": 118.5,
+   "centroid_mi": 135.7,
+   "county": "Laurens",
+   "fips": "13175",
+   "gnis_id": "346568",
+   "measured": true
+  },
+  "GA/lee": {
+   "boundary_mi": 143.3,
+   "centroid_mi": 153.4,
+   "county": "Lee",
+   "fips": "13177",
+   "gnis_id": "343390",
+   "measured": true
+  },
+  "GA/liberty": {
+   "boundary_mi": 198.6,
+   "centroid_mi": 227.9,
+   "county": "Liberty",
+   "fips": "13179",
+   "gnis_id": "357095",
+   "measured": false
+  },
+  "GA/lincoln": {
+   "boundary_mi": 100.6,
+   "centroid_mi": 112.7,
+   "county": "Lincoln",
+   "fips": "13181",
+   "gnis_id": "1688000",
+   "measured": true
+  },
+  "GA/long": {
+   "boundary_mi": 195.6,
+   "centroid_mi": 218.3,
+   "county": "Long",
+   "fips": "13183",
+   "gnis_id": "326719",
+   "measured": false
+  },
+  "GA/lowndes": {
+   "boundary_mi": 211.2,
+   "centroid_mi": 227.8,
+   "county": "Lowndes",
+   "fips": "13185",
+   "gnis_id": "326720",
+   "measured": false
+  },
+  "GA/lumpkin": {
+   "boundary_mi": 37.0,
+   "centroid_mi": 46.2,
+   "county": "Lumpkin",
+   "fips": "13187",
+   "gnis_id": "357196",
+   "measured": true
+  },
+  "GA/macon": {
+   "boundary_mi": 102.8,
+   "centroid_mi": 114.6,
+   "county": "Macon",
+   "fips": "13193",
+   "gnis_id": "346957",
+   "measured": true
+  },
+  "GA/madison": {
+   "boundary_mi": 58.3,
+   "centroid_mi": 68.9,
+   "county": "Madison",
+   "fips": "13195",
+   "gnis_id": "1688004",
+   "measured": true
+  },
+  "GA/marion": {
+   "boundary_mi": 98.6,
+   "centroid_mi": 113.2,
+   "county": "Marion",
+   "fips": "13197",
+   "gnis_id": "344107",
+   "measured": true
+  },
+  "GA/mcduffie": {
+   "boundary_mi": 104.0,
+   "centroid_mi": 115.8,
+   "county": "Mcduffie",
+   "fips": "13189",
+   "gnis_id": "348794",
+   "measured": true
+  },
+  "GA/mcintosh": {
+   "boundary_mi": 224.0,
+   "centroid_mi": 246.8,
+   "county": "Mcintosh",
+   "fips": "13191",
+   "gnis_id": "356886",
+   "measured": false
+  },
+  "GA/meriwether": {
+   "boundary_mi": 53.4,
+   "centroid_mi": 67.6,
+   "county": "Meriwether",
+   "fips": "13199",
+   "gnis_id": "346892",
+   "measured": true
+  },
+  "GA/miller": {
+   "boundary_mi": 188.8,
+   "centroid_mi": 196.1,
+   "county": "Miller",
+   "fips": "13201",
+   "gnis_id": "344088",
+   "measured": false
+  },
+  "GA/mitchell": {
+   "boundary_mi": 176.6,
+   "centroid_mi": 191.4,
+   "county": "Mitchell",
+   "fips": "13205",
+   "gnis_id": "343645",
+   "measured": true
+  },
+  "GA/monroe": {
+   "boundary_mi": 58.2,
+   "centroid_mi": 72.9,
+   "county": "Monroe",
+   "fips": "13207",
+   "gnis_id": "343073",
+   "measured": true
+  },
+  "GA/montgomery": {
+   "boundary_mi": 154.0,
+   "centroid_mi": 165.6,
+   "county": "Montgomery",
+   "fips": "13209",
+   "gnis_id": "352276",
+   "measured": true
+  },
+  "GA/morgan": {
+   "boundary_mi": 49.5,
+   "centroid_mi": 59.0,
+   "county": "Morgan",
+   "fips": "13211",
+   "gnis_id": "346008",
+   "measured": true
+  },
+  "GA/murray": {
+   "boundary_mi": 43.5,
+   "centroid_mi": 58.7,
+   "county": "Murray",
+   "fips": "13213",
+   "gnis_id": "1688005",
+   "measured": true
+  },
+  "GA/muscogee": {
+   "boundary_mi": 98.6,
+   "centroid_mi": 105.8,
+   "county": "Muscogee",
+   "fips": "13215",
+   "gnis_id": "357428",
+   "measured": true
+  },
+  "GA/newton": {
+   "boundary_mi": 32.7,
+   "centroid_mi": 43.6,
+   "county": "Newton",
+   "fips": "13217",
+   "gnis_id": "1673547",
+   "measured": true
+  },
+  "GA/oconee": {
+   "boundary_mi": 43.6,
+   "centroid_mi": 56.4,
+   "county": "Oconee",
+   "fips": "13219",
+   "gnis_id": "356774",
+   "measured": true
+  },
+  "GA/oglethorpe": {
+   "boundary_mi": 64.0,
+   "centroid_mi": 76.1,
+   "county": "Oglethorpe",
+   "fips": "13221",
+   "gnis_id": "351262",
+   "measured": true
+  },
+  "GA/paulding": {
+   "boundary_mi": 18.6,
+   "centroid_mi": 27.1,
+   "county": "Paulding",
+   "fips": "13223",
+   "gnis_id": "349912",
+   "measured": true
+  },
+  "GA/peach": {
+   "boundary_mi": 96.8,
+   "centroid_mi": 103.6,
+   "county": "Peach",
+   "fips": "13225",
+   "gnis_id": "343153",
+   "measured": true
+  },
+  "GA/pickens": {
+   "boundary_mi": 26.5,
+   "centroid_mi": 33.0,
+   "county": "Pickens",
+   "fips": "13227",
+   "gnis_id": "1673011",
+   "measured": true
+  },
+  "GA/pierce": {
+   "boundary_mi": 205.3,
+   "centroid_mi": 221.9,
+   "county": "Pierce",
+   "fips": "13229",
+   "gnis_id": "349086",
+   "measured": false
+  },
+  "GA/pike": {
+   "boundary_mi": 54.0,
+   "centroid_mi": 62.0,
+   "county": "Pike",
+   "fips": "13231",
+   "gnis_id": "346482",
+   "measured": true
+  },
+  "GA/polk": {
+   "boundary_mi": 30.5,
+   "centroid_mi": 45.0,
+   "county": "Polk",
+   "fips": "13233",
+   "gnis_id": "343585",
+   "measured": true
+  },
+  "GA/pulaski": {
+   "boundary_mi": 120.8,
+   "centroid_mi": 132.7,
+   "county": "Pulaski",
+   "fips": "13235",
+   "gnis_id": "347593",
+   "measured": true
+  },
+  "GA/putnam": {
+   "boundary_mi": 62.9,
+   "centroid_mi": 75.1,
+   "county": "Putnam",
+   "fips": "13237",
+   "gnis_id": "347246",
+   "measured": true
+  },
+  "GA/quitman": {
+   "boundary_mi": 142.8,
+   "centroid_mi": 150.9,
+   "county": "Quitman",
+   "fips": "13239",
+   "gnis_id": "350547",
+   "measured": true
+  },
+  "GA/rabun": {
+   "boundary_mi": 71.5,
+   "centroid_mi": 84.0,
+   "county": "Rabun",
+   "fips": "13241",
+   "gnis_id": "351489",
+   "measured": true
+  },
+  "GA/randolph": {
+   "boundary_mi": 143.3,
+   "centroid_mi": 155.2,
+   "county": "Randolph",
+   "fips": "13243",
+   "gnis_id": "352242",
+   "measured": true
+  },
+  "GA/richmond": {
+   "boundary_mi": 126.8,
+   "centroid_mi": 140.8,
+   "county": "Richmond",
+   "fips": "13245",
+   "gnis_id": "358024",
+   "measured": true
+  },
+  "GA/rockdale": {
+   "boundary_mi": 26.8,
+   "centroid_mi": 31.6,
+   "county": "Rockdale",
+   "fips": "13247",
+   "gnis_id": "357592",
+   "measured": true
+  },
+  "GA/schley": {
+   "boundary_mi": 107.9,
+   "centroid_mi": 119.5,
+   "county": "Schley",
+   "fips": "13249",
+   "gnis_id": "344129",
+   "measured": true
+  },
+  "GA/screven": {
+   "boundary_mi": 169.2,
+   "centroid_mi": 182.3,
+   "county": "Screven",
+   "fips": "13251",
+   "gnis_id": "350204",
+   "measured": true
+  },
+  "GA/seminole": {
+   "boundary_mi": 202.2,
+   "centroid_mi": 212.5,
+   "county": "Seminole",
+   "fips": "13253",
+   "gnis_id": "351263",
+   "measured": false
+  },
+  "GA/spalding": {
+   "boundary_mi": 44.0,
+   "centroid_mi": 50.8,
+   "county": "Spalding",
+   "fips": "13255",
+   "gnis_id": "353055",
+   "measured": true
+  },
+  "GA/stephens": {
+   "boundary_mi": 63.8,
+   "centroid_mi": 74.3,
+   "county": "Stephens",
+   "fips": "13257",
+   "gnis_id": "350028",
+   "measured": true
+  },
+  "GA/stewart": {
+   "boundary_mi": 122.2,
+   "centroid_mi": 134.4,
+   "county": "Stewart",
+   "fips": "13259",
+   "gnis_id": "347360",
+   "measured": true
+  },
+  "GA/sumter": {
+   "boundary_mi": 122.2,
+   "centroid_mi": 135.2,
+   "county": "Sumter",
+   "fips": "13261",
+   "gnis_id": "343504",
+   "measured": true
+  },
+  "GA/talbot": {
+   "boundary_mi": 76.6,
+   "centroid_mi": 89.4,
+   "county": "Talbot",
+   "fips": "13263",
+   "gnis_id": "326757",
+   "measured": true
+  },
+  "GA/taliaferro": {
+   "boundary_mi": 83.2,
+   "centroid_mi": 92.2,
+   "county": "Taliaferro",
+   "fips": "13265",
+   "gnis_id": "347654",
+   "measured": true
+  },
+  "GA/tattnall": {
+   "boundary_mi": 170.5,
+   "centroid_mi": 191.0,
+   "county": "Tattnall",
+   "fips": "13267",
+   "gnis_id": "347445",
+   "measured": true
+  },
+  "GA/taylor": {
+   "boundary_mi": 86.1,
+   "centroid_mi": 99.5,
+   "county": "Taylor",
+   "fips": "13269",
+   "gnis_id": "344156",
+   "measured": true
+  },
+  "GA/telfair": {
+   "boundary_mi": 152.7,
+   "centroid_mi": 165.7,
+   "county": "Telfair",
+   "fips": "13271",
+   "gnis_id": "356958",
+   "measured": true
+  },
+  "GA/terrell": {
+   "boundary_mi": 139.7,
+   "centroid_mi": 152.9,
+   "county": "Terrell",
+   "fips": "13273",
+   "gnis_id": "352238",
+   "measured": true
+  },
+  "GA/thomas": {
+   "boundary_mi": 201.8,
+   "centroid_mi": 217.8,
+   "county": "Thomas",
+   "fips": "13275",
+   "gnis_id": "343835",
+   "measured": false
+  },
+  "GA/tift": {
+   "boundary_mi": 171.0,
+   "centroid_mi": 182.2,
+   "county": "Tift",
+   "fips": "13277",
+   "gnis_id": "344090",
+   "measured": true
+  },
+  "GA/toombs": {
+   "boundary_mi": 161.4,
+   "centroid_mi": 176.2,
+   "county": "Toombs",
+   "fips": "13279",
+   "gnis_id": "345220",
+   "measured": true
+  },
+  "GA/towns": {
+   "boundary_mi": 65.9,
+   "centroid_mi": 74.4,
+   "county": "Towns",
+   "fips": "13281",
+   "gnis_id": "351252",
+   "measured": true
+  },
+  "GA/treutlen": {
+   "boundary_mi": 143.7,
+   "centroid_mi": 152.5,
+   "county": "Treutlen",
+   "fips": "13283",
+   "gnis_id": "347505",
+   "measured": true
+  },
+  "GA/troup": {
+   "boundary_mi": 59.1,
+   "centroid_mi": 75.3,
+   "county": "Troup",
+   "fips": "13285",
+   "gnis_id": "1673298",
+   "measured": true
+  },
+  "GA/turner": {
+   "boundary_mi": 154.5,
+   "centroid_mi": 163.4,
+   "county": "Turner",
+   "fips": "13287",
+   "gnis_id": "343238",
+   "measured": true
+  },
+  "GA/twiggs": {
+   "boundary_mi": 94.2,
+   "centroid_mi": 107.3,
+   "county": "Twiggs",
+   "fips": "13289",
+   "gnis_id": "345456",
+   "measured": true
+  },
+  "GA/union": {
+   "boundary_mi": 47.6,
+   "centroid_mi": 62.9,
+   "county": "Union",
+   "fips": "13291",
+   "gnis_id": "353193",
+   "measured": true
+  },
+  "GA/upson": {
+   "boundary_mi": 68.3,
+   "centroid_mi": 76.8,
+   "county": "Upson",
+   "fips": "13293",
+   "gnis_id": "346759",
+   "measured": true
+  },
+  "GA/walker": {
+   "boundary_mi": 55.9,
+   "centroid_mi": 72.7,
+   "county": "Walker",
+   "fips": "13295",
+   "gnis_id": "354216",
+   "measured": true
+  },
+  "GA/walton": {
+   "boundary_mi": 27.9,
+   "centroid_mi": 40.9,
+   "county": "Walton",
+   "fips": "13297",
+   "gnis_id": "351264",
+   "measured": true
+  },
+  "GA/ware": {
+   "boundary_mi": 200.2,
+   "centroid_mi": 233.3,
+   "county": "Ware",
+   "fips": "13299",
+   "gnis_id": "357722",
+   "measured": false
+  },
+  "GA/warren": {
+   "boundary_mi": 95.3,
+   "centroid_mi": 107.0,
+   "county": "Warren",
+   "fips": "13301",
+   "gnis_id": "347777",
+   "measured": true
+  },
+  "GA/washington": {
+   "boundary_mi": 99.9,
+   "centroid_mi": 116.3,
+   "county": "Washington",
+   "fips": "13303",
+   "gnis_id": "348428",
+   "measured": true
+  },
+  "GA/wayne": {
+   "boundary_mi": 198.4,
+   "centroid_mi": 221.8,
+   "county": "Wayne",
+   "fips": "13305",
+   "gnis_id": "350608",
+   "measured": false
+  },
+  "GA/webster": {
+   "boundary_mi": 122.0,
+   "centroid_mi": 134.5,
+   "county": "Webster",
+   "fips": "13307",
+   "gnis_id": "352287",
+   "measured": true
+  },
+  "GA/wheeler": {
+   "boundary_mi": 151.4,
+   "centroid_mi": 161.8,
+   "county": "Wheeler",
+   "fips": "13309",
+   "gnis_id": "351278",
+   "measured": true
+  },
+  "GA/white": {
+   "boundary_mi": 47.8,
+   "centroid_mi": 58.8,
+   "county": "White",
+   "fips": "13311",
+   "gnis_id": "326781",
+   "measured": true
+  },
+  "GA/whitfield": {
+   "boundary_mi": 52.6,
+   "centroid_mi": 65.0,
+   "county": "Whitfield",
+   "fips": "13313",
+   "gnis_id": "353513",
+   "measured": true
+  },
+  "GA/wilcox": {
+   "boundary_mi": 137.2,
+   "centroid_mi": 150.2,
+   "county": "Wilcox",
+   "fips": "13315",
+   "gnis_id": "345499",
+   "measured": true
+  },
+  "GA/wilkes": {
+   "boundary_mi": 82.4,
+   "centroid_mi": 96.2,
+   "county": "Wilkes",
+   "fips": "13317",
+   "gnis_id": "351265",
+   "measured": true
+  },
+  "GA/wilkinson": {
+   "boundary_mi": 94.7,
+   "centroid_mi": 108.5,
+   "county": "Wilkinson",
+   "fips": "13319",
+   "gnis_id": "346824",
+   "measured": true
+  },
+  "GA/worth": {
+   "boundary_mi": 150.2,
+   "centroid_mi": 171.5,
+   "county": "Worth",
+   "fips": "13321",
+   "gnis_id": "343365",
+   "measured": true
+  },
+  "KY/adair": {
+   "boundary_mi": 206.0,
+   "centroid_mi": 220.8,
+   "county": "Adair",
+   "fips": "21001",
+   "gnis_id": "516847",
+   "measured": false
+  },
+  "KY/allen": {
+   "boundary_mi": 202.2,
+   "centroid_mi": 215.8,
+   "county": "Allen",
+   "fips": "21003",
+   "gnis_id": "516848",
+   "measured": false
+  },
+  "KY/anderson": {
+   "boundary_mi": 270.0,
+   "centroid_mi": 279.3,
+   "county": "Anderson",
+   "fips": "21005",
+   "gnis_id": "516849",
+   "measured": false
+  },
+  "KY/ballard": {
+   "boundary_mi": 320.2,
+   "centroid_mi": 334.3,
+   "county": "Ballard",
+   "fips": "21007",
+   "gnis_id": "516850",
+   "measured": false
+  },
+  "KY/barren": {
+   "boundary_mi": 203.3,
+   "centroid_mi": 223.0,
+   "county": "Barren",
+   "fips": "21009",
+   "gnis_id": "516851",
+   "measured": false
+  },
+  "KY/bath": {
+   "boundary_mi": 277.6,
+   "centroid_mi": 289.5,
+   "county": "Bath",
+   "fips": "21011",
+   "gnis_id": "516852",
+   "measured": false
+  },
+  "KY/bell": {
+   "boundary_mi": 180.9,
+   "centroid_mi": 193.8,
+   "county": "Bell",
+   "fips": "21013",
+   "gnis_id": "516853",
+   "measured": false
+  },
+  "KY/boone": {
+   "boundary_mi": 331.0,
+   "centroid_mi": 344.6,
+   "county": "Boone",
+   "fips": "21015",
+   "gnis_id": "516854",
+   "measured": false
+  },
+  "KY/bourbon": {
+   "boundary_mi": 281.7,
+   "centroid_mi": 291.6,
+   "county": "Bourbon",
+   "fips": "21017",
+   "gnis_id": "516855",
+   "measured": false
+  },
+  "KY/boyd": {
+   "boundary_mi": 306.4,
+   "centroid_mi": 316.7,
+   "county": "Boyd",
+   "fips": "21019",
+   "gnis_id": "516856",
+   "measured": false
+  },
+  "KY/boyle": {
+   "boundary_mi": 245.2,
+   "centroid_mi": 252.5,
+   "county": "Boyle",
+   "fips": "21021",
+   "gnis_id": "516857",
+   "measured": false
+  },
+  "KY/bracken": {
+   "boundary_mi": 315.2,
+   "centroid_mi": 325.2,
+   "county": "Bracken",
+   "fips": "21023",
+   "gnis_id": "516858",
+   "measured": false
+  },
+  "KY/breathitt": {
+   "boundary_mi": 235.4,
+   "centroid_mi": 251.4,
+   "county": "Breathitt",
+   "fips": "21025",
+   "gnis_id": "516859",
+   "measured": false
+  },
+  "KY/breckinridge": {
+   "boundary_mi": 265.4,
+   "centroid_mi": 285.0,
+   "county": "Breckinridge",
+   "fips": "21027",
+   "gnis_id": "516860",
+   "measured": false
+  },
+  "KY/bullitt": {
+   "boundary_mi": 269.9,
+   "centroid_mi": 284.4,
+   "county": "Bullitt",
+   "fips": "21029",
+   "gnis_id": "516861",
+   "measured": false
+  },
+  "KY/butler": {
+   "boundary_mi": 236.4,
+   "centroid_mi": 256.6,
+   "county": "Butler",
+   "fips": "21031",
+   "gnis_id": "516862",
+   "measured": false
+  },
+  "KY/caldwell": {
+   "boundary_mi": 275.5,
+   "centroid_mi": 292.4,
+   "county": "Caldwell",
+   "fips": "21033",
+   "gnis_id": "516863",
+   "measured": false
+  },
+  "KY/calloway": {
+   "boundary_mi": 268.3,
+   "centroid_mi": 284.0,
+   "county": "Calloway",
+   "fips": "21035",
+   "gnis_id": "516864",
+   "measured": false
+  },
+  "KY/campbell": {
+   "boundary_mi": 332.8,
+   "centroid_mi": 342.5,
+   "county": "Campbell",
+   "fips": "21037",
+   "gnis_id": "516865",
+   "measured": false
+  },
+  "KY/carlisle": {
+   "boundary_mi": 314.2,
+   "centroid_mi": 324.5,
+   "county": "Carlisle",
+   "fips": "21039",
+   "gnis_id": "516866",
+   "measured": false
+  },
+  "KY/carroll": {
+   "boundary_mi": 318.6,
+   "centroid_mi": 325.7,
+   "county": "Carroll",
+   "fips": "21041",
+   "gnis_id": "516867",
+   "measured": false
+  },
+  "KY/carter": {
+   "boundary_mi": 294.7,
+   "centroid_mi": 308.5,
+   "county": "Carter",
+   "fips": "21043",
+   "gnis_id": "516868",
+   "measured": false
+  },
+  "KY/casey": {
+   "boundary_mi": 215.8,
+   "centroid_mi": 232.2,
+   "county": "Casey",
+   "fips": "21045",
+   "gnis_id": "516869",
+   "measured": false
+  },
+  "KY/christian": {
+   "boundary_mi": 243.8,
+   "centroid_mi": 265.5,
+   "county": "Christian",
+   "fips": "21047",
+   "gnis_id": "516870",
+   "measured": false
+  },
+  "KY/clark": {
+   "boundary_mi": 264.8,
+   "centroid_mi": 275.5,
+   "county": "Clark",
+   "fips": "21049",
+   "gnis_id": "516871",
+   "measured": false
+  },
+  "KY/clay": {
+   "boundary_mi": 205.1,
+   "centroid_mi": 222.4,
+   "county": "Clay",
+   "fips": "21051",
+   "gnis_id": "516872",
+   "measured": false
+  },
+  "KY/clinton": {
+   "boundary_mi": 184.3,
+   "centroid_mi": 193.6,
+   "county": "Clinton",
+   "fips": "21053",
+   "gnis_id": "516873",
+   "measured": false
+  },
+  "KY/crittenden": {
+   "boundary_mi": 288.9,
+   "centroid_mi": 311.4,
+   "county": "Crittenden",
+   "fips": "21055",
+   "gnis_id": "516874",
+   "measured": false
+  },
+  "KY/cumberland": {
+   "boundary_mi": 187.4,
+   "centroid_mi": 201.1,
+   "county": "Cumberland",
+   "fips": "21057",
+   "gnis_id": "516875",
+   "measured": false
+  },
+  "KY/daviess": {
+   "boundary_mi": 281.4,
+   "centroid_mi": 299.1,
+   "county": "Daviess",
+   "fips": "21059",
+   "gnis_id": "516876",
+   "measured": false
+  },
+  "KY/edmonson": {
+   "boundary_mi": 231.1,
+   "centroid_mi": 245.2,
+   "county": "Edmonson",
+   "fips": "21061",
+   "gnis_id": "516877",
+   "measured": false
+  },
+  "KY/elliott": {
+   "boundary_mi": 284.0,
+   "centroid_mi": 294.4,
+   "county": "Elliott",
+   "fips": "21063",
+   "gnis_id": "516878",
+   "measured": false
+  },
+  "KY/estill": {
+   "boundary_mi": 246.0,
+   "centroid_mi": 257.1,
+   "county": "Estill",
+   "fips": "21065",
+   "gnis_id": "516879",
+   "measured": false
+  },
+  "KY/fayette": {
+   "boundary_mi": 266.4,
+   "centroid_mi": 280.1,
+   "county": "Fayette",
+   "fips": "21067",
+   "gnis_id": "516880",
+   "measured": false
+  },
+  "KY/fleming": {
+   "boundary_mi": 289.9,
+   "centroid_mi": 305.2,
+   "county": "Fleming",
+   "fips": "21069",
+   "gnis_id": "516881",
+   "measured": false
+  },
+  "KY/floyd": {
+   "boundary_mi": 242.0,
+   "centroid_mi": 263.4,
+   "county": "Floyd",
+   "fips": "21071",
+   "gnis_id": "516882",
+   "measured": false
+  },
+  "KY/franklin": {
+   "boundary_mi": 284.1,
+   "centroid_mi": 294.8,
+   "county": "Franklin",
+   "fips": "21073",
+   "gnis_id": "516883",
+   "measured": false
+  },
+  "KY/fulton": {
+   "boundary_mi": 304.2,
+   "centroid_mi": 322.8,
+   "county": "Fulton",
+   "fips": "21075",
+   "gnis_id": "516884",
+   "measured": false
+  },
+  "KY/gallatin": {
+   "boundary_mi": 323.2,
+   "centroid_mi": 330.4,
+   "county": "Gallatin",
+   "fips": "21077",
+   "gnis_id": "516885",
+   "measured": false
+  },
+  "KY/garrard": {
+   "boundary_mi": 240.7,
+   "centroid_mi": 252.3,
+   "county": "Garrard",
+   "fips": "21079",
+   "gnis_id": "516886",
+   "measured": false
+  },
+  "KY/grant": {
+   "boundary_mi": 309.8,
+   "centroid_mi": 322.2,
+   "county": "Grant",
+   "fips": "21081",
+   "gnis_id": "516887",
+   "measured": false
+  },
+  "KY/graves": {
+   "boundary_mi": 288.4,
+   "centroid_mi": 304.9,
+   "county": "Graves",
+   "fips": "21083",
+   "gnis_id": "516888",
+   "measured": false
+  },
+  "KY/grayson": {
+   "boundary_mi": 247.4,
+   "centroid_mi": 263.4,
+   "county": "Grayson",
+   "fips": "21085",
+   "gnis_id": "516889",
+   "measured": false
+  },
+  "KY/green": {
+   "boundary_mi": 222.1,
+   "centroid_mi": 235.3,
+   "county": "Green",
+   "fips": "21087",
+   "gnis_id": "516890",
+   "measured": false
+  },
+  "KY/greenup": {
+   "boundary_mi": 310.7,
+   "centroid_mi": 325.4,
+   "county": "Greenup",
+   "fips": "21089",
+   "gnis_id": "516891",
+   "measured": false
+  },
+  "KY/hancock": {
+   "boundary_mi": 282.1,
+   "centroid_mi": 297.5,
+   "county": "Hancock",
+   "fips": "21091",
+   "gnis_id": "516892",
+   "measured": false
+  },
+  "KY/hardin": {
+   "boundary_mi": 248.9,
+   "centroid_mi": 270.7,
+   "county": "Hardin",
+   "fips": "21093",
+   "gnis_id": "516893",
+   "measured": false
+  },
+  "KY/harlan": {
+   "boundary_mi": 191.6,
+   "centroid_mi": 209.0,
+   "county": "Harlan",
+   "fips": "21095",
+   "gnis_id": "516894",
+   "measured": false
+  },
+  "KY/harrison": {
+   "boundary_mi": 296.3,
+   "centroid_mi": 307.7,
+   "county": "Harrison",
+   "fips": "21097",
+   "gnis_id": "516895",
+   "measured": false
+  },
+  "KY/hart": {
+   "boundary_mi": 229.3,
+   "centroid_mi": 243.4,
+   "county": "Hart",
+   "fips": "21099",
+   "gnis_id": "516896",
+   "measured": false
+  },
+  "KY/henderson": {
+   "boundary_mi": 299.0,
+   "centroid_mi": 317.2,
+   "county": "Henderson",
+   "fips": "21101",
+   "gnis_id": "516897",
+   "measured": false
+  },
+  "KY/henry": {
+   "boundary_mi": 301.4,
+   "centroid_mi": 310.7,
+   "county": "Henry",
+   "fips": "21103",
+   "gnis_id": "516898",
+   "measured": false
+  },
+  "KY/hickman": {
+   "boundary_mi": 303.4,
+   "centroid_mi": 317.7,
+   "county": "Hickman",
+   "fips": "21105",
+   "gnis_id": "516899",
+   "measured": false
+  },
+  "KY/hopkins": {
+   "boundary_mi": 269.8,
+   "centroid_mi": 289.2,
+   "county": "Hopkins",
+   "fips": "21107",
+   "gnis_id": "516900",
+   "measured": false
+  },
+  "KY/jackson": {
+   "boundary_mi": 225.6,
+   "centroid_mi": 238.1,
+   "county": "Jackson",
+   "fips": "21109",
+   "gnis_id": "516901",
+   "measured": false
+  },
+  "KY/jefferson": {
+   "boundary_mi": 282.6,
+   "centroid_mi": 298.4,
+   "county": "Jefferson",
+   "fips": "21111",
+   "gnis_id": "516902",
+   "measured": false
+  },
+  "KY/jessamine": {
+   "boundary_mi": 258.4,
+   "centroid_mi": 268.5,
+   "county": "Jessamine",
+   "fips": "21113",
+   "gnis_id": "516903",
+   "measured": false
+  },
+  "KY/johnson": {
+   "boundary_mi": 268.3,
+   "centroid_mi": 280.6,
+   "county": "Johnson",
+   "fips": "21115",
+   "gnis_id": "516904",
+   "measured": false
+  },
+  "KY/kenton": {
+   "boundary_mi": 331.7,
+   "centroid_mi": 341.7,
+   "county": "Kenton",
+   "fips": "21117",
+   "gnis_id": "516905",
+   "measured": false
+  },
+  "KY/knott": {
+   "boundary_mi": 231.2,
+   "centroid_mi": 246.3,
+   "county": "Knott",
+   "fips": "21119",
+   "gnis_id": "516906",
+   "measured": false
+  },
+  "KY/knox": {
+   "boundary_mi": 187.2,
+   "centroid_mi": 202.8,
+   "county": "Knox",
+   "fips": "21121",
+   "gnis_id": "516907",
+   "measured": false
+  },
+  "KY/larue": {
+   "boundary_mi": 244.6,
+   "centroid_mi": 256.2,
+   "county": "Larue",
+   "fips": "21123",
+   "gnis_id": "516908",
+   "measured": false
+  },
+  "KY/laurel": {
+   "boundary_mi": 203.8,
+   "centroid_mi": 216.3,
+   "county": "Laurel",
+   "fips": "21125",
+   "gnis_id": "516909",
+   "measured": false
+  },
+  "KY/lawrence": {
+   "boundary_mi": 279.6,
+   "centroid_mi": 296.8,
+   "county": "Lawrence",
+   "fips": "21127",
+   "gnis_id": "516910",
+   "measured": false
+  },
+  "KY/lee": {
+   "boundary_mi": 243.3,
+   "centroid_mi": 252.1,
+   "county": "Lee",
+   "fips": "21129",
+   "gnis_id": "516911",
+   "measured": false
+  },
+  "KY/leslie": {
+   "boundary_mi": 205.6,
+   "centroid_mi": 222.1,
+   "county": "Leslie",
+   "fips": "21131",
+   "gnis_id": "516912",
+   "measured": false
+  },
+  "KY/letcher": {
+   "boundary_mi": 216.5,
+   "centroid_mi": 233.2,
+   "county": "Letcher",
+   "fips": "21133",
+   "gnis_id": "516913",
+   "measured": false
+  },
+  "KY/lewis": {
+   "boundary_mi": 302.1,
+   "centroid_mi": 319.0,
+   "county": "Lewis",
+   "fips": "21135",
+   "gnis_id": "516914",
+   "measured": false
+  },
+  "KY/lincoln": {
+   "boundary_mi": 224.5,
+   "centroid_mi": 239.9,
+   "county": "Lincoln",
+   "fips": "21137",
+   "gnis_id": "516915",
+   "measured": false
+  },
+  "KY/livingston": {
+   "boundary_mi": 296.8,
+   "centroid_mi": 314.3,
+   "county": "Livingston",
+   "fips": "21139",
+   "gnis_id": "516916",
+   "measured": false
+  },
+  "KY/logan": {
+   "boundary_mi": 221.7,
+   "centroid_mi": 242.4,
+   "county": "Logan",
+   "fips": "21141",
+   "gnis_id": "516917",
+   "measured": false
+  },
+  "KY/lyon": {
+   "boundary_mi": 278.9,
+   "centroid_mi": 294.4,
+   "county": "Lyon",
+   "fips": "21143",
+   "gnis_id": "516918",
+   "measured": false
+  },
+  "KY/madison": {
+   "boundary_mi": 243.6,
+   "centroid_mi": 257.9,
+   "county": "Madison",
+   "fips": "21151",
+   "gnis_id": "516919",
+   "measured": false
+  },
+  "KY/magoffin": {
+   "boundary_mi": 249.8,
+   "centroid_mi": 267.5,
+   "county": "Magoffin",
+   "fips": "21153",
+   "gnis_id": "516920",
+   "measured": false
+  },
+  "KY/marion": {
+   "boundary_mi": 239.1,
+   "centroid_mi": 251.0,
+   "county": "Marion",
+   "fips": "21155",
+   "gnis_id": "516921",
+   "measured": false
+  },
+  "KY/marshall": {
+   "boundary_mi": 282.8,
+   "centroid_mi": 298.0,
+   "county": "Marshall",
+   "fips": "21157",
+   "gnis_id": "516922",
+   "measured": false
+  },
+  "KY/martin": {
+   "boundary_mi": 272.0,
+   "centroid_mi": 283.8,
+   "county": "Martin",
+   "fips": "21159",
+   "gnis_id": "516923",
+   "measured": false
+  },
+  "KY/mason": {
+   "boundary_mi": 309.5,
+   "centroid_mi": 319.8,
+   "county": "Mason",
+   "fips": "21161",
+   "gnis_id": "516924",
+   "measured": false
+  },
+  "KY/mccracken": {
+   "boundary_mi": 307.1,
+   "centroid_mi": 321.8,
+   "county": "Mccracken",
+   "fips": "21145",
+   "gnis_id": "516925",
+   "measured": false
+  },
+  "KY/mccreary": {
+   "boundary_mi": 180.0,
+   "centroid_mi": 189.9,
+   "county": "Mccreary",
+   "fips": "21147",
+   "gnis_id": "516926",
+   "measured": true
+  },
+  "KY/mclean": {
+   "boundary_mi": 277.1,
+   "centroid_mi": 292.5,
+   "county": "Mclean",
+   "fips": "21149",
+   "gnis_id": "516927",
+   "measured": false
+  },
+  "KY/meade": {
+   "boundary_mi": 277.6,
+   "centroid_mi": 293.1,
+   "county": "Meade",
+   "fips": "21163",
+   "gnis_id": "516928",
+   "measured": false
+  },
+  "KY/menifee": {
+   "boundary_mi": 266.8,
+   "centroid_mi": 276.7,
+   "county": "Menifee",
+   "fips": "21165",
+   "gnis_id": "516929",
+   "measured": false
+  },
+  "KY/mercer": {
+   "boundary_mi": 255.4,
+   "centroid_mi": 265.4,
+   "county": "Mercer",
+   "fips": "21167",
+   "gnis_id": "516930",
+   "measured": false
+  },
+  "KY/metcalfe": {
+   "boundary_mi": 204.0,
+   "centroid_mi": 218.5,
+   "county": "Metcalfe",
+   "fips": "21169",
+   "gnis_id": "516931",
+   "measured": false
+  },
+  "KY/monroe": {
+   "boundary_mi": 190.6,
+   "centroid_mi": 202.2,
+   "county": "Monroe",
+   "fips": "21171",
+   "gnis_id": "516932",
+   "measured": false
+  },
+  "KY/montgomery": {
+   "boundary_mi": 270.8,
+   "centroid_mi": 280.7,
+   "county": "Montgomery",
+   "fips": "21173",
+   "gnis_id": "516933",
+   "measured": false
+  },
+  "KY/morgan": {
+   "boundary_mi": 262.1,
+   "centroid_mi": 279.2,
+   "county": "Morgan",
+   "fips": "21175",
+   "gnis_id": "516934",
+   "measured": false
+  },
+  "KY/muhlenberg": {
+   "boundary_mi": 252.7,
+   "centroid_mi": 270.9,
+   "county": "Muhlenberg",
+   "fips": "21177",
+   "gnis_id": "516935",
+   "measured": false
+  },
+  "KY/nelson": {
+   "boundary_mi": 247.7,
+   "centroid_mi": 270.3,
+   "county": "Nelson",
+   "fips": "21179",
+   "gnis_id": "516936",
+   "measured": false
+  },
+  "KY/nicholas": {
+   "boundary_mi": 290.6,
+   "centroid_mi": 301.1,
+   "county": "Nicholas",
+   "fips": "21181",
+   "gnis_id": "516937",
+   "measured": false
+  },
+  "KY/ohio": {
+   "boundary_mi": 254.0,
+   "centroid_mi": 277.4,
+   "county": "Ohio",
+   "fips": "21183",
+   "gnis_id": "516938",
+   "measured": false
+  },
+  "KY/oldham": {
+   "boundary_mi": 300.9,
+   "centroid_mi": 310.2,
+   "county": "Oldham",
+   "fips": "21185",
+   "gnis_id": "516939",
+   "measured": false
+  },
+  "KY/owen": {
+   "boundary_mi": 300.7,
+   "centroid_mi": 313.9,
+   "county": "Owen",
+   "fips": "21187",
+   "gnis_id": "516940",
+   "measured": false
+  },
+  "KY/owsley": {
+   "boundary_mi": 227.5,
+   "centroid_mi": 240.4,
+   "county": "Owsley",
+   "fips": "21189",
+   "gnis_id": "516941",
+   "measured": false
+  },
+  "KY/pendleton": {
+   "boundary_mi": 313.7,
+   "centroid_mi": 325.2,
+   "county": "Pendleton",
+   "fips": "21191",
+   "gnis_id": "516942",
+   "measured": false
+  },
+  "KY/perry": {
+   "boundary_mi": 212.9,
+   "centroid_mi": 234.5,
+   "county": "Perry",
+   "fips": "21193",
+   "gnis_id": "516943",
+   "measured": false
+  },
+  "KY/pike": {
+   "boundary_mi": 240.6,
+   "centroid_mi": 265.4,
+   "county": "Pike",
+   "fips": "21195",
+   "gnis_id": "516944",
+   "measured": false
+  },
+  "KY/powell": {
+   "boundary_mi": 258.4,
+   "centroid_mi": 267.4,
+   "county": "Powell",
+   "fips": "21197",
+   "gnis_id": "516945",
+   "measured": false
+  },
+  "KY/pulaski": {
+   "boundary_mi": 198.8,
+   "centroid_mi": 215.4,
+   "county": "Pulaski",
+   "fips": "21199",
+   "gnis_id": "516946",
+   "measured": false
+  },
+  "KY/robertson": {
+   "boundary_mi": 306.5,
+   "centroid_mi": 313.6,
+   "county": "Robertson",
+   "fips": "21201",
+   "gnis_id": "516947",
+   "measured": false
+  },
+  "KY/rockcastle": {
+   "boundary_mi": 218.5,
+   "centroid_mi": 233.3,
+   "county": "Rockcastle",
+   "fips": "21203",
+   "gnis_id": "516948",
+   "measured": false
+  },
+  "KY/rowan": {
+   "boundary_mi": 281.6,
+   "centroid_mi": 295.8,
+   "county": "Rowan",
+   "fips": "21205",
+   "gnis_id": "516949",
+   "measured": false
+  },
+  "KY/russell": {
+   "boundary_mi": 197.6,
+   "centroid_mi": 210.7,
+   "county": "Russell",
+   "fips": "21207",
+   "gnis_id": "516950",
+   "measured": false
+  },
+  "KY/scott": {
+   "boundary_mi": 284.8,
+   "centroid_mi": 297.4,
+   "county": "Scott",
+   "fips": "21209",
+   "gnis_id": "516951",
+   "measured": false
+  },
+  "KY/shelby": {
+   "boundary_mi": 281.4,
+   "centroid_mi": 295.3,
+   "county": "Shelby",
+   "fips": "21211",
+   "gnis_id": "516952",
+   "measured": false
+  },
+  "KY/simpson": {
+   "boundary_mi": 214.6,
+   "centroid_mi": 226.4,
+   "county": "Simpson",
+   "fips": "21213",
+   "gnis_id": "516953",
+   "measured": false
+  },
+  "KY/spencer": {
+   "boundary_mi": 275.8,
+   "centroid_mi": 284.1,
+   "county": "Spencer",
+   "fips": "21215",
+   "gnis_id": "516954",
+   "measured": false
+  },
+  "KY/taylor": {
+   "boundary_mi": 224.5,
+   "centroid_mi": 239.1,
+   "county": "Taylor",
+   "fips": "21217",
+   "gnis_id": "516955",
+   "measured": false
+  },
+  "KY/todd": {
+   "boundary_mi": 236.4,
+   "centroid_mi": 251.3,
+   "county": "Todd",
+   "fips": "21219",
+   "gnis_id": "516956",
+   "measured": false
+  },
+  "KY/trigg": {
+   "boundary_mi": 259.0,
+   "centroid_mi": 275.8,
+   "county": "Trigg",
+   "fips": "21221",
+   "gnis_id": "516957",
+   "measured": false
+  },
+  "KY/trimble": {
+   "boundary_mi": 314.1,
+   "centroid_mi": 323.7,
+   "county": "Trimble",
+   "fips": "21223",
+   "gnis_id": "516958",
+   "measured": false
+  },
+  "KY/union": {
+   "boundary_mi": 304.6,
+   "centroid_mi": 321.9,
+   "county": "Union",
+   "fips": "21225",
+   "gnis_id": "516959",
+   "measured": false
+  },
+  "KY/warren": {
+   "boundary_mi": 215.3,
+   "centroid_mi": 236.7,
+   "county": "Warren",
+   "fips": "21227",
+   "gnis_id": "516960",
+   "measured": false
+  },
+  "KY/washington": {
+   "boundary_mi": 253.8,
+   "centroid_mi": 263.6,
+   "county": "Washington",
+   "fips": "21229",
+   "gnis_id": "516961",
+   "measured": false
+  },
+  "KY/wayne": {
+   "boundary_mi": 180.9,
+   "centroid_mi": 195.8,
+   "county": "Wayne",
+   "fips": "21231",
+   "gnis_id": "516962",
+   "measured": false
+  },
+  "KY/webster": {
+   "boundary_mi": 286.0,
+   "centroid_mi": 305.4,
+   "county": "Webster",
+   "fips": "21233",
+   "gnis_id": "516963",
+   "measured": false
+  },
+  "KY/whitley": {
+   "boundary_mi": 180.1,
+   "centroid_mi": 191.8,
+   "county": "Whitley",
+   "fips": "21235",
+   "gnis_id": "516964",
+   "measured": true
+  },
+  "KY/wolfe": {
+   "boundary_mi": 253.8,
+   "centroid_mi": 264.0,
+   "county": "Wolfe",
+   "fips": "21237",
+   "gnis_id": "516965",
+   "measured": false
+  },
+  "KY/woodford": {
+   "boundary_mi": 266.9,
+   "centroid_mi": 280.7,
+   "county": "Woodford",
+   "fips": "21239",
+   "gnis_id": "516966",
+   "measured": false
+  },
+  "NC/alamance": {
+   "boundary_mi": 303.6,
+   "centroid_mi": 316.6,
+   "county": "Alamance",
+   "fips": "37001",
+   "gnis_id": "1008531",
+   "measured": false
+  },
+  "NC/alexander": {
+   "boundary_mi": 212.8,
+   "centroid_mi": 226.2,
+   "county": "Alexander",
+   "fips": "37003",
+   "gnis_id": "1008532",
+   "measured": false
+  },
+  "NC/alleghany": {
+   "boundary_mi": 237.9,
+   "centroid_mi": 253.1,
+   "county": "Alleghany",
+   "fips": "37005",
+   "gnis_id": "1008533",
+   "measured": false
+  },
+  "NC/anson": {
+   "boundary_mi": 239.4,
+   "centroid_mi": 254.1,
+   "county": "Anson",
+   "fips": "37007",
+   "gnis_id": "1008534",
+   "measured": false
+  },
+  "NC/ashe": {
+   "boundary_mi": 216.3,
+   "centroid_mi": 235.3,
+   "county": "Ashe",
+   "fips": "37009",
+   "gnis_id": "1008535",
+   "measured": false
+  },
+  "NC/avery": {
+   "boundary_mi": 186.8,
+   "centroid_mi": 201.1,
+   "county": "Avery",
+   "fips": "37011",
+   "gnis_id": "1008536",
+   "measured": false
+  },
+  "NC/beaufort": {
+   "boundary_mi": 418.4,
+   "centroid_mi": 441.2,
+   "county": "Beaufort",
+   "fips": "37013",
+   "gnis_id": "1026333",
+   "measured": false
+  },
+  "NC/bertie": {
+   "boundary_mi": 420.1,
+   "centroid_mi": 444.3,
+   "county": "Bertie",
+   "fips": "37015",
+   "gnis_id": "1026334",
+   "measured": false
+  },
+  "NC/bladen": {
+   "boundary_mi": 315.4,
+   "centroid_mi": 336.0,
+   "county": "Bladen",
+   "fips": "37017",
+   "gnis_id": "1026336",
+   "measured": false
+  },
+  "NC/brunswick": {
+   "boundary_mi": 329.4,
+   "centroid_mi": 353.6,
+   "county": "Brunswick",
+   "fips": "37019",
+   "gnis_id": "1026340",
+   "measured": false
+  },
+  "NC/buncombe": {
+   "boundary_mi": 136.0,
+   "centroid_mi": 154.4,
+   "county": "Buncombe",
+   "fips": "37021",
+   "gnis_id": "1008538",
+   "measured": true
+  },
+  "NC/burke": {
+   "boundary_mi": 182.8,
+   "centroid_mi": 195.3,
+   "county": "Burke",
+   "fips": "37023",
+   "gnis_id": "1008539",
+   "measured": true
+  },
+  "NC/cabarrus": {
+   "boundary_mi": 221.6,
+   "centroid_mi": 239.1,
+   "county": "Cabarrus",
+   "fips": "37025",
+   "gnis_id": "1008540",
+   "measured": false
+  },
+  "NC/caldwell": {
+   "boundary_mi": 191.0,
+   "centroid_mi": 211.0,
+   "county": "Caldwell",
+   "fips": "37027",
+   "gnis_id": "1008541",
+   "measured": false
+  },
+  "NC/camden": {
+   "boundary_mi": 467.5,
+   "centroid_mi": 492.8,
+   "county": "Camden",
+   "fips": "37029",
+   "gnis_id": "1026335",
+   "measured": false
+  },
+  "NC/carteret": {
+   "boundary_mi": 414.7,
+   "centroid_mi": 452.2,
+   "county": "Carteret",
+   "fips": "37031",
+   "gnis_id": "1026337",
+   "measured": false
+  },
+  "NC/caswell": {
+   "boundary_mi": 316.1,
+   "centroid_mi": 330.8,
+   "county": "Caswell",
+   "fips": "37033",
+   "gnis_id": "1008542",
+   "measured": false
+  },
+  "NC/catawba": {
+   "boundary_mi": 195.1,
+   "centroid_mi": 214.5,
+   "county": "Catawba",
+   "fips": "37035",
+   "gnis_id": "1008543",
+   "measured": false
+  },
+  "NC/chatham": {
+   "boundary_mi": 294.6,
+   "centroid_mi": 314.9,
+   "county": "Chatham",
+   "fips": "37037",
+   "gnis_id": "1008544",
+   "measured": false
+  },
+  "NC/cherokee": {
+   "boundary_mi": 69.2,
+   "centroid_mi": 81.4,
+   "county": "Cherokee",
+   "fips": "37039",
+   "gnis_id": "1008545",
+   "measured": true
+  },
+  "NC/chowan": {
+   "boundary_mi": 454.9,
+   "centroid_mi": 465.0,
+   "county": "Chowan",
+   "fips": "37041",
+   "gnis_id": "1025822",
+   "measured": false
+  },
+  "NC/clay": {
+   "boundary_mi": 72.6,
+   "centroid_mi": 82.6,
+   "county": "Clay",
+   "fips": "37043",
+   "gnis_id": "1008546",
+   "measured": true
+  },
+  "NC/cleveland": {
+   "boundary_mi": 170.9,
+   "centroid_mi": 186.5,
+   "county": "Cleveland",
+   "fips": "37045",
+   "gnis_id": "1008547",
+   "measured": true
+  },
+  "NC/columbus": {
+   "boundary_mi": 305.4,
+   "centroid_mi": 329.2,
+   "county": "Columbus",
+   "fips": "37047",
+   "gnis_id": "1026339",
+   "measured": false
+  },
+  "NC/craven": {
+   "boundary_mi": 398.9,
+   "centroid_mi": 423.7,
+   "county": "Craven",
+   "fips": "37049",
+   "gnis_id": "1026123",
+   "measured": false
+  },
+  "NC/cumberland": {
+   "boundary_mi": 307.1,
+   "centroid_mi": 325.6,
+   "county": "Cumberland",
+   "fips": "37051",
+   "gnis_id": "1026124",
+   "measured": false
+  },
+  "NC/currituck": {
+   "boundary_mi": 478.8,
+   "centroid_mi": 505.3,
+   "county": "Currituck",
+   "fips": "37053",
+   "gnis_id": "1026125",
+   "measured": false
+  },
+  "NC/dare": {
+   "boundary_mi": 482.9,
+   "centroid_mi": 507.6,
+   "county": "Dare",
+   "fips": "37055",
+   "gnis_id": "1026133",
+   "measured": false
+  },
+  "NC/davidson": {
+   "boundary_mi": 245.6,
+   "centroid_mi": 268.1,
+   "county": "Davidson",
+   "fips": "37057",
+   "gnis_id": "1008548",
+   "measured": false
+  },
+  "NC/davie": {
+   "boundary_mi": 241.9,
+   "centroid_mi": 256.2,
+   "county": "Davie",
+   "fips": "37059",
+   "gnis_id": "1008549",
+   "measured": false
+  },
+  "NC/duplin": {
+   "boundary_mi": 357.3,
+   "centroid_mi": 374.2,
+   "county": "Duplin",
+   "fips": "37061",
+   "gnis_id": "1026132",
+   "measured": false
+  },
+  "NC/durham": {
+   "boundary_mi": 331.4,
+   "centroid_mi": 343.1,
+   "county": "Durham",
+   "fips": "37063",
+   "gnis_id": "1008550",
+   "measured": false
+  },
+  "NC/edgecombe": {
+   "boundary_mi": 390.5,
+   "centroid_mi": 407.5,
+   "county": "Edgecombe",
+   "fips": "37065",
+   "gnis_id": "1008551",
+   "measured": false
+  },
+  "NC/forsyth": {
+   "boundary_mi": 259.1,
+   "centroid_mi": 277.2,
+   "county": "Forsyth",
+   "fips": "37067",
+   "gnis_id": "1008552",
+   "measured": false
+  },
+  "NC/franklin": {
+   "boundary_mi": 355.0,
+   "centroid_mi": 374.9,
+   "county": "Franklin",
+   "fips": "37069",
+   "gnis_id": "1008553",
+   "measured": false
+  },
+  "NC/gaston": {
+   "boundary_mi": 185.8,
+   "centroid_mi": 204.1,
+   "county": "Gaston",
+   "fips": "37071",
+   "gnis_id": "1008554",
+   "measured": false
+  },
+  "NC/gates": {
+   "boundary_mi": 450.0,
+   "centroid_mi": 466.5,
+   "county": "Gates",
+   "fips": "37073",
+   "gnis_id": "1026126",
+   "measured": false
+  },
+  "NC/graham": {
+   "boundary_mi": 88.5,
+   "centroid_mi": 99.4,
+   "county": "Graham",
+   "fips": "37075",
+   "gnis_id": "1008555",
+   "measured": true
+  },
+  "NC/granville": {
+   "boundary_mi": 346.3,
+   "centroid_mi": 362.0,
+   "county": "Granville",
+   "fips": "37077",
+   "gnis_id": "1008556",
+   "measured": false
+  },
+  "NC/greene": {
+   "boundary_mi": 385.2,
+   "centroid_mi": 395.5,
+   "county": "Greene",
+   "fips": "37079",
+   "gnis_id": "1008557",
+   "measured": false
+  },
+  "NC/guilford": {
+   "boundary_mi": 279.7,
+   "centroid_mi": 298.2,
+   "county": "Guilford",
+   "fips": "37081",
+   "gnis_id": "1008558",
+   "measured": false
+  },
+  "NC/halifax": {
+   "boundary_mi": 387.7,
+   "centroid_mi": 412.3,
+   "county": "Halifax",
+   "fips": "37083",
+   "gnis_id": "1008559",
+   "measured": false
+  },
+  "NC/harnett": {
+   "boundary_mi": 306.0,
+   "centroid_mi": 328.4,
+   "county": "Harnett",
+   "fips": "37085",
+   "gnis_id": "1008560",
+   "measured": false
+  },
+  "NC/haywood": {
+   "boundary_mi": 122.7,
+   "centroid_mi": 134.9,
+   "county": "Haywood",
+   "fips": "37087",
+   "gnis_id": "1008561",
+   "measured": true
+  },
+  "NC/henderson": {
+   "boundary_mi": 130.9,
+   "centroid_mi": 143.5,
+   "county": "Henderson",
+   "fips": "37089",
+   "gnis_id": "1008562",
+   "measured": true
+  },
+  "NC/hertford": {
+   "boundary_mi": 435.1,
+   "centroid_mi": 449.8,
+   "county": "Hertford",
+   "fips": "37091",
+   "gnis_id": "1026127",
+   "measured": false
+  },
+  "NC/hoke": {
+   "boundary_mi": 287.7,
+   "centroid_mi": 302.5,
+   "county": "Hoke",
+   "fips": "37093",
+   "gnis_id": "1008563",
+   "measured": false
+  },
+  "NC/hyde": {
+   "boundary_mi": 447.6,
+   "centroid_mi": 479.0,
+   "county": "Hyde",
+   "fips": "37095",
+   "gnis_id": "1008564",
+   "measured": false
+  },
+  "NC/iredell": {
+   "boundary_mi": 213.7,
+   "centroid_mi": 236.1,
+   "county": "Iredell",
+   "fips": "37097",
+   "gnis_id": "1008565",
+   "measured": false
+  },
+  "NC/jackson": {
+   "boundary_mi": 101.5,
+   "centroid_mi": 114.8,
+   "county": "Jackson",
+   "fips": "37099",
+   "gnis_id": "1008566",
+   "measured": true
+  },
+  "NC/johnston": {
+   "boundary_mi": 335.2,
+   "centroid_mi": 358.5,
+   "county": "Johnston",
+   "fips": "37101",
+   "gnis_id": "1026327",
+   "measured": false
+  },
+  "NC/jones": {
+   "boundary_mi": 384.2,
+   "centroid_mi": 407.4,
+   "county": "Jones",
+   "fips": "37103",
+   "gnis_id": "1026338",
+   "measured": false
+  },
+  "NC/lee": {
+   "boundary_mi": 300.7,
+   "centroid_mi": 314.2,
+   "county": "Lee",
+   "fips": "37105",
+   "gnis_id": "1008567",
+   "measured": false
+  },
+  "NC/lenoir": {
+   "boundary_mi": 380.5,
+   "centroid_mi": 393.9,
+   "county": "Lenoir",
+   "fips": "37107",
+   "gnis_id": "1008568",
+   "measured": false
+  },
+  "NC/lincoln": {
+   "boundary_mi": 189.7,
+   "centroid_mi": 208.0,
+   "county": "Lincoln",
+   "fips": "37109",
+   "gnis_id": "1008569",
+   "measured": false
+  },
+  "NC/macon": {
+   "boundary_mi": 85.8,
+   "centroid_mi": 97.7,
+   "county": "Macon",
+   "fips": "37113",
+   "gnis_id": "1025833",
+   "measured": true
+  },
+  "NC/madison": {
+   "boundary_mi": 144.8,
+   "centroid_mi": 160.9,
+   "county": "Madison",
+   "fips": "37115",
+   "gnis_id": "1025834",
+   "measured": true
+  },
+  "NC/martin": {
+   "boundary_mi": 413.0,
+   "centroid_mi": 432.4,
+   "county": "Martin",
+   "fips": "37117",
+   "gnis_id": "1026328",
+   "measured": false
+  },
+  "NC/mcdowell": {
+   "boundary_mi": 163.1,
+   "centroid_mi": 177.4,
+   "county": "Mcdowell",
+   "fips": "37111",
+   "gnis_id": "1025836",
+   "measured": true
+  },
+  "NC/mecklenburg": {
+   "boundary_mi": 202.9,
+   "centroid_mi": 220.7,
+   "county": "Mecklenburg",
+   "fips": "37119",
+   "gnis_id": "1008570",
+   "measured": false
+  },
+  "NC/mitchell": {
+   "boundary_mi": 179.9,
+   "centroid_mi": 188.7,
+   "county": "Mitchell",
+   "fips": "37121",
+   "gnis_id": "1008571",
+   "measured": true
+  },
+  "NC/montgomery": {
+   "boundary_mi": 252.8,
+   "centroid_mi": 271.8,
+   "county": "Montgomery",
+   "fips": "37123",
+   "gnis_id": "1008572",
+   "measured": false
+  },
+  "NC/moore": {
+   "boundary_mi": 273.7,
+   "centroid_mi": 294.2,
+   "county": "Moore",
+   "fips": "37125",
+   "gnis_id": "1008573",
+   "measured": false
+  },
+  "NC/nash": {
+   "boundary_mi": 368.4,
+   "centroid_mi": 388.0,
+   "county": "Nash",
+   "fips": "37127",
+   "gnis_id": "1008574",
+   "measured": false
+  },
+  "NC/newhanover": {
+   "boundary_mi": 365.0,
+   "centroid_mi": 374.2,
+   "county": "New Hanover",
+   "fips": "37129",
+   "gnis_id": "1026329",
+   "measured": false
+  },
+  "NC/northampton": {
+   "boundary_mi": 397.1,
+   "centroid_mi": 429.5,
+   "county": "Northampton",
+   "fips": "37131",
+   "gnis_id": "1008575",
+   "measured": false
+  },
+  "NC/onslow": {
+   "boundary_mi": 385.1,
+   "centroid_mi": 401.5,
+   "county": "Onslow",
+   "fips": "37133",
+   "gnis_id": "1026341",
+   "measured": false
+  },
+  "NC/orange": {
+   "boundary_mi": 318.2,
+   "centroid_mi": 331.3,
+   "county": "Orange",
+   "fips": "37135",
+   "gnis_id": "1008576",
+   "measured": false
+  },
+  "NC/pamlico": {
+   "boundary_mi": 427.4,
+   "centroid_mi": 447.1,
+   "county": "Pamlico",
+   "fips": "37137",
+   "gnis_id": "1023355",
+   "measured": false
+  },
+  "NC/pasquotank": {
+   "boundary_mi": 469.7,
+   "centroid_mi": 486.6,
+   "county": "Pasquotank",
+   "fips": "37139",
+   "gnis_id": "1026330",
+   "measured": false
+  },
+  "NC/pender": {
+   "boundary_mi": 351.0,
+   "centroid_mi": 373.7,
+   "county": "Pender",
+   "fips": "37141",
+   "gnis_id": "1026129",
+   "measured": false
+  },
+  "NC/perquimans": {
+   "boundary_mi": 463.7,
+   "centroid_mi": 476.4,
+   "county": "Perquimans",
+   "fips": "37143",
+   "gnis_id": "1025841",
+   "measured": false
+  },
+  "NC/person": {
+   "boundary_mi": 334.7,
+   "centroid_mi": 348.5,
+   "county": "Person",
+   "fips": "37145",
+   "gnis_id": "1008577",
+   "measured": false
+  },
+  "NC/pitt": {
+   "boundary_mi": 391.8,
+   "centroid_mi": 413.8,
+   "county": "Pitt",
+   "fips": "37147",
+   "gnis_id": "1008578",
+   "measured": false
+  },
+  "NC/polk": {
+   "boundary_mi": 143.1,
+   "centroid_mi": 155.1,
+   "county": "Polk",
+   "fips": "37149",
+   "gnis_id": "1008579",
+   "measured": true
+  },
+  "NC/randolph": {
+   "boundary_mi": 267.5,
+   "centroid_mi": 286.4,
+   "county": "Randolph",
+   "fips": "37151",
+   "gnis_id": "1008580",
+   "measured": false
+  },
+  "NC/richmond": {
+   "boundary_mi": 253.0,
+   "centroid_mi": 274.1,
+   "county": "Richmond",
+   "fips": "37153",
+   "gnis_id": "1008581",
+   "measured": false
+  },
+  "NC/robeson": {
+   "boundary_mi": 283.3,
+   "centroid_mi": 305.7,
+   "county": "Robeson",
+   "fips": "37155",
+   "gnis_id": "1026130",
+   "measured": false
+  },
+  "NC/rockingham": {
+   "boundary_mi": 291.7,
+   "centroid_mi": 309.6,
+   "county": "Rockingham",
+   "fips": "37157",
+   "gnis_id": "1008582",
+   "measured": false
+  },
+  "NC/rowan": {
+   "boundary_mi": 231.1,
+   "centroid_mi": 247.7,
+   "county": "Rowan",
+   "fips": "37159",
+   "gnis_id": "1008583",
+   "measured": false
+  },
+  "NC/rutherford": {
+   "boundary_mi": 155.5,
+   "centroid_mi": 171.5,
+   "county": "Rutherford",
+   "fips": "37161",
+   "gnis_id": "1008584",
+   "measured": true
+  },
+  "NC/sampson": {
+   "boundary_mi": 329.4,
+   "centroid_mi": 350.3,
+   "county": "Sampson",
+   "fips": "37163",
+   "gnis_id": "1026131",
+   "measured": false
+  },
+  "NC/scotland": {
+   "boundary_mi": 272.3,
+   "centroid_mi": 286.6,
+   "county": "Scotland",
+   "fips": "37165",
+   "gnis_id": "1008585",
+   "measured": false
+  },
+  "NC/stanly": {
+   "boundary_mi": 235.6,
+   "centroid_mi": 253.0,
+   "county": "Stanly",
+   "fips": "37167",
+   "gnis_id": "1025844",
+   "measured": false
+  },
+  "NC/stokes": {
+   "boundary_mi": 272.7,
+   "centroid_mi": 288.1,
+   "county": "Stokes",
+   "fips": "37169",
+   "gnis_id": "1008586",
+   "measured": false
+  },
+  "NC/surry": {
+   "boundary_mi": 248.3,
+   "centroid_mi": 268.4,
+   "county": "Surry",
+   "fips": "37171",
+   "gnis_id": "1008587",
+   "measured": false
+  },
+  "NC/swain": {
+   "boundary_mi": 98.2,
+   "centroid_mi": 115.6,
+   "county": "Swain",
+   "fips": "37173",
+   "gnis_id": "1008588",
+   "measured": true
+  },
+  "NC/transylvania": {
+   "boundary_mi": 106.2,
+   "centroid_mi": 123.9,
+   "county": "Transylvania",
+   "fips": "37175",
+   "gnis_id": "1008589",
+   "measured": true
+  },
+  "NC/tyrrell": {
+   "boundary_mi": 467.0,
+   "centroid_mi": 483.9,
+   "county": "Tyrrell",
+   "fips": "37177",
+   "gnis_id": "1026332",
+   "measured": false
+  },
+  "NC/union": {
+   "boundary_mi": 210.9,
+   "centroid_mi": 231.0,
+   "county": "Union",
+   "fips": "37179",
+   "gnis_id": "1008590",
+   "measured": false
+  },
+  "NC/vance": {
+   "boundary_mi": 365.3,
+   "centroid_mi": 376.1,
+   "county": "Vance",
+   "fips": "37181",
+   "gnis_id": "1008591",
+   "measured": false
+  },
+  "NC/wake": {
+   "boundary_mi": 324.6,
+   "centroid_mi": 348.8,
+   "county": "Wake",
+   "fips": "37183",
+   "gnis_id": "1008592",
+   "measured": false
+  },
+  "NC/warren": {
+   "boundary_mi": 376.0,
+   "centroid_mi": 392.3,
+   "county": "Warren",
+   "fips": "37185",
+   "gnis_id": "1008593",
+   "measured": false
+  },
+  "NC/washington": {
+   "boundary_mi": 444.2,
+   "centroid_mi": 461.7,
+   "county": "Washington",
+   "fips": "37187",
+   "gnis_id": "1026331",
+   "measured": false
+  },
+  "NC/watauga": {
+   "boundary_mi": 203.1,
+   "centroid_mi": 217.6,
+   "county": "Watauga",
+   "fips": "37189",
+   "gnis_id": "1008594",
+   "measured": false
+  },
+  "NC/wayne": {
+   "boundary_mi": 355.8,
+   "centroid_mi": 375.6,
+   "county": "Wayne",
+   "fips": "37191",
+   "gnis_id": "1026128",
+   "measured": false
+  },
+  "NC/wilkes": {
+   "boundary_mi": 212.9,
+   "centroid_mi": 238.7,
+   "county": "Wilkes",
+   "fips": "37193",
+   "gnis_id": "1008595",
+   "measured": false
+  },
+  "NC/wilson": {
+   "boundary_mi": 369.1,
+   "centroid_mi": 386.2,
+   "county": "Wilson",
+   "fips": "37195",
+   "gnis_id": "1008596",
+   "measured": false
+  },
+  "NC/yadkin": {
+   "boundary_mi": 244.7,
+   "centroid_mi": 259.1,
+   "county": "Yadkin",
+   "fips": "37197",
+   "gnis_id": "1008597",
+   "measured": false
+  },
+  "NC/yancey": {
+   "boundary_mi": 168.9,
+   "centroid_mi": 177.4,
+   "county": "Yancey",
+   "fips": "37199",
+   "gnis_id": "1008598",
+   "measured": true
+  },
+  "SC/abbeville": {
+   "boundary_mi": 96.2,
+   "centroid_mi": 112.3,
+   "county": "Abbeville",
+   "fips": "45001",
+   "gnis_id": "1245666",
+   "measured": true
+  },
+  "SC/aiken": {
+   "boundary_mi": 140.8,
+   "centroid_mi": 161.9,
+   "county": "Aiken",
+   "fips": "45003",
+   "gnis_id": "1247979",
+   "measured": true
+  },
+  "SC/allendale": {
+   "boundary_mi": 172.0,
+   "centroid_mi": 188.5,
+   "county": "Allendale",
+   "fips": "45005",
+   "gnis_id": "1247980",
+   "measured": true
+  },
+  "SC/anderson": {
+   "boundary_mi": 87.4,
+   "centroid_mi": 107.2,
+   "county": "Anderson",
+   "fips": "45007",
+   "gnis_id": "1247981",
+   "measured": true
+  },
+  "SC/bamberg": {
+   "boundary_mi": 186.3,
+   "centroid_mi": 199.9,
+   "county": "Bamberg",
+   "fips": "45009",
+   "gnis_id": "1247982",
+   "measured": false
+  },
+  "SC/barnwell": {
+   "boundary_mi": 161.3,
+   "centroid_mi": 177.9,
+   "county": "Barnwell",
+   "fips": "45011",
+   "gnis_id": "1247983",
+   "measured": true
+  },
+  "SC/beaufort": {
+   "boundary_mi": 214.6,
+   "centroid_mi": 242.3,
+   "county": "Beaufort",
+   "fips": "45013",
+   "gnis_id": "1247984",
+   "measured": false
+  },
+  "SC/berkeley": {
+   "boundary_mi": 234.5,
+   "centroid_mi": 261.9,
+   "county": "Berkeley",
+   "fips": "45015",
+   "gnis_id": "1247985",
+   "measured": false
+  },
+  "SC/calhoun": {
+   "boundary_mi": 191.7,
+   "centroid_mi": 209.0,
+   "county": "Calhoun",
+   "fips": "45017",
+   "gnis_id": "1247986",
+   "measured": false
+  },
+  "SC/charleston": {
+   "boundary_mi": 233.4,
+   "centroid_mi": 272.1,
+   "county": "Charleston",
+   "fips": "45019",
+   "gnis_id": "1252740",
+   "measured": false
+  },
+  "SC/cherokee": {
+   "boundary_mi": 164.2,
+   "centroid_mi": 174.4,
+   "county": "Cherokee",
+   "fips": "45021",
+   "gnis_id": "1247987",
+   "measured": true
+  },
+  "SC/chester": {
+   "boundary_mi": 173.9,
+   "centroid_mi": 191.2,
+   "county": "Chester",
+   "fips": "45023",
+   "gnis_id": "1247988",
+   "measured": true
+  },
+  "SC/chesterfield": {
+   "boundary_mi": 220.9,
+   "centroid_mi": 246.3,
+   "county": "Chesterfield",
+   "fips": "45025",
+   "gnis_id": "1247989",
+   "measured": false
+  },
+  "SC/clarendon": {
+   "boundary_mi": 221.3,
+   "centroid_mi": 241.2,
+   "county": "Clarendon",
+   "fips": "45027",
+   "gnis_id": "1247990",
+   "measured": false
+  },
+  "SC/colleton": {
+   "boundary_mi": 199.1,
+   "centroid_mi": 230.4,
+   "county": "Colleton",
+   "fips": "45029",
+   "gnis_id": "1247991",
+   "measured": false
+  },
+  "SC/darlington": {
+   "boundary_mi": 235.6,
+   "centroid_mi": 255.2,
+   "county": "Darlington",
+   "fips": "45031",
+   "gnis_id": "1247992",
+   "measured": false
+  },
+  "SC/dillon": {
+   "boundary_mi": 273.3,
+   "centroid_mi": 288.4,
+   "county": "Dillon",
+   "fips": "45033",
+   "gnis_id": "1247993",
+   "measured": false
+  },
+  "SC/dorchester": {
+   "boundary_mi": 212.5,
+   "centroid_mi": 238.5,
+   "county": "Dorchester",
+   "fips": "45035",
+   "gnis_id": "1247998",
+   "measured": false
+  },
+  "SC/edgefield": {
+   "boundary_mi": 128.6,
+   "centroid_mi": 140.5,
+   "county": "Edgefield",
+   "fips": "45037",
+   "gnis_id": "1247999",
+   "measured": true
+  },
+  "SC/fairfield": {
+   "boundary_mi": 173.3,
+   "centroid_mi": 189.6,
+   "county": "Fairfield",
+   "fips": "45039",
+   "gnis_id": "1248000",
+   "measured": true
+  },
+  "SC/florence": {
+   "boundary_mi": 248.2,
+   "centroid_mi": 269.1,
+   "county": "Florence",
+   "fips": "45041",
+   "gnis_id": "1248001",
+   "measured": false
+  },
+  "SC/georgetown": {
+   "boundary_mi": 271.2,
+   "centroid_mi": 295.9,
+   "county": "Georgetown",
+   "fips": "45043",
+   "gnis_id": "1248002",
+   "measured": false
+  },
+  "SC/greenville": {
+   "boundary_mi": 119.1,
+   "centroid_mi": 131.5,
+   "county": "Greenville",
+   "fips": "45045",
+   "gnis_id": "1245489",
+   "measured": true
+  },
+  "SC/greenwood": {
+   "boundary_mi": 118.9,
+   "centroid_mi": 130.8,
+   "county": "Greenwood",
+   "fips": "45047",
+   "gnis_id": "1248003",
+   "measured": true
+  },
+  "SC/hampton": {
+   "boundary_mi": 183.8,
+   "centroid_mi": 206.0,
+   "county": "Hampton",
+   "fips": "45049",
+   "gnis_id": "1248004",
+   "measured": false
+  },
+  "SC/horry": {
+   "boundary_mi": 290.0,
+   "centroid_mi": 311.0,
+   "county": "Horry",
+   "fips": "45051",
+   "gnis_id": "1248005",
+   "measured": false
+  },
+  "SC/jasper": {
+   "boundary_mi": 199.3,
+   "centroid_mi": 223.4,
+   "county": "Jasper",
+   "fips": "45053",
+   "gnis_id": "1248006",
+   "measured": false
+  },
+  "SC/kershaw": {
+   "boundary_mi": 201.8,
+   "centroid_mi": 219.2,
+   "county": "Kershaw",
+   "fips": "45055",
+   "gnis_id": "1248007",
+   "measured": false
+  },
+  "SC/lancaster": {
+   "boundary_mi": 202.1,
+   "centroid_mi": 216.3,
+   "county": "Lancaster",
+   "fips": "45057",
+   "gnis_id": "1248008",
+   "measured": false
+  },
+  "SC/laurens": {
+   "boundary_mi": 123.8,
+   "centroid_mi": 141.1,
+   "county": "Laurens",
+   "fips": "45059",
+   "gnis_id": "1248009",
+   "measured": true
+  },
+  "SC/lee": {
+   "boundary_mi": 224.6,
+   "centroid_mi": 237.6,
+   "county": "Lee",
+   "fips": "45061",
+   "gnis_id": "1245652",
+   "measured": false
+  },
+  "SC/lexington": {
+   "boundary_mi": 162.4,
+   "centroid_mi": 179.5,
+   "county": "Lexington",
+   "fips": "45063",
+   "gnis_id": "1244251",
+   "measured": true
+  },
+  "SC/marion": {
+   "boundary_mi": 276.7,
+   "centroid_mi": 288.6,
+   "county": "Marion",
+   "fips": "45067",
+   "gnis_id": "1248010",
+   "measured": false
+  },
+  "SC/marlboro": {
+   "boundary_mi": 256.3,
+   "centroid_mi": 272.9,
+   "county": "Marlboro",
+   "fips": "45069",
+   "gnis_id": "1248011",
+   "measured": false
+  },
+  "SC/mccormick": {
+   "boundary_mi": 103.5,
+   "centroid_mi": 120.1,
+   "county": "Mccormick",
+   "fips": "45065",
+   "gnis_id": "1248012",
+   "measured": true
+  },
+  "SC/newberry": {
+   "boundary_mi": 141.3,
+   "centroid_mi": 161.6,
+   "county": "Newberry",
+   "fips": "45071",
+   "gnis_id": "1248013",
+   "measured": true
+  },
+  "SC/oconee": {
+   "boundary_mi": 77.1,
+   "centroid_mi": 92.7,
+   "county": "Oconee",
+   "fips": "45073",
+   "gnis_id": "1244832",
+   "measured": true
+  },
+  "SC/orangeburg": {
+   "boundary_mi": 177.4,
+   "centroid_mi": 210.4,
+   "county": "Orangeburg",
+   "fips": "45075",
+   "gnis_id": "1248014",
+   "measured": true
+  },
+  "SC/pickens": {
+   "boundary_mi": 97.8,
+   "centroid_mi": 113.9,
+   "county": "Pickens",
+   "fips": "45077",
+   "gnis_id": "1248015",
+   "measured": true
+  },
+  "SC/richland": {
+   "boundary_mi": 175.5,
+   "centroid_mi": 200.4,
+   "county": "Richland",
+   "fips": "45079",
+   "gnis_id": "1249299",
+   "measured": true
+  },
+  "SC/saluda": {
+   "boundary_mi": 137.0,
+   "centroid_mi": 153.3,
+   "county": "Saluda",
+   "fips": "45081",
+   "gnis_id": "1248016",
+   "measured": true
+  },
+  "SC/spartanburg": {
+   "boundary_mi": 137.5,
+   "centroid_mi": 152.0,
+   "county": "Spartanburg",
+   "fips": "45083",
+   "gnis_id": "1248592",
+   "measured": true
+  },
+  "SC/sumter": {
+   "boundary_mi": 215.1,
+   "centroid_mi": 230.4,
+   "county": "Sumter",
+   "fips": "45085",
+   "gnis_id": "1244717",
+   "measured": false
+  },
+  "SC/union": {
+   "boundary_mi": 151.4,
+   "centroid_mi": 166.0,
+   "county": "Union",
+   "fips": "45087",
+   "gnis_id": "1248017",
+   "measured": true
+  },
+  "SC/williamsburg": {
+   "boundary_mi": 246.6,
+   "centroid_mi": 269.5,
+   "county": "Williamsburg",
+   "fips": "45089",
+   "gnis_id": "1248018",
+   "measured": false
+  },
+  "SC/york": {
+   "boundary_mi": 176.4,
+   "centroid_mi": 195.5,
+   "county": "York",
+   "fips": "45091",
+   "gnis_id": "1248019",
+   "measured": true
+  },
+  "TN/anderson": {
+   "boundary_mi": 132.9,
+   "centroid_mi": 147.6,
+   "county": "Anderson",
+   "fips": "47001",
+   "gnis_id": "1639722",
+   "measured": true
+  },
+  "TN/bedford": {
+   "boundary_mi": 143.9,
+   "centroid_mi": 157.2,
+   "county": "Bedford",
+   "fips": "47003",
+   "gnis_id": "1639723",
+   "measured": true
+  },
+  "TN/benton": {
+   "boundary_mi": 235.6,
+   "centroid_mi": 252.3,
+   "county": "Benton",
+   "fips": "47005",
+   "gnis_id": "1639724",
+   "measured": false
+  },
+  "TN/bledsoe": {
+   "boundary_mi": 105.3,
+   "centroid_mi": 120.0,
+   "county": "Bledsoe",
+   "fips": "47007",
+   "gnis_id": "1639725",
+   "measured": true
+  },
+  "TN/blount": {
+   "boundary_mi": 104.8,
+   "centroid_mi": 120.4,
+   "county": "Blount",
+   "fips": "47009",
+   "gnis_id": "1639726",
+   "measured": true
+  },
+  "TN/bradley": {
+   "boundary_mi": 72.2,
+   "centroid_mi": 84.6,
+   "county": "Bradley",
+   "fips": "47011",
+   "gnis_id": "1639727",
+   "measured": true
+  },
+  "TN/campbell": {
+   "boundary_mi": 151.5,
+   "centroid_mi": 167.4,
+   "county": "Campbell",
+   "fips": "47013",
+   "gnis_id": "1639728",
+   "measured": true
+  },
+  "TN/cannon": {
+   "boundary_mi": 146.2,
+   "centroid_mi": 157.0,
+   "county": "Cannon",
+   "fips": "47015",
+   "gnis_id": "1648572",
+   "measured": true
+  },
+  "TN/carroll": {
+   "boundary_mi": 247.5,
+   "centroid_mi": 267.0,
+   "county": "Carroll",
+   "fips": "47017",
+   "gnis_id": "1639729",
+   "measured": false
+  },
+  "TN/carter": {
+   "boundary_mi": 186.8,
+   "centroid_mi": 204.5,
+   "county": "Carter",
+   "fips": "47019",
+   "gnis_id": "1639730",
+   "measured": false
+  },
+  "TN/cheatham": {
+   "boundary_mi": 200.4,
+   "centroid_mi": 218.3,
+   "county": "Cheatham",
+   "fips": "47021",
+   "gnis_id": "1639731",
+   "measured": false
+  },
+  "TN/chester": {
+   "boundary_mi": 240.8,
+   "centroid_mi": 258.9,
+   "county": "Chester",
+   "fips": "47023",
+   "gnis_id": "1639732",
+   "measured": false
+  },
+  "TN/claiborne": {
+   "boundary_mi": 167.1,
+   "centroid_mi": 177.5,
+   "county": "Claiborne",
+   "fips": "47025",
+   "gnis_id": "1639733",
+   "measured": true
+  },
+  "TN/clay": {
+   "boundary_mi": 177.8,
+   "centroid_mi": 188.4,
+   "county": "Clay",
+   "fips": "47027",
+   "gnis_id": "1648573",
+   "measured": true
+  },
+  "TN/cocke": {
+   "boundary_mi": 135.1,
+   "centroid_mi": 152.2,
+   "county": "Cocke",
+   "fips": "47029",
+   "gnis_id": "1639734",
+   "measured": true
+  },
+  "TN/coffee": {
+   "boundary_mi": 124.3,
+   "centroid_mi": 140.6,
+   "county": "Coffee",
+   "fips": "47031",
+   "gnis_id": "1639735",
+   "measured": true
+  },
+  "TN/crockett": {
+   "boundary_mi": 279.9,
+   "centroid_mi": 296.5,
+   "county": "Crockett",
+   "fips": "47033",
+   "gnis_id": "1648574",
+   "measured": false
+  },
+  "TN/cumberland": {
+   "boundary_mi": 125.9,
+   "centroid_mi": 139.6,
+   "county": "Cumberland",
+   "fips": "47035",
+   "gnis_id": "1639736",
+   "measured": true
+  },
+  "TN/davidson": {
+   "boundary_mi": 181.7,
+   "centroid_mi": 202.1,
+   "county": "Davidson",
+   "fips": "47037",
+   "gnis_id": "1639737",
+   "measured": false
+  },
+  "TN/decatur": {
+   "boundary_mi": 224.3,
+   "centroid_mi": 238.0,
+   "county": "Decatur",
+   "fips": "47039",
+   "gnis_id": "1639739",
+   "measured": false
+  },
+  "TN/dekalb": {
+   "boundary_mi": 145.5,
+   "centroid_mi": 159.6,
+   "county": "Dekalb",
+   "fips": "47041",
+   "gnis_id": "1639738",
+   "measured": true
+  },
+  "TN/dickson": {
+   "boundary_mi": 206.2,
+   "centroid_mi": 224.0,
+   "county": "Dickson",
+   "fips": "47043",
+   "gnis_id": "1639740",
+   "measured": false
+  },
+  "TN/dyer": {
+   "boundary_mi": 299.2,
+   "centroid_mi": 317.5,
+   "county": "Dyer",
+   "fips": "47045",
+   "gnis_id": "1639741",
+   "measured": false
+  },
+  "TN/fayette": {
+   "boundary_mi": 281.0,
+   "centroid_mi": 297.0,
+   "county": "Fayette",
+   "fips": "47047",
+   "gnis_id": "1639742",
+   "measured": false
+  },
+  "TN/fentress": {
+   "boundary_mi": 152.0,
+   "centroid_mi": 167.9,
+   "county": "Fentress",
+   "fips": "47049",
+   "gnis_id": "1639743",
+   "measured": true
+  },
+  "TN/franklin": {
+   "boundary_mi": 108.1,
+   "centroid_mi": 125.4,
+   "county": "Franklin",
+   "fips": "47051",
+   "gnis_id": "1639744",
+   "measured": true
+  },
+  "TN/gibson": {
+   "boundary_mi": 273.2,
+   "centroid_mi": 291.5,
+   "county": "Gibson",
+   "fips": "47053",
+   "gnis_id": "1639745",
+   "measured": false
+  },
+  "TN/giles": {
+   "boundary_mi": 155.0,
+   "centroid_mi": 171.6,
+   "county": "Giles",
+   "fips": "47055",
+   "gnis_id": "1639746",
+   "measured": true
+  },
+  "TN/grainger": {
+   "boundary_mi": 150.4,
+   "centroid_mi": 165.9,
+   "county": "Grainger",
+   "fips": "47057",
+   "gnis_id": "1648575",
+   "measured": true
+  },
+  "TN/greene": {
+   "boundary_mi": 159.7,
+   "centroid_mi": 174.8,
+   "county": "Greene",
+   "fips": "47059",
+   "gnis_id": "1639747",
+   "measured": true
+  },
+  "TN/grundy": {
+   "boundary_mi": 113.0,
+   "centroid_mi": 122.4,
+   "county": "Grundy",
+   "fips": "47061",
+   "gnis_id": "1639748",
+   "measured": true
+  },
+  "TN/hamblen": {
+   "boundary_mi": 158.9,
+   "centroid_mi": 166.8,
+   "county": "Hamblen",
+   "fips": "47063",
+   "gnis_id": "1648576",
+   "measured": true
+  },
+  "TN/hamilton": {
+   "boundary_mi": 76.4,
+   "centroid_mi": 93.1,
+   "county": "Hamilton",
+   "fips": "47065",
+   "gnis_id": "1639749",
+   "measured": true
+  },
+  "TN/hancock": {
+   "boundary_mi": 176.6,
+   "centroid_mi": 187.4,
+   "county": "Hancock",
+   "fips": "47067",
+   "gnis_id": "1648577",
+   "measured": true
+  },
+  "TN/hardeman": {
+   "boundary_mi": 258.9,
+   "centroid_mi": 274.3,
+   "county": "Hardeman",
+   "fips": "47069",
+   "gnis_id": "1639750",
+   "measured": false
+  },
+  "TN/hardin": {
+   "boundary_mi": 215.4,
+   "centroid_mi": 230.8,
+   "county": "Hardin",
+   "fips": "47071",
+   "gnis_id": "1639751",
+   "measured": false
+  },
+  "TN/hawkins": {
+   "boundary_mi": 171.6,
+   "centroid_mi": 188.3,
+   "county": "Hawkins",
+   "fips": "47073",
+   "gnis_id": "1639752",
+   "measured": true
+  },
+  "TN/haywood": {
+   "boundary_mi": 282.4,
+   "centroid_mi": 298.1,
+   "county": "Haywood",
+   "fips": "47075",
+   "gnis_id": "1639753",
+   "measured": false
+  },
+  "TN/henderson": {
+   "boundary_mi": 236.1,
+   "centroid_mi": 253.6,
+   "county": "Henderson",
+   "fips": "47077",
+   "gnis_id": "1639754",
+   "measured": false
+  },
+  "TN/henry": {
+   "boundary_mi": 250.7,
+   "centroid_mi": 273.3,
+   "county": "Henry",
+   "fips": "47079",
+   "gnis_id": "1639755",
+   "measured": false
+  },
+  "TN/hickman": {
+   "boundary_mi": 194.3,
+   "centroid_mi": 214.5,
+   "county": "Hickman",
+   "fips": "47081",
+   "gnis_id": "1639756",
+   "measured": false
+  },
+  "TN/houston": {
+   "boundary_mi": 232.0,
+   "centroid_mi": 245.5,
+   "county": "Houston",
+   "fips": "47083",
+   "gnis_id": "1648578",
+   "measured": false
+  },
+  "TN/humphreys": {
+   "boundary_mi": 217.1,
+   "centroid_mi": 237.7,
+   "county": "Humphreys",
+   "fips": "47085",
+   "gnis_id": "1639757",
+   "measured": false
+  },
+  "TN/jackson": {
+   "boundary_mi": 167.6,
+   "centroid_mi": 178.8,
+   "county": "Jackson",
+   "fips": "47087",
+   "gnis_id": "1639758",
+   "measured": true
+  },
+  "TN/jefferson": {
+   "boundary_mi": 143.5,
+   "centroid_mi": 152.4,
+   "county": "Jefferson",
+   "fips": "47089",
+   "gnis_id": "1639759",
+   "measured": true
+  },
+  "TN/johnson": {
+   "boundary_mi": 205.4,
+   "centroid_mi": 223.0,
+   "county": "Johnson",
+   "fips": "47091",
+   "gnis_id": "1639760",
+   "measured": false
+  },
+  "TN/knox": {
+   "boundary_mi": 125.5,
+   "centroid_mi": 140.9,
+   "county": "Knox",
+   "fips": "47093",
+   "gnis_id": "1639761",
+   "measured": true
+  },
+  "TN/lake": {
+   "boundary_mi": 317.7,
+   "centroid_mi": 330.1,
+   "county": "Lake",
+   "fips": "47095",
+   "gnis_id": "1639762",
+   "measured": false
+  },
+  "TN/lauderdale": {
+   "boundary_mi": 299.9,
+   "centroid_mi": 320.6,
+   "county": "Lauderdale",
+   "fips": "47097",
+   "gnis_id": "1639763",
+   "measured": false
+  },
+  "TN/lawrence": {
+   "boundary_mi": 175.2,
+   "centroid_mi": 190.2,
+   "county": "Lawrence",
+   "fips": "47099",
+   "gnis_id": "1639764",
+   "measured": true
+  },
+  "TN/lewis": {
+   "boundary_mi": 189.8,
+   "centroid_mi": 205.1,
+   "county": "Lewis",
+   "fips": "47101",
+   "gnis_id": "1639765",
+   "measured": false
+  },
+  "TN/lincoln": {
+   "boundary_mi": 129.3,
+   "centroid_mi": 147.7,
+   "county": "Lincoln",
+   "fips": "47103",
+   "gnis_id": "1639766",
+   "measured": true
+  },
+  "TN/loudon": {
+   "boundary_mi": 112.0,
+   "centroid_mi": 120.7,
+   "county": "Loudon",
+   "fips": "47105",
+   "gnis_id": "1639767",
+   "measured": true
+  },
+  "TN/macon": {
+   "boundary_mi": 184.8,
+   "centroid_mi": 197.6,
+   "county": "Macon",
+   "fips": "47111",
+   "gnis_id": "1639768",
+   "measured": false
+  },
+  "TN/madison": {
+   "boundary_mi": 258.5,
+   "centroid_mi": 275.4,
+   "county": "Madison",
+   "fips": "47113",
+   "gnis_id": "1639769",
+   "measured": false
+  },
+  "TN/marion": {
+   "boundary_mi": 91.4,
+   "centroid_mi": 105.0,
+   "county": "Marion",
+   "fips": "47115",
+   "gnis_id": "1639770",
+   "measured": true
+  },
+  "TN/marshall": {
+   "boundary_mi": 155.5,
+   "centroid_mi": 168.7,
+   "county": "Marshall",
+   "fips": "47117",
+   "gnis_id": "1639771",
+   "measured": true
+  },
+  "TN/maury": {
+   "boundary_mi": 174.8,
+   "centroid_mi": 188.9,
+   "county": "Maury",
+   "fips": "47119",
+   "gnis_id": "1639772",
+   "measured": true
+  },
+  "TN/mcminn": {
+   "boundary_mi": 88.2,
+   "centroid_mi": 99.9,
+   "county": "Mcminn",
+   "fips": "47107",
+   "gnis_id": "1639773",
+   "measured": true
+  },
+  "TN/mcnairy": {
+   "boundary_mi": 236.0,
+   "centroid_mi": 250.5,
+   "county": "Mcnairy",
+   "fips": "47109",
+   "gnis_id": "1639774",
+   "measured": false
+  },
+  "TN/meigs": {
+   "boundary_mi": 94.6,
+   "centroid_mi": 107.8,
+   "county": "Meigs",
+   "fips": "47121",
+   "gnis_id": "1639775",
+   "measured": true
+  },
+  "TN/monroe": {
+   "boundary_mi": 84.0,
+   "centroid_mi": 100.8,
+   "county": "Monroe",
+   "fips": "47123",
+   "gnis_id": "1639776",
+   "measured": true
+  },
+  "TN/montgomery": {
+   "boundary_mi": 221.8,
+   "centroid_mi": 241.4,
+   "county": "Montgomery",
+   "fips": "47125",
+   "gnis_id": "1639777",
+   "measured": false
+  },
+  "TN/moore": {
+   "boundary_mi": 134.4,
+   "centroid_mi": 142.8,
+   "county": "Moore",
+   "fips": "47127",
+   "gnis_id": "1648579",
+   "measured": true
+  },
+  "TN/morgan": {
+   "boundary_mi": 133.5,
+   "centroid_mi": 148.9,
+   "county": "Morgan",
+   "fips": "47129",
+   "gnis_id": "1639778",
+   "measured": true
+  },
+  "TN/obion": {
+   "boundary_mi": 292.5,
+   "centroid_mi": 314.1,
+   "county": "Obion",
+   "fips": "47131",
+   "gnis_id": "1639779",
+   "measured": false
+  },
+  "TN/overton": {
+   "boundary_mi": 154.4,
+   "centroid_mi": 170.3,
+   "county": "Overton",
+   "fips": "47133",
+   "gnis_id": "1639780",
+   "measured": true
+  },
+  "TN/perry": {
+   "boundary_mi": 209.3,
+   "centroid_mi": 226.9,
+   "county": "Perry",
+   "fips": "47135",
+   "gnis_id": "1639781",
+   "measured": false
+  },
+  "TN/pickett": {
+   "boundary_mi": 171.9,
+   "centroid_mi": 181.5,
+   "county": "Pickett",
+   "fips": "47137",
+   "gnis_id": "1648580",
+   "measured": true
+  },
+  "TN/polk": {
+   "boundary_mi": 69.0,
+   "centroid_mi": 78.4,
+   "county": "Polk",
+   "fips": "47139",
+   "gnis_id": "1639782",
+   "measured": true
+  },
+  "TN/putnam": {
+   "boundary_mi": 145.7,
+   "centroid_mi": 161.0,
+   "county": "Putnam",
+   "fips": "47141",
+   "gnis_id": "1639783",
+   "measured": true
+  },
+  "TN/rhea": {
+   "boundary_mi": 104.1,
+   "centroid_mi": 115.8,
+   "county": "Rhea",
+   "fips": "47143",
+   "gnis_id": "1639784",
+   "measured": true
+  },
+  "TN/roane": {
+   "boundary_mi": 114.8,
+   "centroid_mi": 128.6,
+   "county": "Roane",
+   "fips": "47145",
+   "gnis_id": "1639785",
+   "measured": true
+  },
+  "TN/robertson": {
+   "boundary_mi": 203.7,
+   "centroid_mi": 223.8,
+   "county": "Robertson",
+   "fips": "47147",
+   "gnis_id": "1639786",
+   "measured": false
+  },
+  "TN/rutherford": {
+   "boundary_mi": 154.3,
+   "centroid_mi": 171.5,
+   "county": "Rutherford",
+   "fips": "47149",
+   "gnis_id": "1639787",
+   "measured": true
+  },
+  "TN/scott": {
+   "boundary_mi": 150.3,
+   "centroid_mi": 168.6,
+   "county": "Scott",
+   "fips": "47151",
+   "gnis_id": "1639788",
+   "measured": true
+  },
+  "TN/sequatchie": {
+   "boundary_mi": 97.7,
+   "centroid_mi": 111.4,
+   "county": "Sequatchie",
+   "fips": "47153",
+   "gnis_id": "1652643",
+   "measured": true
+  },
+  "TN/sevier": {
+   "boundary_mi": 117.0,
+   "centroid_mi": 133.7,
+   "county": "Sevier",
+   "fips": "47155",
+   "gnis_id": "1639789",
+   "measured": true
+  },
+  "TN/shelby": {
+   "boundary_mi": 305.8,
+   "centroid_mi": 323.1,
+   "county": "Shelby",
+   "fips": "47157",
+   "gnis_id": "1639790",
+   "measured": false
+  },
+  "TN/smith": {
+   "boundary_mi": 167.3,
+   "centroid_mi": 179.2,
+   "county": "Smith",
+   "fips": "47159",
+   "gnis_id": "1639791",
+   "measured": true
+  },
+  "TN/stewart": {
+   "boundary_mi": 242.1,
+   "centroid_mi": 260.2,
+   "county": "Stewart",
+   "fips": "47161",
+   "gnis_id": "1639792",
+   "measured": false
+  },
+  "TN/sullivan": {
+   "boundary_mi": 191.8,
+   "centroid_mi": 210.7,
+   "county": "Sullivan",
+   "fips": "47163",
+   "gnis_id": "1639793",
+   "measured": false
+  },
+  "TN/sumner": {
+   "boundary_mi": 186.2,
+   "centroid_mi": 207.0,
+   "county": "Sumner",
+   "fips": "47165",
+   "gnis_id": "1639794",
+   "measured": false
+  },
+  "TN/tipton": {
+   "boundary_mi": 303.3,
+   "centroid_mi": 321.3,
+   "county": "Tipton",
+   "fips": "47167",
+   "gnis_id": "1639795",
+   "measured": false
+  },
+  "TN/trousdale": {
+   "boundary_mi": 182.3,
+   "centroid_mi": 193.3,
+   "county": "Trousdale",
+   "fips": "47169",
+   "gnis_id": "1648581",
+   "measured": false
+  },
+  "TN/unicoi": {
+   "boundary_mi": 170.2,
+   "centroid_mi": 184.1,
+   "county": "Unicoi",
+   "fips": "47171",
+   "gnis_id": "1648582",
+   "measured": true
+  },
+  "TN/union": {
+   "boundary_mi": 152.6,
+   "centroid_mi": 162.0,
+   "county": "Union",
+   "fips": "47173",
+   "gnis_id": "1648583",
+   "measured": true
+  },
+  "TN/vanburen": {
+   "boundary_mi": 123.2,
+   "centroid_mi": 132.1,
+   "county": "Van Buren",
+   "fips": "47175",
+   "gnis_id": "1648584",
+   "measured": true
+  },
+  "TN/warren": {
+   "boundary_mi": 125.2,
+   "centroid_mi": 140.4,
+   "county": "Warren",
+   "fips": "47177",
+   "gnis_id": "1639796",
+   "measured": true
+  },
+  "TN/washington": {
+   "boundary_mi": 177.9,
+   "centroid_mi": 192.1,
+   "county": "Washington",
+   "fips": "47179",
+   "gnis_id": "1639797",
+   "measured": true
+  },
+  "TN/wayne": {
+   "boundary_mi": 193.7,
+   "centroid_mi": 211.0,
+   "county": "Wayne",
+   "fips": "47181",
+   "gnis_id": "1639798",
+   "measured": false
+  },
+  "TN/weakley": {
+   "boundary_mi": 273.3,
+   "centroid_mi": 291.4,
+   "county": "Weakley",
+   "fips": "47183",
+   "gnis_id": "1639799",
+   "measured": false
+  },
+  "TN/white": {
+   "boundary_mi": 132.0,
+   "centroid_mi": 146.5,
+   "county": "White",
+   "fips": "47185",
+   "gnis_id": "1639800",
+   "measured": true
+  },
+  "TN/williamson": {
+   "boundary_mi": 175.8,
+   "centroid_mi": 193.1,
+   "county": "Williamson",
+   "fips": "47187",
+   "gnis_id": "1639801",
+   "measured": true
+  },
+  "TN/wilson": {
+   "boundary_mi": 164.0,
+   "centroid_mi": 184.1,
+   "county": "Wilson",
+   "fips": "47189",
+   "gnis_id": "1639802",
+   "measured": true
+  }
+ },
+ "generated": "2026-11-17",
+ "origin": {
+  "label": "1690 Little Willeo Rd, Marietta GA 30068",
+  "lat": 33.989302009439,
+  "lon": -84.401895017854
+ },
+ "search_radius_mi": 180.0,
+ "source": "USGS The National Map, Governmental Unit Boundaries (carto.nationalmap.gov govunits layer 23, county polygons); simplified to 0.002 deg"
+}

@@ -33,6 +33,7 @@ from scraper.config import config
 from scraper.db import _ensure_db
 from scraper import run as run_mod
 from scraper import nc_gis_lookup
+from scraper import radius as radius_mod
 from scraper.run import run_scraper
 
 from scraper.kania_law import KaniaLawScraper
@@ -165,6 +166,12 @@ class _OfflineRunner:
             patch.object(run_mod, "_is_scraper_disabled", return_value=False),
             patch.object(run_mod, "_reset_failure_counter", return_value=None),
             patch.object(run_mod, "_inc_failure_counter", return_value=None),
+            # These fixtures are county scaffolding (Ashe/Wake/Davidson), and
+            # they carry no coordinates, so the distance rule judges them by
+            # county and reaps every row — Ashe NC's nearest ground is 216 mi
+            # from the origin. Ingestion is what this harness proves; the
+            # radius rule itself is covered in tests/test_radius.py.
+            patch.object(config, "RADIUS_MILES", 0.0),
         ]
         if self.name == "tn_publicnotice":
             p.append(patch.object(run_mod, "scrape_with_enrichment",

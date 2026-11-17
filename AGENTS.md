@@ -73,6 +73,10 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties; `street_only`/`has_house_number` address prep, `search_owner_parcels_in_nc1map` multi-parcel tracts |
 | `scraper/elevation.py` | Per-parcel ground elevation from USGS 3DEP (key-free) — fills `elevation_ft`, archives below `MIN_ELEVATION` |
 | `scraper/backfill_elevation.py` | CLI: measure existing rows, report distribution, apply the 1,700 ft parcel rule (`--dry-run`, `--no-archive`, `--source`, `--refresh`) |
+| `scraper/radius.py` | Distance half of the parcel rule — haversine from the origin, USGS county table for pin-less rows, audited `outside_radius` reap (`apply_radius_rule`) |
+| `scraper/county_radius.json` | Committed USGS table: nearest boundary + centroid distance to the origin for all 587 counties of the six states. The runtime never hits the network |
+| `scraper/fetch_county_radius.py` | Rebuilds that table from USGS Governmental Unit Boundaries (govunits layer 23 polygons). Stores distances, not verdicts |
+| `scraper/backfill_radius.py` | CLI: report/apply the distance rule to existing rows (`--dry-run`, `--source`, `--radius`) |
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
@@ -132,14 +136,36 @@ per-state Tax/Mtg/Re category tabs (`property_category()`).
 
 Scope spans **6 states** (elevation >1700ft, within 250mi of Atlanta): **GA, AL, KY, NC, SC, TN**. Full county lists live in `scraper/config.py` (`QUALIFYING_COUNTIES`); the investclosure target sets are `NC_MOUNTAIN_COUNTIES` (21) and `GA_MOUNTAIN_COUNTIES` (7).
 
-**The 1,700 ft rule is now two-part.** The county lists were built from each
-county's **peak** elevation, which says nothing about a parcel sitting in a
-valley inside that county — a USGS sample of active rows measured **70% below
-1,700 ft** (all SC/AL, most GA/TN foothills). `scraper/elevation.py` measures
-each parcel from USGS 3DEP (`elevation_ft`), the scrapers archive anything
-below `config.MIN_ELEVATION` (`INVESTCLOSURE_MIN_ELEVATION`, default 1,700 ft,
-`0` disables), and `python3 -m scraper.backfill_elevation` backfills existing
-rows. Unknown elevation (no coordinates) is never disqualifying.
+**Qualification is three-part: acreage, ground elevation, and distance.**
+The county lists were built from each county's **peak** elevation, which says
+nothing about a parcel sitting in a valley inside that county — a USGS sample
+of active rows measured **70% below 1,700 ft** (all SC/AL, most GA/TN
+foothills). `scraper/elevation.py` measures each parcel from USGS 3DEP
+(`elevation_ft`), the scrapers archive anything below `config.MIN_ELEVATION`
+(`INVESTCLOSURE_MIN_ELEVATION`, default 1,700 ft, `0` disables), and
+`python3 -m scraper.backfill_elevation` backfills existing rows. Unknown
+elevation (no coordinates) is never disqualifying.
+
+**The distance rule (2026-11-17): within `config.RADIUS_MILES` (180) of
+1690 Little Willeo Rd, Marietta GA 30068** (`config.ORIGIN_LAT`/`ORIGIN_LON`,
+Census geocode). `scraper/radius.py` judges a row by **its own coordinates**
+when it has them, and otherwise by its county's **closest point** to the
+origin from `scraper/county_radius.json` (USGS boundary polygons) — a county
+entirely outside takes its pin-less rows with it, a county whose edge reaches
+inside keeps them. Boundary, never centroid: Cleveland NC is 170.9 mi at its
+nearest ground and 186.5 mi at its centre, so a centre test would drop land
+that is genuinely in scope. Counties recorded `measured: false` carry only a
+bounding-box lower bound — enough to prove *out*, never *in*; above the radius
+the table was built for they report `unknown` and the row is kept, with
+`python3 -m scraper.fetch_county_radius --radius <new>` to re-measure. A
+missing table degrades to `unknown` (keep), never to "out".
+
+13 of the 79 scraper target counties are entirely outside 180 mi — NC
+`alleghany 237.9, ashe 216.3, avery 186.8, burke 182.8, watauga 203.1`; TN
+`carter 186.8, johnson 205.4, sullivan 191.8`; **all 5 KY** counties
+`whitley 180.1, bell 180.9, knox 187.2, harlan 191.6, perry 212.9`. GA/AL/SC
+target sets are entirely inside. The lists still hold those counties (rows are
+archived by the rule instead); pruning the scrape scope is a separate step.
 
 ### NC — 20 mountain counties (investclosure target set)
 `alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
@@ -314,6 +340,9 @@ python3 -m scraper --scraper zls_nc     # Run ZLS-NC only
 python3 -m scraper --status              # DB stats
 python3 -m scraper --new                 # New properties since last run
 python3 -m scraper --archive             # Archive below MIN_ACRES
+python3 -m scraper.backfill_elevation --dry-run   # Report ground elevation vs MIN_ELEVATION
+python3 -m scraper.backfill_radius --dry-run      # Report rows outside RADIUS_MILES
+python3 -m scraper.fetch_county_radius    # Rebuild county_radius.json from USGS boundaries
 python3 -m scraper --cron                # Scheduled mode (default 4a & 4p, --cron-hours to override)
 python3 -m scraper --help                # Show all options
 ```
@@ -403,10 +432,71 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
 | `INVESTCLOSURE_MIN_ELEVATION` | `1700.0` | Per-parcel ground-elevation filter (USGS 3DEP), feet; `0` disables |
+| `INVESTCLOSURE_RADIUS_MILES` | `180.0` | Distance filter from the origin address, statute miles; `0` disables |
+| `INVESTCLOSURE_ORIGIN_LAT` | `33.989302009439` | Origin latitude — 1690 Little Willeo Rd, Marietta GA 30068 |
+| `INVESTCLOSURE_ORIGIN_LON` | `-84.401895017854` | Origin longitude (same address) |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 | `NCONEMAP_TLS_STRICT` | *(unset)* | Set `1` to refuse the unverified NC OneMap fallback while their cert is expired |
 
 ## Recent Updates
+
+- **2026-11-17 (distance rule: within 180 mi of the office)**: The product rule
+  is now **ground ≥ `MIN_ELEVATION` *and* ≤ 180 mi from 1690 Little Willeo Rd,
+  Marietta GA 30068**. The county lists came from a loose "mountains within
+  reach" notion that was never enforced, so parcels 250 miles away — Alleghany
+  NC, Johnson TN — were sitting in the inventory.
+  - **Measured from federal boundary geometry, not centroids.**
+    `scraper/fetch_county_radius.py` pulls USGS The National Map Governmental
+    Unit Boundaries (`carto.nationalmap.gov` govunits **layer 23**, county
+    polygons) and writes `scraper/county_radius.json`: for all **587 counties**
+    of the six states, the **nearest boundary point** and the centroid distance
+    to the origin — **271 counties inside 180 mi**. It stores *distances, not
+    verdicts*, so changing `RADIUS_MILES` re-evaluates everything without
+    refetching. shapely/pyproj are not in the image, so containment is
+    hand-rolled ray casting and the boundary minimum runs over segments
+    densified to ~0.7 mi (polygons arrive simplified at 0.002 deg ≈ 0.14 mi).
+  - **Boundary, never centre:** Cleveland NC's nearest ground is **170.9 mi**
+    while its centre is **186.5** — a centre test would drop a county that
+    holds land inside the circle. A county recorded `measured: false` had only
+    its bounding box measured (the box was already past the search radius), so
+    it can prove *out* but never *in*: above the radius the table was built for
+    it returns `unknown` and the row is **kept**. A missing/unreadable table
+    degrades to `unknown` too — an outage must never mass-archive.
+  - `scraper/radius.py` judges a row by **its own coordinates** first
+    (`parcel`); only pin-less rows fall back to the county (`county`). Wired
+    into `run.run_scraper` after the elevation pass (a fresh GIS match is what
+    supplies most coordinates), scoped to the run's new rows like the elevation
+    hook. Env: `INVESTCLOSURE_RADIUS_MILES` (0 disables), `..._ORIGIN_LAT`,
+    `..._ORIGIN_LON`.
+  - **Live reap** (snapshot `data/backups/investclosure-pre-radius-20261117-114812.db`):
+    **679 → 561 active**, **118 archived** — 97 by their own pin, 21 by "no pin
+    and the county is entirely out", 0 undecidable. One audit row each
+    (`archived_by='system'`), and a re-run finds 0 left. Reversal:
+    `UPDATE properties SET status='active', archived_at=NULL, archive_reason=NULL
+    WHERE archive_reason LIKE 'outside_radius%'`. Heaviest: Carter TN 23,
+    Johnson TN 23, Sullivan TN 16, Washington TN 13 (a mixed county — every one
+    of those 13 failed on its own pin). 39 of them also carried an earlier
+    `below_min_elevation` archive that a re-sighting had resurrected — the
+    `reconcile_archive` defect, still open.
+  - **Repo bug found on the way:** `.gitignore` has a blanket `*.json`, so
+    `county_radius.json` would never have been committed *and*
+    `scraper/county_centroids.json` — Zillow's centroid guard, since 2026-10-20
+    — **was already untracked**. Added `!scraper/*.json`: JSON under `scraper/`
+    is runtime product data, and losing it to an ignore rule is the same class
+    of failure as a missing `requirements.txt` line.
+  - **DNS correction** (an earlier claim was wrong): `geonames.usgs.gov`
+    resolves fine — it is the *service* that is gone; every path now redirects
+    to `usgs.gov/us-board-on-geographic-names`, so it publishes no data.
+    `services.nationalmap.gov` / `edc.usgs.gov` / `coams.usgs.gov` do have a
+    DNS name but **zero A/AAAA records** (NOERROR/NODATA, Firefox `ENOTFOUND`),
+    identically on host and container. The working USGS hosts are
+    `carto.`/`elevation.`/`hydro.`/`epqs.nationalmap.gov`.
+  - 35 tests in `tests/test_radius.py` (USGS figures pinned, boundary-vs-centre,
+    unmeasured-county semantics, audited + reversible reap, missing table).
+    `tests/test_integration.py` now disables `RADIUS_MILES` in its offline
+    harness — its fixtures live in Ashe NC (216 mi) and Wake/Davidson, so the
+    rule reaped them; that harness proves ingestion. Full suite **892 pass,
+    8 skipped**.
 
 - **2026-11-09 (multi-parcel tracts + NC address resolution fixed)**: "#2739's
   map points at the wrong parcel, and sometimes there is more than one."

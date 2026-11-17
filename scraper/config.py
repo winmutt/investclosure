@@ -354,6 +354,9 @@ class Config:
     MAX_ACRES: float
     MAX_PRICE: int  # 0 = no cap (foreclosures typically have no price)
     MIN_ELEVATION: float  # per-parcel ground elevation, feet (0 = disabled)
+    RADIUS_MILES: float   # distance from ORIGIN, statute miles (0 = disabled)
+    ORIGIN_LAT: float     # the product's origin address
+    ORIGIN_LON: float
 
     # ---- proxy ----
     PROXY_URL: Optional[str]
@@ -436,6 +439,19 @@ class Config:
         # qualifying county pass unless the parcel itself is measured. 0
         # disables the rule. Env: INVESTCLOSURE_MIN_ELEVATION.
         self.MIN_ELEVATION = _opt_float("INVESTCLOSURE_MIN_ELEVATION", 1700.0)
+
+        # Distance half of the product rule: the parcel must also sit within
+        # this many statute miles of ORIGIN. The qualifying county lists were
+        # drawn from a 250-mile notion of "mountains within reach" and never
+        # enforced; this is the enforced version. 0 disables the rule.
+        # Env: INVESTCLOSURE_RADIUS_MILES.
+        self.RADIUS_MILES = _opt_float("INVESTCLOSURE_RADIUS_MILES", 180.0)
+        # 1690 Little Willeo Rd, Marietta GA 30068 — Census geocoder, exact
+        # match. Env: INVESTCLOSURE_ORIGIN_LAT / _LON.
+        self.ORIGIN_LAT = _opt_float("INVESTCLOSURE_ORIGIN_LAT",
+                                     33.989302009439)
+        self.ORIGIN_LON = _opt_float("INVESTCLOSURE_ORIGIN_LON",
+                                     -84.401895017854)
 
         # Proxy (env overridable)
         proxy = _opt_str("INVESTCLOSURE_PROXY", "winmutt.com:8088")

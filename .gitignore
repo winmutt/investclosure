@@ -29,6 +29,11 @@ venv/
 # Sensitive / PII
 reports/
 *.json
+# JSON under scraper/ is product data the pipeline reads at runtime (the
+# town/county cross-reference, county centroids, the USGS distance table) —
+# losing it to an ignore rule breaks a rebuild the same way a missing
+# requirements.txt entry does. See AGENTS.md "All code updates ... commit".
+!scraper/*.json
 # OS
 .DS_Store
 Thumbs.db

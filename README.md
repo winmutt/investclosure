@@ -17,12 +17,16 @@ bucketed by `property_vertical()` in `scraper/server.py`.
 
 | Vertical | Status | Scope | Qualification |
 |---|---|---|---|
-| **Mountains** | active | mountain counties (county peak ≥1700ft, ≤250mi of Atlanta) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` + **per-parcel `MIN_ELEVATION`** (1,700 ft, USGS 3DEP) |
+| **Mountains** | active | mountain counties (county peak ≥1700ft) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` + **per-parcel `MIN_ELEVATION`** (1,700 ft, USGS 3DEP) + **`RADIUS_MILES`** (180 mi of the Marietta GA office) |
 | **Beach** | stub (UI only) | ocean/lake-frontage counties (mapping upcoming) | **min distance-to-water** (no acreage/elevation) |
 
-The 1,700 ft rule is two-part: the county lists only encode each county's
-**peak** elevation, so the actual **parcel** is measured with USGS 3DEP and
-reaped below `INVESTCLOSURE_MIN_ELEVATION` (default 1,700 ft).
+Qualification is **ground elevation *and* distance**, both measured rather than
+assumed. The county lists only encode each county's **peak** elevation, so the
+**parcel** is measured with USGS 3DEP and reaped below
+`INVESTCLOSURE_MIN_ELEVATION` (default 1,700 ft); and the row must sit within
+`INVESTCLOSURE_RADIUS_MILES` (default 180) of the origin address, judged from
+its own coordinates when it has them and otherwise from its county's **nearest
+boundary point** in `scraper/county_radius.json` (USGS county polygons).
 
 The mountains|beach switch renders on the dashboard tab bar; **beach is a stub**
 — the water-front county map, the minimum-distance-to-water rule (a water GIS
@@ -145,6 +149,9 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 | `INVESTCLOSURE_MIN_ACRES` | `1.1` | Minimum acreage filter |
 | `INVESTCLOSURE_MAX_ACRES` | `1000.0` | Maximum acreage filter |
 | `INVESTCLOSURE_MIN_ELEVATION` | `1700.0` | Per-parcel ground-elevation filter, feet (`0` disables) |
+| `INVESTCLOSURE_RADIUS_MILES` | `180.0` | Distance filter from the origin address, statute miles (`0` disables) |
+| `INVESTCLOSURE_ORIGIN_LAT` | `33.989302009439` | Origin latitude — 1690 Little Willeo Rd, Marietta GA 30068 |
+| `INVESTCLOSURE_ORIGIN_LON` | `-84.401895017854` | Origin longitude (same address) |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` (optional) |
 
 ## Scrapers
@@ -169,7 +176,9 @@ All configurable via `.env` file or shell environment. See `.env.example`:
 
 ### Selection Criteria
 
-Properties filtered to **20 NC mountain counties** (elevation >1700ft, within 250mi of Atlanta):
+Properties filtered to **20 NC mountain counties** (county peak >1700ft), each
+parcel then measured for ground elevation and distance to the office (see
+[Product Verticals](#product-verticals-branding)):
 
 `alleghany, ashe, avery, buncombe, burke, cherokee, clay, graham, haywood, henderson, jackson, madison, mcdowell, mitchell, polk, macon, swain, transylvania, watauga, yancey`
 
