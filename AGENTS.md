@@ -72,15 +72,22 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/ky_publicnotice.py` | **RETIRED 2026-11-17** (all 5 KY counties outside the radius) — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only. Module kept, unregistered in `run.py` |
 | `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties; `street_only`/`has_house_number` address prep, `search_owner_parcels_in_nc1map` multi-parcel tracts |
 | `scraper/elevation.py` | Per-parcel ground elevation from USGS 3DEP (key-free) — fills `elevation_ft`, archives below `MIN_ELEVATION` |
+| `scraper/forest_adjacency.py` | Forest adjacency — description screening + client-side polygon gap to NC OneMap public parcels >200 ac (strict Intersects is unusable here, see below) |
+| `scraper/forest_report.py` | Forest-adjacency report CLI — Zillow NC sweep (≥2 ac, ≤$300k), 3DEP elevation, adjacency verdicts, `reports/forest_adjacency.md` |
 | `scraper/backfill_elevation.py` | CLI: measure existing rows, report distribution, apply the 1,700 ft parcel rule (`--dry-run`, `--no-archive`, `--source`, `--refresh`) |
 | `scraper/radius.py` | Distance half of the parcel rule — haversine from the origin, USGS county table for pin-less rows, audited `outside_radius` reap (`apply_radius_rule`) |
 | `scraper/county_radius.json` | Committed USGS table: nearest boundary + centroid distance to the origin for all 587 counties of the six states. The runtime never hits the network |
 | `scraper/fetch_county_radius.py` | Rebuilds that table from USGS Governmental Unit Boundaries (govunits layer 23 polygons). Stores distances, not verdicts |
 | `scraper/backfill_radius.py` | CLI: report/apply the distance rule to existing rows (`--dry-run`, `--source`, `--radius`) |
+| `scraper/rentcast.py` | RentCast API client (`/markets` zip screen data, `/avm/rent` AVM) — curl_cffi code path, `RENTCAST_API_KEY`, 2 req/s |
+| `scraper/rent_market_scan.py` | CLI: screen GA zips near Atlanta for ~$1,000/mo small-home rents → `rent_markets.json` + `reports/rent_markets.md` (`--refresh`, `--county`, `--report-only`) |
+| `scraper/rent_scope.py` | Rentals scrape-scope: RentCast-screened counties ∩ Atlanta radius; `county_rent()` stamps `market_rent_monthly` |
+| `scraper/fetch_ga_zips.py` | Rebuilds `ga_zips.json` (GA zips + Census gazetteer centroids inside `RENT_RADIUS_MILES`) |
+| `scraper/county_radius_atlanta.json` / `scraper/ga_zips.json` / `scraper/rent_markets.json` | Committed rentals runtime data (county distances / zip universe / market verdicts) |
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
-| `scraper/server.py` | Flask dashboard (branded **Mountains**) — port 5001, HTTP Basic Auth, Admin page, mountains|beach verticals |
+| `scraper/server.py` | Flask dashboard (branded **Mountains**) — port 5001, HTTP Basic Auth, Admin page, mountains|rentals|beach verticals (`?vt=`) |
 | `scraper/gis_urls.py` | GIS viewer URL builder — county registry for 20 NC mountain counties + GA qPublic apps |
 | `scraper/zillow_hoa_sweep.py` | One-off Zillow detail-page HOA sweep — resumable JSONL checkpoint; `--rejudge` re-runs pre-HOA-presence verdicts; `--archive` replays fee AND fee-less-"HOA-yes" verdicts |
 | `scraper/geo_lookup.py` + `town_county.json` | town/ZIP→county cross-reference (4,917 ZIPs / 3,625 USPS towns, 6 states, from Census ZIP→county) — resolves town-only listings |
@@ -99,6 +106,7 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `nc_publicnotice` | ncnotices.com | NC (PDF notices) | Turnstile | NC OneMap statewide |
 | `tn_publicnotice` | tnpublicnotice.com | TN (PDF notices) | Turnstile | TNMap enrichment |
 | `ga_publicnotice` | georgiapublicnotice.com | GA (7 N mountain counties) | Turnstile | qPublic acreage (`ga_gis_enrich.py`) |
+| `ga_tax_rentals` | georgiapublicnotice.com ("Tax Sales" only) | GA tax sales in RentCast-screened counties ≤100mi of Atlanta | Turnstile | qPublic acres + `market_rent_monthly` stamp (RentCast) |
 | `rlselaw` | rlselaw.com GA listings (static table) | 7 GA mountain | None | qPublic links |
 | `brockandscott` | brockandscott.com search (URL params + pager) | NC/GA/TN mountain | None | state map links |
 | `foreclosuretennessee` | foreclosuretennessee.com grid + details | 38 TN mountain | None | TNMap links |
@@ -125,12 +133,43 @@ per-state Tax/Mtg/Re category tabs (`property_category()`).
 
 | Vertical | Status | Scope | Qualification |
 |---|---|---|---|
-| **Mountains** | active | mountain counties (elevation ≥1700ft, within 250mi of Atlanta — the whole current product) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` |
+| **Mountains** | active | mountain counties (elevation ≥1700ft, within 250mi of Atlanta — the whole current product) | `MIN_ACRES` / `MAX_ACRES` / `MAX_PRICE` + elevation + office radius |
+| **Rentals** | active | GA tax sales within `RENT_RADIUS_MILES` (100mi) of downtown Atlanta, counties holding a RentCast-qualifying zip | small-home market rent ≈$800–1,200/mo + inexpensive sale market — **no elevation/acreage rules** |
 | **Beach** | **stub (UI only)** | ocean-front + lake-front counties (water-county map upcoming) | **minimum distance-to-water** — *no* acreage/elevation |
 
 - **Branding is UI-only.** The dashboard is branded **Mountains** (titles, sidebar brand, footer, auth realm, GIS viewer). Internal identifiers are **unchanged**: container/service `investclosure`, DB `data/investclosure.db`, `INVESTCLOSURE_*` env vars, `templates/investclosure/` + `static/investclosure/` dirs.
-- Verticals are a `config.py` registry (`VERTICALS` + `DEFAULT_VERTICAL`). The mountains|beach switch is the **outer** tab group in `templates/investclosure/landing.html` (`data-tab-group="vertical"`, reuses the existing tab JS). A vertical is claimed per row by `property_vertical()` in `scraper/server.py`, which claims only `BEACH_SOURCES` (empty until beach scrapers land) — so every current row is `mountains`.
+- Verticals are a `config.py` registry (`VERTICALS` + `DEFAULT_VERTICAL`). The vertical bar in `templates/investclosure/landing.html` is a **server-side link** (`/?vt=rentals`), not a client-side pane swap — each vertical is its own board query (its states, panes and counts carry a source claim from `_vertical_clause()`). A vertical is claimed per producing source by `property_vertical()` in `scraper/server.py` (rentals via `config.RENTAL_SOURCES`, beach via `BEACH_SOURCES`); the mountains board keeps every unclaimed source.
+- **Rentals rows are exempt from the mountains parcel rules**: the elevation + office-radius hooks in `run_scraper` skip `RENTAL_SOURCES`, and `archive_below_acres(exclude_sources=RENTAL_SOURCES)` never reaps a 0.4 ac town lot — that lot IS the product.
 - **Beach is a stub**: `status='stub'`, no water-county map, no distance-to-water data source, and no `properties` schema change yet. When it goes live it will add `water_type` + `distance_to_water_m` (+ a `MIN_DISTANCE_TO_WATER` threshold and a water GIS source: coastline + lake polygons).
+
+### Rentals pipeline (RentCast)
+
+What "rentable" means, measured rather than assumed — three committed
+runtime files + a monthly screen:
+
+1. `scraper/fetch_ga_zips.py` → **`scraper/ga_zips.json`** — GA zips (universe
+   = `town_county.json`) whose Census gazetteer centroid sits within
+   `RENT_RADIUS_MILES` of `RENT_ORIGIN` (427 zips today).
+2. GA county distances to downtown Atlanta → **`scraper/county_radius_atlanta.json`**:
+   `python3 -m scraper.fetch_county_radius --states GA --radius 120 --origin 33.7540,-84.3905 --origin-label "Downtown Atlanta (Five Points)" --out scraper/county_radius_atlanta.json` (83 counties inside 100 mi).
+3. `python3 -m scraper.rent_market_scan` (`scraper/rentcast.py` client) →
+   **`scraper/rent_markets.json`** + `reports/rent_markets.md` — one RentCast
+   `/v1/markets` call per zip (`RENTCAST_API_KEY` env; verdicts cached ~monthly,
+   crash-resumable). `judge()`: **pass** = 3bd/2bd median rent in
+   [`RENT_TARGET_MIN_RENT`, `RENT_TARGET_MAX_RENT`] off ≥ `RENT_MIN_RENT_LISTINGS`
+   listings, median sale ≤ `RENT_MAX_MEDIAN_PRICE`; **borderline** = ±20% band,
+   thin evidence, or price under 1.4× cap; rural zips with no rental aggregates
+   are **no_data** (honest — never a fake "fail").
+4. `scraper/rent_scope.py` answers `target_counties()`: screened counties ∩
+   radius; **fallback** to all in-radius counties while the scan hasn't run;
+   **empty** (the scraper refuses to walk GA) when neither data file exists —
+   and also when the screen answered "nothing qualifies". `county_rent()`
+   stamps each inserted row's `market_rent_monthly` (median of the county's
+   qualifying zips) — shown on tiles and the detail page.
+
+The scraper `ga_tax_rentals` (below) subclasses `GAPublicNoticeScraper`:
+"Tax Sales" category only, `_is_mortgage_foreclosure` pinned False, and the
+MIN_ACRES floor removed from its post-scrape county filter.
 
 ## Qualified Counties
 
@@ -279,6 +318,61 @@ rebuilds all links; `scraper/tn_gis_enrich.py` fills TN TPAD links + acres/owner
 - GIS lookup via `scraper/nc_gis_lookup.py` with `NC1MapService.by_parcel(parcel_clean)` method
 - Falls back to Google Maps parcel search: `https://www.google.com/maps/search/parcel+{parcel}+in+{county}+NC`
 
+### Forest-adjacency report (`forest_report.py`, `forest_adjacency.py`)
+
+A standalone report, **not** an inventory import (it never writes the
+`properties` table): sweep the 15 in-scope NC counties on Zillow at **≥ 2
+acres, ≤ $300,000**, measure ground at each listing's **resolved parcel
+centroid** (USGS 3DEP), and keep listings adjacent to public land over **200
+acres** — listing-description evidence first, GIS neighbour test second.
+
+- **Owner strings measured in NC OneMap** (`ownname`, layer 1): `USDA FOREST
+  SERVICE`, `US FOREST SERVICE`, `USFS`, `UNITED STATES OF AMERICA` / `THE
+  UNITED STATES OF AMERICA` / `UNITED STATES OF AMERICIA` (typo in the rolls),
+  `STATE OF NORTH CAROLINA`, `N.C. STATE PARK-MEDOC MOUNTAIN`, `GREAT SMOKY
+  MTN NATI`. Eastern Band trust land and private businesses whose names merely
+  contain "NATIONAL"/"COUNTY" are rejected by `classify_public_owner()`.
+- **Use strict `esriSpatialRelIntersects` only, or no relation at all.**
+  `IndexIntersects` / `EnvelopeIntersects` test **bounding boxes**, so a
+  214,157-acre Great Smoky polygon "intersects" most parcels in Jackson
+  County; strict Intersects is topologically honest but misses forest edges
+  where the county roll leaves slivers.  The report therefore computes the
+  polygon-to-polygon gap itself: each county's public parcels are fetched once
+  with geometry (cached in `scraper/tmp/forest_index/`, 15 counties / 258
+  parcels / ~267k boundary points in ~50 s), boundary points are bucketed into
+  0.003° cells, and the subject-vs-public gap is measured in feet and refined
+  to a 10 ft sample on the winning parcel.  Calibration: **64/64 topological
+  neighbours measured 0–5 ft**, random private parcels **median 1,195 ft**
+  (min 506), so the 150 ft tolerance sits far inside both distributions.
+- **Coverage is not uniform and the report says so.** Buncombe, Clay and
+  Transylvania publish **no** government parcel over 200 acres; Macon and
+  Graham publish one.  A GIS "no" there means *no data*, not *no forest*.
+- **Cherokee publishes 104 public records under only 8 distinct `parno`
+  values** (one USFS tract split into many blocks), so dedupe keys include
+  geometry — keying on `parno` collapsed the county's entire national forest
+  into a single polygon.  Swain's public parcels carry **no `parno` at all**.
+- **Description screening is sentence-scoped**: a forest name must share its
+  sentence with adjacency wording ("borders", "adjoins", "abuts", "inholding",
+  "bounded by"); distance marketing ("10 minutes from Pisgah"), denials and
+  bare mentions are recorded as *mentions*, never adjacency.
+- **Scope is the resolved county, not the searched one.** Zillow's county
+  search leaks neighbours and `geo_lookup` re-hangs some rows on Rutherford or
+  Cleveland (both outside the pruned 15), so `_in_scope()` drops anything whose
+  **resolved** county is not one of `config.NC_MOUNTAIN_COUNTIES` — the usable
+  set is 923 of 1,067 swept results. The report states the dropped count.
+- **Near misses are listed, not promoted**: qualified listings whose nearest
+  public land is 150–500 ft away appear in a separate table, because the roll
+  sometimes leaves a sliver between polygons and Zillow pins drift. They never
+  enter the adjacency count.
+- **The GIS stage aborts on an empty index** (a public-parcel outage must not
+  mark the whole inventory non-adjacent), and `--refresh-index` re-fetches.
+- **CLI**: `python3 -m scraper.forest_report [--stage sweep|details|adjacency|
+  elevation|report] [--county jackson] [--limit-details N] [--refresh-index]
+  [--resweep]`; checkpoints live in `scraper/tmp/forest_report/` and the output
+  is `reports/forest_adjacency.md` (+ `.json`).  The sweep checkpoints **per
+  county** — a crashed Camoufox profile once cost a whole Buncombe walk — and
+  a challenged/empty county is left unrecorded so a rerun retries it.
+
 ### Address → parcel resolution (placeholder numbers, multi-parcel tracts)
 
 Zillow land listings arrive with **no assessor situs number** — the house slot
@@ -343,6 +437,8 @@ python3 -m scraper --scraper zls_nc     # Run ZLS-NC only
 python3 -m scraper --status              # DB stats
 python3 -m scraper --new                 # New properties since last run
 python3 -m scraper --archive             # Archive below MIN_ACRES
+python3 -m scraper.rent_market_scan       # Rentals: RentCast zip screen (monthly; --refresh/--county/--report-only)
+python3 -m scraper.fetch_ga_zips          # Rentals: rebuild the GA zip universe (Census gazetteer)
 python3 -m scraper.backfill_elevation --dry-run   # Report ground elevation vs MIN_ELEVATION
 python3 -m scraper.backfill_radius --dry-run      # Report rows outside RADIUS_MILES
 python3 -m scraper.fetch_county_radius    # Rebuild county_radius.json from USGS boundaries
@@ -438,10 +534,68 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_RADIUS_MILES` | `180.0` | Distance filter from the origin address, statute miles; `0` disables |
 | `INVESTCLOSURE_ORIGIN_LAT` | `33.989302009439` | Origin latitude — 1690 Little Willeo Rd, Marietta GA 30068 |
 | `INVESTCLOSURE_ORIGIN_LON` | `-84.401895017854` | Origin longitude (same address) |
+| `INVESTCLOSURE_RENT_RADIUS_MILES` | `100.0` | Rentals vertical: distance from downtown Atlanta, statute miles; `0` disables |
+| `INVESTCLOSURE_RENT_ORIGIN_LAT` / `_LON` | `33.7540` / `-84.3905` | Rentals origin — downtown Atlanta (Five Points) |
+| `INVESTCLOSURE_RENT_TARGET_MIN_RENT` / `_MAX_RENT` | `800` / `1200` | Zip screen: small-home market rent band, $/month |
+| `INVESTCLOSURE_RENT_MIN_RENT_LISTINGS` | `4` | Minimum rental listings before a zip's rent stats are trusted |
+| `INVESTCLOSURE_RENT_MAX_MEDIAN_PRICE` | `250000` | Zip screen: median sale-price ceiling (inexpensive homes) |
+| `RENTCAST_API_KEY` | *(unset)* | RentCast API key (`X-Api-Key`) — `rent_market_scan` + per-property rent AVM |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 | `NCONEMAP_TLS_STRICT` | *(unset)* | Set `1` to refuse the unverified NC OneMap fallback while their cert is expired |
 
 ## Recent Updates
+
+- **2026-11-21 (Rentals vertical — GA tax sales near Atlanta, RentCast-screened)**:
+  The second active product line: **inexpensive small homes bought at Georgia
+  delinquent-tax sheriff sales in lower-middle-income towns within 100 mi of
+  downtown Atlanta, where the RentCast market data says a small house rents
+  near $1,000/mo**. Rentability is measured, not assumed.
+  - **Pipeline** (see "Rentals pipeline" under Product Verticals):
+    `fetch_ga_zips` (Census gazetteer centroids × `town_county.json` →
+    **427 GA zips** in the circle; the gazetteer's zip column is `ZCTA5CE*`
+    on old vintages and bare `GEOID` on new ones — prefix-matched; the 2025
+    file is even pipe-delimited, hence the per-year fallback chain),
+    `fetch_county_radius --origin` (now origin-parameterized) →
+    `county_radius_atlanta.json` (**83 counties** with measured ground ≤100
+    mi), and `rent_market_scan` → `rent_markets.json` + `reports/rent_markets.md`
+    (RentCast `/v1/markets`, verdicts cached monthly, crash-resumable).
+  - **Scope** (`rent_scope.target_counties()`): screened pass/borderline
+    counties ∩ radius; while the scan hasn't run (needs `RENTCAST_API_KEY` —
+    added to `.env.example`, **not yet configured**) it falls back to all
+    in-radius counties; empty scope (missing files, or screen answered
+    "nothing qualifies") makes the scraper refuse to walk GA rather than
+    pretend. `describe_scope()` says which mode it's in.
+  - **Scraper `ga_tax_rentals`**: `GAPublicNoticeScraper` subclass — "Tax
+    Sales" category only, `_is_mortgage_foreclosure` pinned False (bank
+    power-of-sale notices log as dropped), MIN_ACRES floor removed from its
+    county filter. Each row is stamped `market_rent_monthly` (new column;
+    median of the county's qualifying zips) and shown as "≈$1,050/mo" on
+    tiles + a "Area market rent" line on the detail page.
+  - **Rentals ⊄ mountains rules**: the run's elevation + office-radius reaps
+    skip `config.RENTAL_SOURCES`, and `archive_below_acres()` gained
+    `exclude_sources` (all three call sites pass `RENTAL_SOURCES`) — a 0.4 ac
+    town lot at 600 ft elevation is the rentals product, so the parcel rules
+    must never touch it. The GA qPublic acreage enricher now runs for both
+    GA sources.
+  - **Dashboard**: the vertical bar became a **server-side link** (`/?vt=`) —
+    each vertical its own board/states/panes/counts via `_vertical_clause()`
+    (mountains = every unclaimed source; rentals = `RENTAL_SOURCES`; stubs
+    select nothing). `landing()` builds only the active vertical's board;
+    state links, pane-filter forms and Clear carry `vt`.
+  - `ga_publicnotice.py` was refactored subclass-friendly (categories /
+    target counties / `SOURCE_NAME` / `RUN_TITLE` / row source overridable)
+    with the 7-mountain behavior unchanged — its tests pass untouched.
+  - 25 tests in `tests/test_rentals.py` (judge bands, scope precedence +
+    refusals, tax-only policy, small-lot survival, insert/upsert of the rent
+    stamp, reap exemption, dashboard isolation both directions); two existing
+    tests updated for the now-three-vertical registry and the `vt`-carrying
+    state links. Full suite **996 pass, 8 skipped**.
+  - **Open**: add `RENTCAST_API_KEY` and run `python3 -m scraper.rent_market_scan`
+    (a few hundred calls, once) to narrow the scope from the radius fallback
+    to genuinely rentable towns; per-property `/avm/rent` enrichment for rows
+    with a full street address is wired (`rentcast.rent_estimate`) but not
+    yet run; "improved parcel" detection from the notice text (vs raw land)
+    is a follow-up once real rows land.
 
 - **2026-11-17 (scrape scope pruned to the radius; KY and Ashe retired)**: The
   distance rule made 13 of 79 target counties unable to qualify, so scraping

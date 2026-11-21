@@ -229,7 +229,9 @@ class TestDashboardBoards:
 
         with app.test_client() as client:
             html = client.get("/?st=NC&sort_re=acres_desc").get_data(as_text=True)
-        assert 'href="/?st=TN&amp;sort_tax=sale&amp;sort_mtg=sale&amp;sort_re=acres_desc"' in html
+        # State links carry the vertical: each vertical is its own board.
+        assert ('href="/?vt=mountains&amp;st=TN&amp;sort_tax=sale'
+                '&amp;sort_mtg=sale&amp;sort_re=acres_desc"') in html
 
     def test_pane_filter_form_posts_only_its_own_tab(self, app, tmp_path):
         from scraper.db import _ensure_db

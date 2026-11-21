@@ -1359,11 +1359,12 @@ class TestKGISStreetVariants:
 
 
 class TestVerticals:
-    """Top-level product verticals: mountains (active) vs beach (stub)."""
+    """Top-level product verticals: mountains + rentals (active) vs beach."""
 
-    def test_config_registers_two_verticals(self):
-        assert set(VERTICALS) == {"mountains", "beach"}
+    def test_config_registers_three_verticals(self):
+        assert set(VERTICALS) == {"mountains", "beach", "rentals"}
         assert VERTICALS["mountains"]["status"] == "active"
+        assert VERTICALS["rentals"]["status"] == "active"
         assert VERTICALS["beach"]["status"] == "stub"
         assert DEFAULT_VERTICAL == "mountains"
 

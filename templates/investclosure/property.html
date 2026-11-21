@@ -187,6 +187,10 @@
                     <p><strong>Elevation:</strong> {{ "%.0f"|format(prop.elevation_ft) }} ft
                         <span class="muted">(USGS 3DEP)</span></p>
                     {% endif %}
+                    {% if prop.market_rent_monthly %}
+                    <p><strong>Area market rent:</strong> ≈${{ "%.0f"|format(prop.market_rent_monthly) }}/mo
+                        <span class="muted">(RentCast zip screen — small home)</span></p>
+                    {% endif %}
                     {% if prop.get('tnmap_deeded_acres') %}
                     <p><strong>Deeded Acres (TNMap):</strong> {{ "%.1f"|format(prop.tnmap_deeded_acres) }} acres</p>
                     {% endif %}

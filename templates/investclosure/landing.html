@@ -58,6 +58,12 @@
                     {{ "%.0f"|format(prop.elevation_ft) }} ft
                 </span>
                 {% endif %}
+                {% if prop.market_rent_monthly %}
+                <span class="tile-meta-divider">·</span>
+                <span class="tile-rent" title="Area market rent for a small home (RentCast zip screen)">
+                    ≈${{ "%.0f"|format(prop.market_rent_monthly) }}/mo
+                </span>
+                {% endif %}
                 {% if prop.bedrooms or prop.bathrooms %}
                 <span class="tile-meta-divider">·</span>
                 <span class="tile-beds-baths" title="Bedrooms / bathrooms">
@@ -154,6 +160,7 @@
 {% macro pane_filter(cat, pane, state) %}
 <div class="search-bar filter-bar filter-bar-pane">
     <form method="GET" action="{{ url_for('landing') }}">
+        <input type="hidden" name="vt" value="{{ active_vertical }}">
         <input type="hidden" name="st" value="{{ state }}">
         <input type="hidden" name="cat" value="{{ cat }}">
         {% for other in categories %}{% if other != cat %}
@@ -186,7 +193,7 @@
         </select>
         <button type="submit" class="btn">Apply</button>
         {% if pane.filters_active %}
-        <a href="{{ url_for('landing', st=state) }}" class="btn btn-secondary">Clear</a>
+        <a href="{{ url_for('landing', vt=active_vertical, st=state) }}" class="btn btn-secondary">Clear</a>
         {% endif %}
     </form>
     {% if pane.filters_active or pane.shown < pane.total %}
@@ -198,18 +205,26 @@
 {% endmacro %}
 
 {% block content %}
-<div class="tabs tabs-vertical" data-tab-group="vertical" data-tab-persist="off">
+{#- The vertical bar is a link, not a client-side pane swap: Mountains and
+    Rentals are different products with different county scopes, so each
+    vertical is its own server-side board (see landing()). -#}
+<div class="tabs tabs-vertical">
     {% for v in verticals %}
-    <button type="button" class="tab-btn{% if v.key == default_vertical %} active{% endif %}"
-            data-tab="{{ v.key }}" aria-selected="{% if v.key == default_vertical %}true{% else %}false{% endif %}">
+    <a class="tab-btn{% if v.key == active_vertical %} active{% endif %}"
+       href="{{ url_for('landing', vt=v.key) }}"
+       aria-selected="{{ 'true' if v.key == active_vertical else 'false' }}">
         {{ v.label }}{%- if v.status == 'active' %} <span class="tab-count">{{ v.count }}</span>{%- else %} <span class="tab-soon">soon</span>{% endif %}
-    </button>
+    </a>
     {% endfor %}
 </div>
 
-{% for v in verticals %}
-<div class="tab-pane vertical-pane" data-tab-pane="{{ v.key }}" data-tab-pane-group="vertical"{% if v.key != default_vertical %} hidden{% endif %}>
-{% if v.key == 'mountains' %}
+{% set active_meta = verticals | selectattr('key', 'equalto', active_vertical) | first %}
+{% if active_meta and active_meta.status != 'active' %}
+<div class="empty-state">
+    <p>🏖️ {{ active_meta.label }} is coming soon.</p>
+    <p class="muted">Water-frontage listings (beach-front and lake-front, qualified by minimum distance-to-water) will appear here.</p>
+</div>
+{% else %}
 {#- One state board at a time. State tabs are links (each board is its own
     query); Tax/Mtg/Re stay client-side because all three panes render, each
     with its own filters and sort. -#}
@@ -218,7 +233,7 @@
 <div class="tabs tabs-states">
     {% for s in states %}
     <a class="tab-btn{% if s.state == state %} active{% endif %}"
-       href="{{ url_for('landing', st=s.state, sort_tax=panes.tax.filters.sort, sort_mtg=panes.mtg.filters.sort, sort_re=panes.re.filters.sort) }}">
+       href="{{ url_for('landing', vt=active_vertical, st=s.state, sort_tax=panes.tax.filters.sort, sort_mtg=panes.mtg.filters.sort, sort_re=panes.re.filters.sort) }}">
         {{ s.state }} <span class="tab-count">{{ s.count }}</span>
     </a>
     {% endfor %}
@@ -245,16 +260,9 @@
 </div>
 {% else %}
 <div class="empty-state">
-    <p>No active properties yet.</p>
+    <p>No active {{ active_meta.label|lower }} properties yet.</p>
     <a href="{{ url_for('run_scraper') }}" class="btn btn-primary">Run Scrapers</a>
 </div>
 {% endif %}
-{% else %}
-<div class="empty-state">
-    <p>🏖️ {{ v.label }} is coming soon.</p>
-    <p class="muted">Water-frontage listings (beach-front and lake-front, qualified by minimum distance-to-water) will appear here.</p>
-</div>
 {% endif %}
-</div>
-{% endfor %}
 {% endblock %}

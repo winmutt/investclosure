@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS properties (
     google_maps_topo_url TEXT,
     gis_url           TEXT,
     elevation_ft      REAL,
+    market_rent_monthly REAL,
     parcel_screenshot TEXT,
     manual_acres_set TEXT,
     manual_acres_override REAL,
@@ -188,6 +189,10 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         # every existing consumer expects; this holds the full comma list.
         ("parcel_numbers",
          "ALTER TABLE properties ADD COLUMN parcel_numbers TEXT"),
+        # Rentals vertical: area market rent ($/mo) for the row's zip/county
+        # from the RentCast screen (scraper/rent_scope.py), stamped at insert.
+        ("market_rent_monthly",
+         "ALTER TABLE properties ADD COLUMN market_rent_monthly REAL"),
     ]
     for col, sql in col_migrations:
         if col not in existing:
@@ -319,6 +324,7 @@ def _upsert_property(
     raw_paragraph: Optional[str] = None,
     extracted_deed_plat: Optional[str] = None,
     extracted_pin: Optional[str] = None,
+    market_rent_monthly: Optional[float] = None,
 
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property row.
@@ -459,6 +465,11 @@ def _upsert_property(
         if elevation_ft is not None:
             updates.append("elevation_ft = ?")
             values.append(elevation_ft)
+        # Area market rent (rentals vertical): a refreshed screen value wins,
+        # an absent one never clobbers a known value.
+        if market_rent_monthly is not None:
+            updates.append("market_rent_monthly = ?")
+            values.append(market_rent_monthly)
         if parcel_screenshot:
             updates.append("parcel_screenshot = ?")
             values.append(parcel_screenshot)
@@ -536,16 +547,16 @@ def _upsert_property(
            (source, source_listing_id, url, address, city, county, state, zip_code,
             latitude, longitude, price_cents, acres, bedrooms, bathrooms, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-            parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, market_rent_monthly, parcel_screenshot,
             initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
              extracted_deed_plat, extracted_pin,
              first_seen, last_seen, seen_count, dedup_hash, status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             source, source_listing_id, url, address, city, county, state, zip_code,
             latitude, longitude, price_cents, acres, bedrooms, bathrooms, description, property_type,
             listing_date, auction_date, close_date, upset_bid, foreclosure_key,
-            parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, parcel_screenshot,
+            parcel_number, deed_book, court_case, google_maps_url, google_maps_topo_url, gis_url, elevation_ft, market_rent_monthly, parcel_screenshot,
             initial_auction_date, upset_bid_end, raw_source_text, raw_parcel_text, raw_deed_text, raw_paragraph,
              extracted_deed_plat, extracted_pin,
              first_seen_val, last_seen_val, 1, dedup_hash, "active",
@@ -651,6 +662,7 @@ def insert_property(
     raw_paragraph: Optional[str] = None,
     extracted_deed_plat: Optional[str] = None,
     extracted_pin: Optional[str] = None,
+    market_rent_monthly: Optional[float] = None,
 
 ) -> Tuple[str, sqlite3.Row]:
     """Insert or update a property record."""
@@ -675,6 +687,7 @@ def insert_property(
         raw_parcel_text=raw_parcel_text,
         raw_deed_text=raw_deed_text,
         raw_paragraph=raw_paragraph,
+        market_rent_monthly=market_rent_monthly,
     )
 
 
@@ -1077,12 +1090,17 @@ def archive_below_acres(    conn: sqlite3.Connection,
     min_acres: float,
     source: Optional[str] = None,
     include_sources: Optional[list[str]] = None,
+    exclude_sources: Optional[set] = None,
 ) -> int:
     """Archive properties where acres < min_acres.
     
     Args:
         source: Single source to filter by (legacy)
         include_sources: List of sources to archive (new, takes precedence)
+        exclude_sources: Sources the acreage rule must never touch — the
+            mountains MIN_ACRES rule does not qualify the rentals vertical
+            (a 0.4 ac town lot is the product there), and those sources are
+            also exempt from the elevation / office-radius reaps.
     """
     source_filter = ""
     source_params: list[Any] = []
@@ -1094,6 +1112,10 @@ def archive_below_acres(    conn: sqlite3.Connection,
     elif source:
         source_filter = f" AND source = ?"
         source_params.append(source)
+    if exclude_sources:
+        placeholders = ",".join(["?"] * len(exclude_sources))
+        source_filter += f" AND COALESCE(source, '') NOT IN ({placeholders})"
+        source_params.extend(sorted(exclude_sources))
 
     where = f"status = 'active' AND acres > 0 AND acres < ?{source_filter}"
     ids = [

@@ -268,9 +268,14 @@ TARGET_COUNTIES: List[str] = [
 # Verticals (product lines above the per-state Tax/Mtg/Re category tabs)
 # -----------------------------------------------------------------------------
 # A *vertical* is a top-level product/brand with its own county scope and
-# qualification rules. Today the app ships one active vertical:
+# qualification rules. Today the app ships two active verticals:
 #   mountains — mountain foreclosures (elevation >= 1700ft baked into the
 #               county lists above, plus MIN_ACRES / MAX_ACRES / MAX_PRICE).
+#   rentals   — GA tax-sales within RENT_RADIUS_MILES of downtown Atlanta:
+#               inexpensive small homes rentable near RENT_TARGET_RENT/mo in
+#               lower-middle-income small towns. Qualified by the RentCast
+#               zip-market screen (scraper/rentcast.py + rent_market_scan.py),
+#               NOT by elevation/acreage. Sources in RENTAL_SOURCES claim it.
 # 'beach' is a registered STUB: the beach-front / lake-front vertical, scoped
 # to water-frontage counties and qualified by a *minimum distance-to-water*
 # instead of acreage/elevation. Its water county map + distance-to-water data
@@ -280,9 +285,36 @@ TARGET_COUNTIES: List[str] = [
 VERTICALS: Dict[str, Dict[str, str]] = {
     "mountains": {"label": "Mountains", "status": "active"},
     "beach": {"label": "Beach", "status": "stub"},
+    "rentals": {"label": "Rentals", "status": "active"},
 }
 
 DEFAULT_VERTICAL = "mountains"
+
+# Sources that belong to the rentals vertical (see property_vertical() in
+# server.py). Rows from these sources are EXEMPT from the mountains parcel
+# rules (elevation / MIN_ACRES / the office-radius reap) — a $60k rental
+# house on a 0.4 ac town lot at 900 ft is exactly the rentals product.
+RENTAL_SOURCES: set = {"ga_tax_rentals"}
+
+# ---------------------------------------------------------------------------
+# Rentals vertical rules (measured, not assumed)
+#   * distance — RENT_RADIUS_MILES from RENT_ORIGIN (downtown Atlanta),
+#     judged per county from USGS boundary geometry in
+#     scraper/county_radius_atlanta.json (built with
+#     `python3 -m scraper.fetch_county_radius --states GA --origin <lat,lon>
+#     --out scraper/county_radius_atlanta.json`)
+#   * rentability — RentCast /markets zip screen (scraper/rent_market_scan.py,
+#     verdicts cached in scraper/rent_markets.json): a zip qualifies when its
+#     small-home (2–3 bd) market rent sits in [RENT_TARGET_MIN_RENT,
+#     RENT_TARGET_MAX_RENT] per month and houses sell for at most
+#     RENT_MAX_MEDIAN_PRICE — the inexpensive-homes / lower-middle-income
+#     small-town profile. The scrape-scope counties are those holding a
+#     qualifying zip (see scraper/rent_scope.py).
+# ---------------------------------------------------------------------------
+
+# GA popular-search categories for the rentals scraper: tax sales ONLY (the
+# product is delinquent-tax sheriff sales, not bank security-deed sales).
+GA_RENTAL_CATEGORIES = _site_env("GA_RENTAL", "CATEGORIES", "Tax Sales")
 
 # =============================================================================
 # NC County GIS Parcel URLs for Kania Law enrichment
@@ -369,6 +401,16 @@ class Config:
     RADIUS_MILES: float   # distance from ORIGIN, statute miles (0 = disabled)
     ORIGIN_LAT: float     # the product's origin address
     ORIGIN_LON: float
+
+    # ---- rentals vertical rules ----
+    RENT_RADIUS_MILES: float     # from RENT_ORIGIN, statute miles (0 = disabled)
+    RENT_ORIGIN_LAT: float       # downtown Atlanta (Five Points)
+    RENT_ORIGIN_LON: float
+    RENT_TARGET_MIN_RENT: float  # small-home market rent band, $/month
+    RENT_TARGET_MAX_RENT: float
+    RENT_MIN_RENT_LISTINGS: int  # minimum rental listings to trust a zip's rent stats
+    RENT_MAX_MEDIAN_PRICE: int   # zip's median sale price ceiling (inexpensive homes)
+    RENTCAST_API_KEY: str
 
     # ---- proxy ----
     PROXY_URL: Optional[str]
@@ -465,6 +507,33 @@ class Config:
         self.ORIGIN_LON = _opt_float("INVESTCLOSURE_ORIGIN_LON",
                                      -84.401895017854)
 
+        # Rentals vertical rules. Distance: RENT_RADIUS_MILES statute miles
+        # from RENT_ORIGIN — downtown Atlanta, Five Points (the product is
+        # "GA tax sales around Atlanta", deliberately a different origin from
+        # the mountains office radius). 0 disables the distance screen.
+        # Env: INVESTCLOSURE_RENT_RADIUS_MILES / _RENT_ORIGIN_LAT / _LON.
+        self.RENT_RADIUS_MILES = _opt_float("INVESTCLOSURE_RENT_RADIUS_MILES",
+                                            100.0)
+        self.RENT_ORIGIN_LAT = _opt_float("INVESTCLOSURE_RENT_ORIGIN_LAT",
+                                          33.7540)
+        self.RENT_ORIGIN_LON = _opt_float("INVESTCLOSURE_RENT_ORIGIN_LON",
+                                          -84.3905)
+        # RentCast zip-market screen: small homes renting near $1,000/mo in
+        # inexpensive markets. Env: INVESTCLOSURE_RENT_TARGET_MIN_RENT /
+        # _MAX_RENT / _MIN_RENT_LISTINGS / _MAX_MEDIAN_PRICE.
+        self.RENT_TARGET_MIN_RENT = _opt_float(
+            "INVESTCLOSURE_RENT_TARGET_MIN_RENT", 800.0)
+        self.RENT_TARGET_MAX_RENT = _opt_float(
+            "INVESTCLOSURE_RENT_TARGET_MAX_RENT", 1200.0)
+        self.RENT_MIN_RENT_LISTINGS = _opt_int(
+            "INVESTCLOSURE_RENT_MIN_RENT_LISTINGS", 4)
+        self.RENT_MAX_MEDIAN_PRICE = _opt_int(
+            "INVESTCLOSURE_RENT_MAX_MEDIAN_PRICE", 250_000)
+        # RentCast API key (rentcast.io) — header X-Api-Key. Env:
+        # RENTCAST_API_KEY. Market scan caches per zip, so a monthly
+        # refresh costs a few hundred calls.
+        self.RENTCAST_API_KEY = _opt_str("RENTCAST_API_KEY", "")
+
         # Proxy (env overridable)
         proxy = _opt_str("INVESTCLOSURE_PROXY", "winmutt.com:8088")
         self.PROXY_URL = f"http://{proxy}" if proxy else None
@@ -476,6 +545,7 @@ class Config:
             "nc_publicnotice": (1.5, 3.0),
             "tn_publicnotice": (1.5, 3.0),
             "ga_publicnotice": (1.5, 3.0),
+            "ga_tax_rentals": (1.5, 3.0),
             "al_publicnotice": (1.5, 3.0),
             "ky_publicnotice": (1.5, 3.0),
             "zls_nc": (2.0, 4.0),

@@ -202,6 +202,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
     SOURCE_NAME = "ga_publicnotice"
     BASE_URL = GAFORECLOSURES_BASE_URL
     TURNSTILE_SITE_KEY = GAFORECLOSURES_TURNSTILE_SITE_KEY
+    RUN_TITLE = "GA PUBLIC NOTICE FORECLOSURES"
 
     def __init__(
         self,
@@ -418,9 +419,12 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
     def _make_property(*, county: str, parcel_no: Optional[str], street: Optional[str],
                        address: Optional[str], acres: Optional[float], desc: str,
                        kind: str, auction_date: Optional[str],
-                       detail_url: Optional[str], listing_id: str) -> PropertyData:
+                       detail_url: Optional[str], listing_id: str,
+                       source: str = "ga_publicnotice") -> PropertyData:
         """Build one PropertyData row (shared by bundled and single notices).
 
+        ``source`` names the producing scraper so a subclass (the rentals
+        scraper) writes its own rows through the same parser.
         Map links are built at extraction time (pure URL builders, no network)
         so the Telegram alert sent at insert time already carries Maps + GIS.
         GIS is parcel-deep via qPublic; Maps only for real street addresses
@@ -429,7 +433,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         from .gis_urls import get_ga_gis_url
         from .nc_gis_lookup import build_google_maps_url
         return {
-            "source": "ga_publicnotice",
+            "source": source,
             "source_listing_id": listing_id,
             "url": detail_url,
             "address": address[:120] if address else None,
@@ -461,7 +465,8 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                              auction_date: Optional[str],
                              detail_url: Optional[str],
                              kind: str = "mortgage_foreclosure",
-                             fallback_key: Optional[str] = None
+                             fallback_key: Optional[str] = None,
+                             source: str = "ga_publicnotice"
                              ) -> List[PropertyData]:
         """One row for a notice that is NOT the bundled tax-sale block format.
 
@@ -504,13 +509,14 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             county=county, parcel_no=parcel_no, street=street, address=address,
             acres=GAPublicNoticeScraper._parse_acres(text),
             desc=text.strip(), kind=kind, auction_date=auction_date,
-            detail_url=detail_url, listing_id=listing_id)]
+            detail_url=detail_url, listing_id=listing_id, source=source)]
 
     @staticmethod
     def _parse_parcels(text: str, county: str, auction_date: Optional[str],
                        detail_url: Optional[str],
                        kind: str = "tax_foreclosure",
-                       fallback_key: Optional[str] = None) -> List[PropertyData]:
+                       fallback_key: Optional[str] = None,
+                       source: str = "ga_publicnotice") -> List[PropertyData]:
         """Split a bundled GA foreclosure notice into one record per parcel.
 
         Each block is its own listing, keyed on ``<county>:<parcel_number>`` so
@@ -528,7 +534,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         if not matches:
             return GAPublicNoticeScraper._parse_single_parcel(
                 text, fallback_county, auction_date, detail_url, kind=kind,
-                fallback_key=fallback_key)
+                fallback_key=fallback_key, source=source)
         parcels: List[PropertyData] = []
         for i, m in enumerate(matches):
             start = m.start()
@@ -550,13 +556,23 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 address=address,
                 acres=GAPublicNoticeScraper._parse_acres(block),
                 desc=block.strip(), kind=kind, auction_date=auction_date,
-                detail_url=detail_url,
+                detail_url=detail_url, source=source,
                 listing_id=f"{block_county}:{parcel_no}"))
         return parcels
 
+    def _get_categories(self) -> str:
+        """Comma-separated popular-search categories to sweep.
+
+        Subclasses narrow the scope (the rentals scraper keeps tax sales
+        only). Category selection posts back, so each entry re-filters the
+        county list before the per-county search loop.
+        """
+        return GAFORECLOSURES_CATEGORIES
+
     def scrape(self) -> List[PropertyData]:
         """Run the scraper: search georgiapublicnotice.com and extract qualifying cases."""
-        print(f"\n  GA PUBLIC NOTICE FORECLOSURES - {len(COUNTY_SET)} target counties")
+        target = self._get_target_counties()
+        print(f"\n  {self.RUN_TITLE} - {len(target)} target counties")
         print(f"  Search type: {self.search_type}")
         print(f"  Proxy: {'enabled' if self.use_proxy else 'disabled'}")
         print(f"  Captcha solving: {'enabled' if self.solve_captcha else 'disabled (search only)'}")
@@ -582,14 +598,14 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                     return []
                 print(f"session={session_id}")
 
-                categories = [c.strip() for c in GAFORECLOSURES_CATEGORIES.split(",") if c.strip()]
+                categories = [c.strip() for c in self._get_categories().split(",") if c.strip()]
                 print(f"  [2/4] Searching GA mountain-county sales across {len(categories)} categories: {categories}")
                 print(f"  Keep only notices published in the last {self._window_days()} days")
                 all_records = []
                 global_seen_pk = set()
                 for category in categories:
                     self._select_category(page, category)
-                    for county in sorted(COUNTY_SET):
+                    for county in sorted(target):
                         old_pks = self._grid_pks(page)
                         self._select_county(page, county)
                         self._submit_search(page)
@@ -639,7 +655,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
                 print("  [3/4] Parsing results ...")
                 print(f"  Found {len(records)} total notices")
 
-                target_records = [r for r in records if (r.get("county") or "").lower() in COUNTY_SET]
+                target_records = [r for r in records if (r.get("county") or "").lower() in target]
                 print(f"  {len(target_records)} in target counties")
 
                 pre_filtered = []
@@ -739,7 +755,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         # to the Tax tab, mortgage/deed-of-trust sales to the Mtg tab.
         if self._is_quiet_title(raw_text):
             log_raw(
-                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                self.SOURCE_NAME, listing_id=record.get("sp_case") or pk_id,
                 county=record.get("county"), state="GA",
                 decision="dropped_quiet_title",
                 reason="quiet-title / tax-redemption title action",
@@ -750,7 +766,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             return []
         if self._is_post_sale(raw_text):
             log_raw(
-                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                self.SOURCE_NAME, listing_id=record.get("sp_case") or pk_id,
                 county=record.get("county"), state="GA",
                 decision="dropped_post_sale",
                 reason="post-sale proceeding (excess funds / redemption)",
@@ -763,7 +779,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         is_mtg = self._is_mortgage_foreclosure(raw_text)
         if not (is_tax or is_mtg):
             log_raw(
-                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                self.SOURCE_NAME, listing_id=record.get("sp_case") or pk_id,
                 county=record.get("county"), state="GA",
                 decision="dropped_non_foreclosure",
                 reason="neither tax-sale nor mortgage-foreclosure signal",
@@ -779,11 +795,12 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
         detail_url = f"{self.BASE_URL}/(S({session_id}))/Details.aspx?SID={session_id}&ID={pk_id}"
         parcels = self._parse_parcels(raw_text, county, auction_date, detail_url,
                                       kind=kind,
-                                      fallback_key=record.get("sp_case") or pk_id)
+                                      fallback_key=record.get("sp_case") or pk_id,
+                                      source=self.SOURCE_NAME)
         if not parcels:
             logger.warning("No parcels parsed for %s (county=%s)", pk_id, county)
             log_raw(
-                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                self.SOURCE_NAME, listing_id=record.get("sp_case") or pk_id,
                 county=record.get("county"), state="GA",
                 decision="dropped_no_key",
                 reason="no parcel number, street address, or listing key",
@@ -791,7 +808,7 @@ class GAPublicNoticeScraper(PublicNoticeScraper):
             )
         else:
             log_raw(
-                "ga_publicnotice", listing_id=record.get("sp_case") or pk_id,
+                self.SOURCE_NAME, listing_id=record.get("sp_case") or pk_id,
                 county=record.get("county"), state="GA",
                 decision="kept_tax" if kind == "tax_foreclosure" else "kept_mortgage",
                 reason=f"{len(parcels)} parcel(s) split from bundled notice",

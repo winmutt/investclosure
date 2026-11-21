@@ -30,7 +30,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.db import _ensure_db, update_scrape_run, get_stats, get_new_since, archive_below_acres, insert_property, get_all_active, update_tnmap_enrichment
-from scraper.config import config
+from scraper.config import config, RENTAL_SOURCES
 try:
     from scraper.telegrams import TelegramNotifier
     _telegram = TelegramNotifier()
@@ -94,6 +94,12 @@ try:
     SCRAPER_MODULES["ga_publicnotice"] = GAPublicNoticeScraper
 except ImportError as e:
     logger.warning("ga_publicnotice not available: %s", e)
+
+try:
+    from scraper.ga_tax_rentals import GATaxRentalsScraper
+    SCRAPER_MODULES["ga_tax_rentals"] = GATaxRentalsScraper
+except ImportError as e:
+    logger.warning("ga_tax_rentals not available: %s", e)
 
 try:
     from scraper.al_publicnotice import ALPublicNoticeScraper
@@ -243,7 +249,7 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
                 "  OR (parcel_number IS NOT NULL AND TRIM(parcel_number) <> ''))")}
             scraper = scraper_class(fetch_details=True, detail_skip=resolved)
             properties = scraper.run()
-        elif scraper_name == "ga_publicnotice":
+        elif scraper_name in ("ga_publicnotice", "ga_tax_rentals"):
             scraper = scraper_class(lookback_days=lookback_days)
             properties = scraper.run()
         elif scraper_name == "al_publicnotice":
@@ -323,6 +329,7 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
                 google_maps_topo_url=prop.get("google_maps_topo_url"),
                 gis_url=prop.get("gis_url"),
                 elevation_ft=prop.get("elevation_ft"),
+                market_rent_monthly=prop.get("market_rent_monthly"),
                 parcel_screenshot=prop.get("parcel_screenshot"),
                 raw_source_text=prop.get("raw_source_text"),
                 raw_parcel_text=prop.get("raw_parcel_text"),
@@ -427,8 +434,9 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
         logger.warning("Knox KGIS enrich failed: %s", e)
 
     # Auto-enrich GA rows lacking acreage from county qPublic reports
-    # (camoufox page loads; plain HTTP is Cloudflare-403).
-    if scraper_name == "ga_publicnotice":
+    # (camoufox page loads; plain HTTP is Cloudflare-403). Covers both GA
+    # sources; the rentals product shares the qPublic parcel reports.
+    if scraper_name in ("ga_publicnotice", "ga_tax_rentals"):
         try:
             from scraper.ga_gis_enrich import enrich_db as enrich_ga_acres
             ga_result = enrich_ga_acres()
@@ -456,31 +464,44 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     # lists only encode each county's PEAK elevation, so a valley parcel
     # inside a qualifying county must be measured rather than assumed (live
     # sample: 70% of rows sat below 1,700 ft). Unknown elevation is kept.
-    try:
-        from scraper.elevation import enrich_elevations
-        elev = enrich_elevations(source=scraper_name, min_id=before_max_id,
-                                 archive=True)
-        if elev.get("target"):
-            print(f"  Elevation: {elev['measured']} measured, "
-                  f"{elev['unknown']} unknown, {elev['archived']} below "
-                  f"{int(elev['min_elevation'])} ft")
-    except Exception as e:
-        logger.warning("Elevation enrich failed: %s", e)
+    # Rentals sources are exempt: elevation qualifies the MOUNTAINS product;
+    # a rentable $60k house in Macon GA sits at 600 ft and is the point.
+    if scraper_name in RENTAL_SOURCES:
+        logger.info("elevation rule skipped for %s (rentals vertical)",
+                    scraper_name)
+    else:
+        try:
+            from scraper.elevation import enrich_elevations
+            elev = enrich_elevations(source=scraper_name,
+                                     min_id=before_max_id, archive=True)
+            if elev.get("target"):
+                print(f"  Elevation: {elev['measured']} measured, "
+                      f"{elev['unknown']} unknown, {elev['archived']} below "
+                      f"{int(elev['min_elevation'])} ft")
+        except Exception as e:
+            logger.warning("Elevation enrich failed: %s", e)
 
     # Distance half of the parcel rule: the row must also sit within
     # config.RADIUS_MILES of the origin address. Judged from its own pin when
     # it has one, otherwise from its county's nearest point to the origin
     # (USGS boundary table), so a pin-less notice row in a county that is
     # entirely out of range does not survive. Runs after elevation because a
-    # fresh GIS match is what supplies most coordinates.
-    try:
-        from scraper.radius import apply_radius_rule
-        rad = apply_radius_rule(conn, archive=True, min_id=before_max_id)
-        if rad.get("checked") and (rad["outside"] or rad["unknown"]):
-            print(f"  Distance: {rad['outside']} outside "
-                  f"{int(rad['radius_mi'])} mi, {rad['unknown']} undecidable")
-    except Exception as e:
-        logger.warning("Distance rule failed: %s", e)
+    # fresh GIS match is what supplies most coordinates. Rentals rows carry
+    # their own scope (RentCast-screened GA counties near Atlanta — see
+    # rent_scope), so the office-radius reap must not touch them.
+    if scraper_name in RENTAL_SOURCES:
+        logger.info("office-radius rule skipped for %s (rentals vertical)",
+                    scraper_name)
+    else:
+        try:
+            from scraper.radius import apply_radius_rule
+            rad = apply_radius_rule(conn, archive=True, min_id=before_max_id)
+            if rad.get("checked") and (rad["outside"] or rad["unknown"]):
+                print(f"  Distance: {rad['outside']} outside "
+                      f"{int(rad['radius_mi'])} mi, {rad['unknown']} "
+                      f"undecidable")
+        except Exception as e:
+            logger.warning("Distance rule failed: %s", e)
 
     # Track success
     _reset_failure_counter(scraper_name)
@@ -636,7 +657,8 @@ def cmd_run(scraper_name: str, lookback_days: int = 7) -> dict:
     try:
         conn = _ensure_db()
         archived = archive_below_acres(conn, min_acres=config.MIN_ACRES,
-                                       include_sources=list(SCRAPER_MODULES.keys()))
+                                       include_sources=list(SCRAPER_MODULES.keys()),
+                                       exclude_sources=RENTAL_SOURCES)
         conn.close()
         if archived:
             print(f"  Auto-archived: {archived} properties "
@@ -666,7 +688,7 @@ def cmd_run_all(lookback_days: int = 7) -> list[dict]:
     print(f"  Auto-archiving properties with 0 < acres < {config.MIN_ACRES:g} ...")
     conn = _ensure_db()
     try:
-        archived = archive_below_acres(conn, min_acres=config.MIN_ACRES, include_sources=list(SCRAPER_MODULES.keys()))
+        archived = archive_below_acres(conn, min_acres=config.MIN_ACRES, include_sources=list(SCRAPER_MODULES.keys()), exclude_sources=RENTAL_SOURCES)
         conn.close()
         if archived:
             print(f"  Auto-archived: {archived} properties")
@@ -790,7 +812,7 @@ def cmd_archive(min_acres: float | None = None) -> int:
     conn = _ensure_db()
     try:
         threshold = min_acres or config.MIN_ACRES
-        archived = archive_below_acres(conn, threshold, include_sources=list(SCRAPER_MODULES.keys()))
+        archived = archive_below_acres(conn, threshold, include_sources=list(SCRAPER_MODULES.keys()), exclude_sources=RENTAL_SOURCES)
         print(f"\n  Archived: {archived} properties (threshold={threshold}ac)")
         return archived
     finally:

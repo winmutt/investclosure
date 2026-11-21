@@ -25,7 +25,8 @@ from flask import (Flask, render_template, request, redirect, url_for,
                      Response, g)
 
 from scraper import db as scraper_db
-from scraper.config import config, VERTICALS, DEFAULT_VERTICAL
+from scraper.config import (config, VERTICALS, DEFAULT_VERTICAL,
+                            RENTAL_SOURCES)
 from scraper.nc_gis_lookup import (
     build_satellite_url,
     build_street_view_url,
@@ -104,20 +105,24 @@ def property_category(prop: dict) -> str:
 
 
 # Sources that belong to the beach (water-frontage) vertical. Empty until the
-# beach-front / lake-front scrapers land; every source today is a mountain
-# source, so every row falls through to the 'mountains' vertical.
+# beach-front / lake-front scrapers land. The rentals vertical's sources live
+# in config (RENTAL_SOURCES) because run.py consults them too.
 BEACH_SOURCES: set[str] = set()
 
 
 def property_vertical(prop: dict) -> str:
-    """Bucket a property into a top-level vertical ('mountains' or 'beach').
+    """Bucket a property into a top-level vertical.
 
     Mirrors :func:`property_category` — derived from the row rather than a
-    dedicated column. All current sources belong to the mountains vertical;
-    the beach vertical is claimed only by the (not yet live) water-frontage
-    sources registered in ``BEACH_SOURCES``.
+    dedicated column. Rows are claimed per producing source: rentals by
+    ``config.RENTAL_SOURCES`` (GA tax-sales in RentCast-qualified GA towns),
+    beach by ``BEACH_SOURCES`` (not yet live); everything else is the
+    mountains product.
     """
-    if (prop.get("source") or "").strip().lower() in BEACH_SOURCES:
+    source = (prop.get("source") or "").strip().lower()
+    if source in RENTAL_SOURCES:
+        return "rentals"
+    if source in BEACH_SOURCES:
         return "beach"
     return "mountains"
 
@@ -145,7 +150,7 @@ def _row_to_dict(row):
     Ensures numeric fields are properly typed (float/int).
     """
     d = dict(row)
-    for field, type_fn in [('acres', float), ('price_cents', int), ('elevation_ft', float), ('manual_acres_override', float)]:
+    for field, type_fn in [('acres', float), ('price_cents', int), ('elevation_ft', float), ('manual_acres_override', float), ('market_rent_monthly', float)]:
         if field in d and d[field] is not None:
             try:
                 d[field] = type_fn(d[field])
@@ -462,11 +467,56 @@ def _pane_filters_active(filters: dict) -> bool:
                 or filters["sort"] != DEFAULT_PROPERTY_SORT)
 
 
-def _pane_where(state: str, cat: str, filters: dict) -> tuple[str, list]:
-    """WHERE clause for one pane: its state, its tab, its county/acreage."""
+def _vertical_clause(key: str) -> tuple[str, list]:
+    """WHERE fragment claiming one vertical's rows by source.
+
+    Mirrors :func:`property_vertical`: the default vertical keeps every
+    source nobody else claims; rentals/beach take their registered sources.
+    A stub vertical (no sources yet) selects nothing rather than lying.
+    """
+    if key == DEFAULT_VERTICAL:
+        claims = sorted(RENTAL_SOURCES | BEACH_SOURCES)
+        if not claims:
+            return "1 = 1", []
+        placeholders = ",".join(["?"] * len(claims))
+        return (f"LOWER(COALESCE(source, '')) NOT IN ({placeholders})",
+                claims)
+    claims = sorted(RENTAL_SOURCES if key == "rentals"
+                    else BEACH_SOURCES if key == "beach" else set())
+    if not claims:
+        return "1 = 0", []
+    placeholders = ",".join(["?"] * len(claims))
+    return f"LOWER(COALESCE(source, '')) IN ({placeholders})", claims
+
+
+def _vertical_counts(conn) -> dict:
+    """Active row counts per vertical (the vertical tab bar)."""
+    rows = conn.execute(
+        "SELECT COALESCE(LOWER(source), '') AS src, COUNT(*) AS n"
+        " FROM properties WHERE status = 'active' GROUP BY src").fetchall()
+    counts = {k: 0 for k in VERTICALS}
+    for r in rows:
+        src = r["src"]
+        if src in RENTAL_SOURCES:
+            key = "rentals"
+        elif src in BEACH_SOURCES:
+            key = "beach"
+        else:
+            key = DEFAULT_VERTICAL
+        counts[key] = counts.get(key, 0) + r["n"]
+    return counts
+
+
+def _pane_where(state: str, cat: str, filters: dict,
+                vertical: tuple[str, list] | None = None) -> tuple[str, list]:
+    """WHERE clause for one pane: its vertical, state, tab, county/acreage."""
     clause, params = _category_clause(cat)
     clauses = ["status = 'active'", f"UPPER(state) = ?", f"({clause})"]
     params = [state] + params
+    if vertical:
+        vclause, vparams = vertical
+        clauses.append(f"({vclause})")
+        params = params + vparams
     county = filters["county"]
     if county:
         clauses.append("LOWER(county) = ?")
@@ -480,13 +530,22 @@ def _pane_where(state: str, cat: str, filters: dict) -> tuple[str, list]:
     return " AND ".join(clauses), params
 
 
-def _state_counts(conn) -> list[dict]:
-    """Active totals per state, priority markets first (the state tab bar)."""
+def _state_counts(conn, vertical: tuple[str, list] | None = None) -> list[dict]:
+    """Active totals per state, priority markets first (the state tab bar).
+
+    ``vertical`` (see :func:`_vertical_clause`) scopes the counts to one
+    product line — the Rentals board shows GA only.
+    """
+    where = "WHERE status = 'active' AND state IS NOT NULL"
+    params: list = []
+    if vertical:
+        where += f" AND ({vertical[0]})"
+        params = list(vertical[1])
     rows = conn.execute(
         "SELECT UPPER(state) AS state, COUNT(*) AS n FROM properties"
-        " WHERE status = 'active' AND state IS NOT NULL"
-        " GROUP BY UPPER(state)"
-    ).fetchall()
+        f" {where}"
+        " GROUP BY UPPER(state)",
+        params).fetchall()
     counts = {(r["state"] or "UNKNOWN"): r["n"] for r in rows}
     return [{"state": s, "count": n} for s, n in sorted(
         counts.items(),
@@ -494,13 +553,18 @@ def _state_counts(conn) -> list[dict]:
                         kv[0]))]
 
 
-def _counties_for(conn, state: str, cat: str) -> list[str]:
-    """County choices for one pane's select (that state + tab only)."""
+def _counties_for(conn, state: str, cat: str,
+                  vertical: tuple[str, list] | None = None) -> list[str]:
+    """County choices for one pane's select (that vertical + state + tab)."""
     clause, params = _category_clause(cat)
+    where = (f"status = 'active' AND UPPER(state) = ? AND ({clause})"
+             " AND county IS NOT NULL AND TRIM(county) <> ''")
+    if vertical:
+        where += f" AND ({vertical[0]})"
+        params = params + list(vertical[1])
     rows = conn.execute(
         "SELECT DISTINCT county FROM properties"
-        f" WHERE status = 'active' AND UPPER(state) = ? AND ({clause})"
-        " AND county IS NOT NULL AND TRIM(county) <> ''"
+        f" WHERE {where}"
         " ORDER BY LOWER(county)",
         [state] + params).fetchall()
     return [(r["county"] or "").strip() for r in rows if (r["county"] or "").strip()]
@@ -508,39 +572,53 @@ def _counties_for(conn, state: str, cat: str) -> list[str]:
 
 @app.route('/')
 def landing():
-    """Dashboard: one state board, its three category tabs each filtered/sorted
-    by their own controls (``?st=NC&cat=mtg&county_mtg=…&sort_re=…``)."""
+    """Dashboard: a vertical switch (Mountains | Rentals | Beach) and, inside
+    the chosen one, one state board whose three category tabs are each
+    filtered/sorted by their own controls
+    (``?vt=rentals&st=GA&cat=tax&county_tax=…&sort_re=…``)."""
     conn = get_conn()
-    states = _state_counts(conn)
+
+    # The vertical is SERVER-selected (a link, not a client-side pane swap):
+    # each vertical is a different product with a different county scope, so
+    # its board should be its own query — and a URL stays shareable.
+    vt = (request.args.get("vt") or "").strip().lower()
+    if vt not in VERTICALS:
+        vt = DEFAULT_VERTICAL
+    active = VERTICALS[vt]["status"] == "active"
+    vclause = _vertical_clause(vt)
+
+    states = _state_counts(conn, vclause) if active else []
     state_keys = [s["state"] for s in states]
     board = (request.args.get("st") or "").strip().upper()
     if board not in state_keys:
-        # A stale/absent board falls back to the first state that has rows.
+        # A stale/absent board falls back to the first state that has rows
+        # (rentals is GA-only; an old ?st=NC lands on GA there).
         board = state_keys[0] if state_keys else ""
 
     panes: dict[str, dict] = {}
-    for cat in PROPERTY_CATEGORIES:
-        filters = _pane_filters(request.args, cat)
-        # A legacy 'NC|Macon' filter belongs to NC's board only.
-        if filters["county_state"] and filters["county_state"] != board:
-            filters = dict(filters, county="")
-        where, params = _pane_where(board, cat, filters)
-        order = PROPERTY_SORTS[filters["sort"]][1]
-        rows = conn.execute(
-            f"SELECT * FROM properties WHERE {where} ORDER BY {order}, id DESC LIMIT ?",
-            [*params, DASHBOARD_PANE_LIMIT]).fetchall()
-        total = conn.execute(
-            f"SELECT COUNT(*) FROM properties WHERE {where}", params).fetchone()[0]
-        panes[cat] = {
-            "props": _rows_to_dicts(rows),
-            "total": total,
-            "shown": len(rows),
-            "filters": filters,
-            "filters_active": _pane_filters_active(filters),
-            "counties": _counties_for(conn, board, cat),
-        }
-    active_total = conn.execute(
-        "SELECT COUNT(*) FROM properties WHERE status = 'active'").fetchone()[0]
+    if states:
+        for cat in PROPERTY_CATEGORIES:
+            filters = _pane_filters(request.args, cat)
+            # A legacy 'NC|Macon' filter belongs to NC's board only.
+            if filters["county_state"] and filters["county_state"] != board:
+                filters = dict(filters, county="")
+            where, params = _pane_where(board, cat, filters, vertical=vclause)
+            order = PROPERTY_SORTS[filters["sort"]][1]
+            rows = conn.execute(
+                f"SELECT * FROM properties WHERE {where} ORDER BY {order}, id DESC LIMIT ?",
+                [*params, DASHBOARD_PANE_LIMIT]).fetchall()
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM properties WHERE {where}",
+                params).fetchone()[0]
+            panes[cat] = {
+                "props": _rows_to_dicts(rows),
+                "total": total,
+                "shown": len(rows),
+                "filters": filters,
+                "filters_active": _pane_filters_active(filters),
+                "counties": _counties_for(conn, board, cat, vclause),
+            }
+    counts = _vertical_counts(conn)
     conn.close()
 
     requested = (request.args.get("cat") or "").strip().lower()
@@ -549,14 +627,15 @@ def landing():
     else:
         # Open on the first tab that actually has rows: landing on an empty
         # Tax tab while 900 listings sit under Re reads as "no results".
-        active_cat = next((c for c in PROPERTY_CATEGORIES if panes[c]["total"]),
+        # A stub/still-empty vertical has NO panes at all (queried only when
+        # its board has states), so probe with .get().
+        active_cat = next((c for c in PROPERTY_CATEGORIES
+                           if panes.get(c) and panes[c]["total"]),
                           PROPERTY_CATEGORIES[0])
 
-    # The mountains|beach switch counts every active row (beach stays a stub
-    # until the water-frontage sources land — see BEACH_SOURCES).
     verticals = [
         {"key": k, "label": meta["label"], "status": meta["status"],
-         "count": active_total if k == DEFAULT_VERTICAL else 0}
+         "count": counts.get(k, 0)}
         for k, meta in VERTICALS.items()
     ]
 
@@ -566,7 +645,7 @@ def landing():
                             panes=panes,
                             active_cat=active_cat,
                             verticals=verticals,
-                            default_vertical=DEFAULT_VERTICAL,
+                            active_vertical=vt,
                             categories=PROPERTY_CATEGORIES,
                             sort_choices=_sort_choices())
 

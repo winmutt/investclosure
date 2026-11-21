@@ -46,6 +46,10 @@ Usage::
     python3 -m scraper.fetch_county_radius                # six product states
     python3 -m scraper.fetch_county_radius --radius 220   # wider search
     python3 -m scraper.fetch_county_radius --states NC,TN --out /tmp/t.json
+    # rentals vertical — GA counties' nearest ground to downtown Atlanta:
+    python3 -m scraper.fetch_county_radius --states GA --radius 120 \
+        --origin 33.7540,-84.3905 --origin-label "Downtown Atlanta (Five Points)" \
+        --out scraper/county_radius_atlanta.json
 """
 from __future__ import annotations
 
@@ -254,7 +258,8 @@ def fetch_state(page, fips: str, origin: Tuple[float, float],
 
 
 def build_table(states: Sequence[str], origin: Tuple[float, float],
-                radius_mi: float) -> dict:
+                radius_mi: float,
+                origin_label: str = ORIGIN_LABEL) -> dict:
     table: Dict[str, dict] = {}
     with camoufox_context() as page:
         for st in states:
@@ -271,7 +276,7 @@ def build_table(states: Sequence[str], origin: Tuple[float, float],
         "source": ("USGS The National Map, Governmental Unit Boundaries "
                    "(carto.nationalmap.gov govunits layer 23, county "
                    "polygons); simplified to 0.002 deg"),
-        "origin": {"lat": origin[1], "lon": origin[0], "label": ORIGIN_LABEL},
+        "origin": {"lat": origin[1], "lon": origin[0], "label": origin_label},
         "search_radius_mi": radius_mi,
         "counties": table,
     }
@@ -290,21 +295,37 @@ def main() -> int:
                              "configured RADIUS_MILES, else 180)")
     parser.add_argument("--out", default=TABLE_PATH,
                         help=f"output file (default: {TABLE_PATH})")
+    parser.add_argument("--origin", default=None, metavar="LAT,LON",
+                        help="origin point (default: the configured product "
+                             "ORIGIN_LAT/ORIGIN_LON). The rentals vertical "
+                             "uses downtown Atlanta, e.g. "
+                             "33.7540,-84.3905 with --radius "
+                             "config.RENT_RADIUS_MILES.")
+    parser.add_argument("--origin-label", default=None,
+                        help="human label stored with the table "
+                             "(default: the office address label)")
     args = parser.parse_args()
 
-    origin = (config.ORIGIN_LON, config.ORIGIN_LAT)
+    if args.origin:
+        lat_s, _, lon_s = args.origin.partition(",")
+        origin = (float(lon_s), float(lat_s))
+        label = args.origin_label or args.origin
+    else:
+        origin = (config.ORIGIN_LON, config.ORIGIN_LAT)
+        label = args.origin_label or ORIGIN_LABEL
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(name)s: "
                                "%(message)s")
     table = build_table([s.strip().upper() for s in args.states.split(",")
-                         if s.strip()], origin, args.radius)
+                         if s.strip()], origin, args.radius,
+                        origin_label=label)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(table, fh, indent=1, sort_keys=True)
     counties = table["counties"]
     inside = sum(1 for c in counties.values()
                  if c["measured"] and c["boundary_mi"] <= args.radius)
     print(f"wrote {args.out}: {len(counties)} counties, {inside} within "
-          f"{args.radius:g} mi of {ORIGIN_LABEL}")
+          f"{args.radius:g} mi of {label}")
     return 0
 
 

@@ -1,0 +1,3809 @@
+{
+ "generated": "2026-11-21",
+ "origin": {
+  "label": "Downtown Atlanta (Five Points)",
+  "lat": 33.754,
+  "lon": -84.3905
+ },
+ "radius_mi": 100.0,
+ "source": "Census Gazetteer ZCTA national file (centroid) joined with town_county.json ZIP->county",
+ "zips": {
+  "30002": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.773335,
+   "lon": -84.261667,
+   "mi_atl": 7.5
+  },
+  "30004": {
+   "counties": [
+    "cherokee",
+    "fulton",
+    "forsyth"
+   ],
+   "lat": 34.145635,
+   "lon": -84.291881,
+   "mi_atl": 27.6
+  },
+  "30005": {
+   "counties": [
+    "fulton",
+    "forsyth"
+   ],
+   "lat": 34.08905,
+   "lon": -84.217019,
+   "mi_atl": 25.2
+  },
+  "30008": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.900567,
+   "lon": -84.590924,
+   "mi_atl": 15.3
+  },
+  "30009": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 34.078136,
+   "lon": -84.303424,
+   "mi_atl": 22.9
+  },
+  "30011": {
+   "counties": [
+    "gwinnett",
+    "barrow"
+   ],
+   "lat": 34.019859,
+   "lon": -83.837163,
+   "mi_atl": 36.7
+  },
+  "30012": {
+   "counties": [
+    "dekalb",
+    "rockdale",
+    "gwinnett",
+    "walton"
+   ],
+   "lat": 33.717806,
+   "lon": -84.002515,
+   "mi_atl": 22.4
+  },
+  "30013": {
+   "counties": [
+    "rockdale",
+    "newton"
+   ],
+   "lat": 33.642603,
+   "lon": -83.971853,
+   "mi_atl": 25.3
+  },
+  "30014": {
+   "counties": [
+    "jasper",
+    "walton",
+    "newton"
+   ],
+   "lat": 33.587193,
+   "lon": -83.822173,
+   "mi_atl": 34.7
+  },
+  "30016": {
+   "counties": [
+    "rockdale",
+    "newton"
+   ],
+   "lat": 33.517433,
+   "lon": -83.928703,
+   "mi_atl": 31.2
+  },
+  "30017": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.888722,
+   "lon": -83.963687,
+   "mi_atl": 26.2
+  },
+  "30018": {
+   "counties": [
+    "walton"
+   ],
+   "lat": 33.71689,
+   "lon": -83.804251,
+   "mi_atl": 33.8
+  },
+  "30019": {
+   "counties": [
+    "gwinnett",
+    "walton"
+   ],
+   "lat": 33.975634,
+   "lon": -83.883769,
+   "mi_atl": 32.9
+  },
+  "30021": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.807995,
+   "lon": -84.238975,
+   "mi_atl": 9.5
+  },
+  "30022": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 34.026085,
+   "lon": -84.247433,
+   "mi_atl": 20.5
+  },
+  "30024": {
+   "counties": [
+    "fulton",
+    "forsyth",
+    "gwinnett"
+   ],
+   "lat": 34.063485,
+   "lon": -84.0911,
+   "mi_atl": 27.4
+  },
+  "30025": {
+   "counties": [
+    "newton",
+    "morgan",
+    "walton"
+   ],
+   "lat": 33.655982,
+   "lon": -83.695765,
+   "mi_atl": 40.5
+  },
+  "30028": {
+   "counties": [
+    "forsyth",
+    "dawson",
+    "cherokee"
+   ],
+   "lat": 34.293159,
+   "lon": -84.175907,
+   "mi_atl": 39.2
+  },
+  "30030": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.772712,
+   "lon": -84.291005,
+   "mi_atl": 5.9
+  },
+  "30032": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.740668,
+   "lon": -84.264466,
+   "mi_atl": 7.3
+  },
+  "30033": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.813689,
+   "lon": -84.284377,
+   "mi_atl": 7.4
+  },
+  "30034": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.690867,
+   "lon": -84.248622,
+   "mi_atl": 9.2
+  },
+  "30035": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.724452,
+   "lon": -84.204244,
+   "mi_atl": 10.9
+  },
+  "30038": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.66646,
+   "lon": -84.139855,
+   "mi_atl": 15.6
+  },
+  "30039": {
+   "counties": [
+    "gwinnett",
+    "rockdale",
+    "dekalb"
+   ],
+   "lat": 33.799244,
+   "lon": -84.034408,
+   "mi_atl": 20.7
+  },
+  "30040": {
+   "counties": [
+    "cherokee",
+    "forsyth"
+   ],
+   "lat": 34.223434,
+   "lon": -84.17644,
+   "mi_atl": 34.7
+  },
+  "30041": {
+   "counties": [
+    "forsyth"
+   ],
+   "lat": 34.196222,
+   "lon": -84.096676,
+   "mi_atl": 34.9
+  },
+  "30043": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 34.010038,
+   "lon": -84.005043,
+   "mi_atl": 28.3
+  },
+  "30044": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.921502,
+   "lon": -84.068873,
+   "mi_atl": 21.8
+  },
+  "30045": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.936518,
+   "lon": -83.927669,
+   "mi_atl": 29.4
+  },
+  "30046": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.949702,
+   "lon": -83.993451,
+   "mi_atl": 26.5
+  },
+  "30047": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.870125,
+   "lon": -84.112322,
+   "mi_atl": 17.9
+  },
+  "30052": {
+   "counties": [
+    "gwinnett",
+    "newton",
+    "rockdale",
+    "walton"
+   ],
+   "lat": 33.817047,
+   "lon": -83.897315,
+   "mi_atl": 28.7
+  },
+  "30054": {
+   "counties": [
+    "newton",
+    "walton"
+   ],
+   "lat": 33.678353,
+   "lon": -83.88296,
+   "mi_atl": 29.6
+  },
+  "30055": {
+   "counties": [
+    "morgan",
+    "jasper",
+    "newton"
+   ],
+   "lat": 33.497411,
+   "lon": -83.749784,
+   "mi_atl": 40.9
+  },
+  "30056": {
+   "counties": [
+    "morgan",
+    "newton",
+    "jasper"
+   ],
+   "lat": 33.491974,
+   "lon": -83.650144,
+   "mi_atl": 46.3
+  },
+  "30058": {
+   "counties": [
+    "gwinnett",
+    "dekalb",
+    "rockdale"
+   ],
+   "lat": 33.73835,
+   "lon": -84.107376,
+   "mi_atl": 16.3
+  },
+  "30060": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.920062,
+   "lon": -84.5431,
+   "mi_atl": 14.4
+  },
+  "30062": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 34.006497,
+   "lon": -84.472974,
+   "mi_atl": 18.1
+  },
+  "30064": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.940455,
+   "lon": -84.609708,
+   "mi_atl": 18.0
+  },
+  "30066": {
+   "counties": [
+    "cobb",
+    "cherokee"
+   ],
+   "lat": 34.032388,
+   "lon": -84.505154,
+   "mi_atl": 20.3
+  },
+  "30067": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.934278,
+   "lon": -84.462185,
+   "mi_atl": 13.1
+  },
+  "30068": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.968116,
+   "lon": -84.431704,
+   "mi_atl": 15.0
+  },
+  "30070": {
+   "counties": [
+    "newton"
+   ],
+   "lat": 33.573282,
+   "lon": -83.895589,
+   "mi_atl": 31.1
+  },
+  "30071": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.940652,
+   "lon": -84.206734,
+   "mi_atl": 16.7
+  },
+  "30072": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.79141,
+   "lon": -84.204844,
+   "mi_atl": 11.0
+  },
+  "30075": {
+   "counties": [
+    "cobb",
+    "fulton",
+    "cherokee"
+   ],
+   "lat": 34.052688,
+   "lon": -84.391587,
+   "mi_atl": 20.6
+  },
+  "30076": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 34.028579,
+   "lon": -84.31137,
+   "mi_atl": 19.5
+  },
+  "30078": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.861019,
+   "lon": -84.017993,
+   "mi_atl": 22.6
+  },
+  "30079": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.791739,
+   "lon": -84.260747,
+   "mi_atl": 7.9
+  },
+  "30080": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.877818,
+   "lon": -84.501703,
+   "mi_atl": 10.7
+  },
+  "30082": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.854654,
+   "lon": -84.536437,
+   "mi_atl": 10.9
+  },
+  "30083": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.796597,
+   "lon": -84.192603,
+   "mi_atl": 11.7
+  },
+  "30084": {
+   "counties": [
+    "gwinnett",
+    "dekalb"
+   ],
+   "lat": 33.854097,
+   "lon": -84.216155,
+   "mi_atl": 12.2
+  },
+  "30087": {
+   "counties": [
+    "gwinnett",
+    "dekalb"
+   ],
+   "lat": 33.791402,
+   "lon": -84.098277,
+   "mi_atl": 17.0
+  },
+  "30088": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.756052,
+   "lon": -84.182363,
+   "mi_atl": 12.0
+  },
+  "30090": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.953141,
+   "lon": -84.548159,
+   "mi_atl": 16.5
+  },
+  "30092": {
+   "counties": [
+    "fulton",
+    "dekalb",
+    "gwinnett"
+   ],
+   "lat": 33.972386,
+   "lon": -84.231986,
+   "mi_atl": 17.6
+  },
+  "30093": {
+   "counties": [
+    "gwinnett",
+    "dekalb"
+   ],
+   "lat": 33.908911,
+   "lon": -84.17924,
+   "mi_atl": 16.2
+  },
+  "30094": {
+   "counties": [
+    "dekalb",
+    "newton",
+    "rockdale"
+   ],
+   "lat": 33.612505,
+   "lon": -84.051523,
+   "mi_atl": 21.8
+  },
+  "30096": {
+   "counties": [
+    "gwinnett"
+   ],
+   "lat": 33.974302,
+   "lon": -84.145384,
+   "mi_atl": 20.7
+  },
+  "30097": {
+   "counties": [
+    "forsyth",
+    "gwinnett",
+    "fulton"
+   ],
+   "lat": 34.026335,
+   "lon": -84.145677,
+   "mi_atl": 23.5
+  },
+  "30101": {
+   "counties": [
+    "paulding",
+    "bartow",
+    "cherokee",
+    "cobb"
+   ],
+   "lat": 34.034515,
+   "lon": -84.707349,
+   "mi_atl": 26.6
+  },
+  "30102": {
+   "counties": [
+    "cherokee",
+    "bartow",
+    "cobb"
+   ],
+   "lat": 34.101625,
+   "lon": -84.645168,
+   "mi_atl": 28.1
+  },
+  "30103": {
+   "counties": [
+    "floyd",
+    "bartow",
+    "gordon"
+   ],
+   "lat": 34.363242,
+   "lon": -84.920192,
+   "mi_atl": 51.9
+  },
+  "30104": {
+   "counties": [
+    "polk",
+    "floyd",
+    "bartow"
+   ],
+   "lat": 34.088874,
+   "lon": -85.070382,
+   "mi_atl": 45.3
+  },
+  "30105": {
+   "counties": [
+    "chattooga",
+    "floyd"
+   ],
+   "lat": 34.432548,
+   "lon": -85.172442,
+   "mi_atl": 64.8
+  },
+  "30106": {
+   "counties": [
+    "douglas",
+    "cobb"
+   ],
+   "lat": 33.83288,
+   "lon": -84.628055,
+   "mi_atl": 14.7
+  },
+  "30107": {
+   "counties": [
+    "cherokee",
+    "forsyth",
+    "pickens"
+   ],
+   "lat": 34.336098,
+   "lon": -84.345464,
+   "mi_atl": 40.3
+  },
+  "30108": {
+   "counties": [
+    "carroll",
+    "heard"
+   ],
+   "lat": 33.5317,
+   "lon": -85.262996,
+   "mi_atl": 52.5
+  },
+  "30110": {
+   "counties": [
+    "carroll",
+    "haralson"
+   ],
+   "lat": 33.739243,
+   "lon": -85.135434,
+   "mi_atl": 42.8
+  },
+  "30111": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.831787,
+   "lon": -84.655039,
+   "mi_atl": 16.1
+  },
+  "30113": {
+   "counties": [
+    "polk",
+    "haralson"
+   ],
+   "lat": 33.850746,
+   "lon": -85.205308,
+   "mi_atl": 47.3
+  },
+  "30114": {
+   "counties": [
+    "cherokee"
+   ],
+   "lat": 34.243544,
+   "lon": -84.535815,
+   "mi_atl": 34.8
+  },
+  "30115": {
+   "counties": [
+    "cherokee"
+   ],
+   "lat": 34.215519,
+   "lon": -84.402426,
+   "mi_atl": 31.9
+  },
+  "30116": {
+   "counties": [
+    "carroll"
+   ],
+   "lat": 33.539118,
+   "lon": -84.99561,
+   "mi_atl": 37.8
+  },
+  "30117": {
+   "counties": [
+    "carroll"
+   ],
+   "lat": 33.581851,
+   "lon": -85.132439,
+   "mi_atl": 44.3
+  },
+  "30118": {
+   "counties": [
+    "carroll"
+   ],
+   "lat": 33.572902,
+   "lon": -85.099437,
+   "mi_atl": 42.6
+  },
+  "30120": {
+   "counties": [
+    "paulding",
+    "bartow"
+   ],
+   "lat": 34.175229,
+   "lon": -84.860036,
+   "mi_atl": 39.6
+  },
+  "30121": {
+   "counties": [
+    "bartow"
+   ],
+   "lat": 34.211854,
+   "lon": -84.77693,
+   "mi_atl": 38.6
+  },
+  "30122": {
+   "counties": [
+    "douglas",
+    "cobb"
+   ],
+   "lat": 33.766909,
+   "lon": -84.641356,
+   "mi_atl": 14.4
+  },
+  "30124": {
+   "counties": [
+    "floyd",
+    "polk"
+   ],
+   "lat": 34.133736,
+   "lon": -85.345827,
+   "mi_atl": 60.7
+  },
+  "30125": {
+   "counties": [
+    "polk",
+    "floyd"
+   ],
+   "lat": 34.000642,
+   "lon": -85.276805,
+   "mi_atl": 53.6
+  },
+  "30126": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.815023,
+   "lon": -84.553798,
+   "mi_atl": 10.3
+  },
+  "30127": {
+   "counties": [
+    "douglas",
+    "cobb",
+    "paulding"
+   ],
+   "lat": 33.875084,
+   "lon": -84.69934,
+   "mi_atl": 19.6
+  },
+  "30132": {
+   "counties": [
+    "paulding"
+   ],
+   "lat": 33.977608,
+   "lon": -84.851541,
+   "mi_atl": 30.6
+  },
+  "30134": {
+   "counties": [
+    "douglas",
+    "paulding"
+   ],
+   "lat": 33.77752,
+   "lon": -84.78139,
+   "mi_atl": 22.5
+  },
+  "30135": {
+   "counties": [
+    "douglas"
+   ],
+   "lat": 33.672278,
+   "lon": -84.733011,
+   "mi_atl": 20.5
+  },
+  "30137": {
+   "counties": [
+    "bartow"
+   ],
+   "lat": 34.116556,
+   "lon": -84.7657,
+   "mi_atl": 33.0
+  },
+  "30139": {
+   "counties": [
+    "bartow",
+    "pickens",
+    "gordon"
+   ],
+   "lat": 34.43241,
+   "lon": -84.705639,
+   "mi_atl": 50.2
+  },
+  "30141": {
+   "counties": [
+    "cobb",
+    "paulding"
+   ],
+   "lat": 33.860444,
+   "lon": -84.769846,
+   "mi_atl": 23.0
+  },
+  "30143": {
+   "counties": [
+    "dawson",
+    "gilmer",
+    "pickens",
+    "cherokee"
+   ],
+   "lat": 34.462756,
+   "lon": -84.425227,
+   "mi_atl": 49.0
+  },
+  "30144": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 34.036845,
+   "lon": -84.591033,
+   "mi_atl": 22.7
+  },
+  "30145": {
+   "counties": [
+    "bartow",
+    "floyd"
+   ],
+   "lat": 34.24566,
+   "lon": -84.985878,
+   "mi_atl": 48.1
+  },
+  "30147": {
+   "counties": [
+    "polk",
+    "floyd"
+   ],
+   "lat": 34.13494,
+   "lon": -85.22206,
+   "mi_atl": 54.4
+  },
+  "30148": {
+   "counties": [
+    "pickens",
+    "dawson"
+   ],
+   "lat": 34.46049,
+   "lon": -84.265701,
+   "mi_atl": 49.3
+  },
+  "30149": {
+   "counties": [
+    "floyd"
+   ],
+   "lat": 34.316789,
+   "lon": -85.220289,
+   "mi_atl": 61.4
+  },
+  "30152": {
+   "counties": [
+    "cobb"
+   ],
+   "lat": 33.991564,
+   "lon": -84.64687,
+   "mi_atl": 22.0
+  },
+  "30153": {
+   "counties": [
+    "paulding",
+    "polk",
+    "haralson"
+   ],
+   "lat": 33.973822,
+   "lon": -85.052856,
+   "mi_atl": 40.9
+  },
+  "30157": {
+   "counties": [
+    "paulding",
+    "cobb"
+   ],
+   "lat": 33.884746,
+   "lon": -84.871949,
+   "mi_atl": 29.1
+  },
+  "30161": {
+   "counties": [
+    "floyd",
+    "bartow"
+   ],
+   "lat": 34.23623,
+   "lon": -85.173993,
+   "mi_atl": 55.9
+  },
+  "30165": {
+   "counties": [
+    "chattooga",
+    "floyd"
+   ],
+   "lat": 34.315788,
+   "lon": -85.295122,
+   "mi_atl": 64.7
+  },
+  "30168": {
+   "counties": [
+    "cobb",
+    "douglas"
+   ],
+   "lat": 33.783542,
+   "lon": -84.588106,
+   "mi_atl": 11.5
+  },
+  "30170": {
+   "counties": [
+    "carroll",
+    "heard"
+   ],
+   "lat": 33.432792,
+   "lon": -85.164674,
+   "mi_atl": 49.8
+  },
+  "30171": {
+   "counties": [
+    "gordon",
+    "bartow"
+   ],
+   "lat": 34.363361,
+   "lon": -84.727439,
+   "mi_atl": 46.3
+  },
+  "30173": {
+   "counties": [
+    "floyd",
+    "polk"
+   ],
+   "lat": 34.133121,
+   "lon": -85.153505,
+   "mi_atl": 51.0
+  },
+  "30175": {
+   "counties": [
+    "pickens",
+    "gordon",
+    "gilmer"
+   ],
+   "lat": 34.534915,
+   "lon": -84.526711,
+   "mi_atl": 54.5
+  },
+  "30176": {
+   "counties": [
+    "haralson"
+   ],
+   "lat": 33.771314,
+   "lon": -85.30439,
+   "mi_atl": 52.5
+  },
+  "30177": {
+   "counties": [
+    "pickens"
+   ],
+   "lat": 34.407136,
+   "lon": -84.374,
+   "mi_atl": 45.1
+  },
+  "30178": {
+   "counties": [
+    "polk",
+    "bartow",
+    "paulding"
+   ],
+   "lat": 34.09551,
+   "lon": -84.971046,
+   "mi_atl": 40.8
+  },
+  "30179": {
+   "counties": [
+    "haralson",
+    "carroll",
+    "paulding"
+   ],
+   "lat": 33.781553,
+   "lon": -85.014782,
+   "mi_atl": 35.9
+  },
+  "30180": {
+   "counties": [
+    "paulding",
+    "carroll",
+    "douglas"
+   ],
+   "lat": 33.718878,
+   "lon": -84.918801,
+   "mi_atl": 30.5
+  },
+  "30182": {
+   "counties": [
+    "haralson",
+    "carroll"
+   ],
+   "lat": 33.655819,
+   "lon": -85.248832,
+   "mi_atl": 49.8
+  },
+  "30183": {
+   "counties": [
+    "cherokee",
+    "pickens",
+    "bartow"
+   ],
+   "lat": 34.338804,
+   "lon": -84.602425,
+   "mi_atl": 42.2
+  },
+  "30184": {
+   "counties": [
+    "cherokee",
+    "bartow"
+   ],
+   "lat": 34.252062,
+   "lon": -84.741056,
+   "mi_atl": 39.8
+  },
+  "30185": {
+   "counties": [
+    "douglas",
+    "carroll"
+   ],
+   "lat": 33.519802,
+   "lon": -84.918098,
+   "mi_atl": 34.4
+  },
+  "30187": {
+   "counties": [
+    "carroll",
+    "douglas"
+   ],
+   "lat": 33.652761,
+   "lon": -84.856249,
+   "mi_atl": 27.7
+  },
+  "30188": {
+   "counties": [
+    "cherokee",
+    "cobb"
+   ],
+   "lat": 34.123533,
+   "lon": -84.457654,
+   "mi_atl": 25.8
+  },
+  "30189": {
+   "counties": [
+    "cherokee"
+   ],
+   "lat": 34.124224,
+   "lon": -84.570679,
+   "mi_atl": 27.6
+  },
+  "30204": {
+   "counties": [
+    "lamar",
+    "monroe",
+    "upson"
+   ],
+   "lat": 33.056208,
+   "lon": -84.121725,
+   "mi_atl": 50.6
+  },
+  "30205": {
+   "counties": [
+    "fayette",
+    "spalding"
+   ],
+   "lat": 33.267427,
+   "lon": -84.475116,
+   "mi_atl": 34.0
+  },
+  "30206": {
+   "counties": [
+    "pike"
+   ],
+   "lat": 33.096064,
+   "lon": -84.458259,
+   "mi_atl": 45.6
+  },
+  "30213": {
+   "counties": [
+    "fayette",
+    "fulton"
+   ],
+   "lat": 33.586742,
+   "lon": -84.624426,
+   "mi_atl": 17.7
+  },
+  "30214": {
+   "counties": [
+    "fulton",
+    "fayette"
+   ],
+   "lat": 33.490464,
+   "lon": -84.485997,
+   "mi_atl": 19.0
+  },
+  "30215": {
+   "counties": [
+    "clayton",
+    "fayette"
+   ],
+   "lat": 33.391613,
+   "lon": -84.456432,
+   "mi_atl": 25.3
+  },
+  "30216": {
+   "counties": [
+    "butts"
+   ],
+   "lat": 33.228834,
+   "lon": -83.884863,
+   "mi_atl": 46.5
+  },
+  "30217": {
+   "counties": [
+    "coweta",
+    "troup",
+    "heard"
+   ],
+   "lat": 33.291347,
+   "lon": -85.137886,
+   "mi_atl": 53.6
+  },
+  "30218": {
+   "counties": [
+    "meriwether"
+   ],
+   "lat": 33.120297,
+   "lon": -84.587455,
+   "mi_atl": 45.2
+  },
+  "30220": {
+   "counties": [
+    "meriwether",
+    "troup",
+    "coweta"
+   ],
+   "lat": 33.230839,
+   "lon": -84.82486,
+   "mi_atl": 44.0
+  },
+  "30222": {
+   "counties": [
+    "meriwether"
+   ],
+   "lat": 33.044355,
+   "lon": -84.743495,
+   "mi_atl": 53.1
+  },
+  "30223": {
+   "counties": [
+    "henry",
+    "spalding",
+    "butts"
+   ],
+   "lat": 33.288794,
+   "lon": -84.279919,
+   "mi_atl": 32.8
+  },
+  "30224": {
+   "counties": [
+    "pike",
+    "butts",
+    "spalding",
+    "lamar"
+   ],
+   "lat": 33.204432,
+   "lon": -84.239735,
+   "mi_atl": 39.0
+  },
+  "30228": {
+   "counties": [
+    "henry",
+    "spalding",
+    "clayton"
+   ],
+   "lat": 33.400608,
+   "lon": -84.307728,
+   "mi_atl": 24.9
+  },
+  "30229": {
+   "counties": [
+    "coweta"
+   ],
+   "lat": 33.227934,
+   "lon": -84.570341,
+   "mi_atl": 37.8
+  },
+  "30230": {
+   "counties": [
+    "troup",
+    "meriwether",
+    "heard",
+    "coweta"
+   ],
+   "lat": 33.166737,
+   "lon": -84.920497,
+   "mi_atl": 50.8
+  },
+  "30233": {
+   "counties": [
+    "henry",
+    "newton",
+    "lamar",
+    "butts",
+    "monroe"
+   ],
+   "lat": 33.294709,
+   "lon": -83.975561,
+   "mi_atl": 39.7
+  },
+  "30234": {
+   "counties": [
+    "henry",
+    "butts"
+   ],
+   "lat": 33.332567,
+   "lon": -84.025298,
+   "mi_atl": 35.9
+  },
+  "30236": {
+   "counties": [
+    "henry",
+    "clayton"
+   ],
+   "lat": 33.519927,
+   "lon": -84.325187,
+   "mi_atl": 16.6
+  },
+  "30238": {
+   "counties": [
+    "clayton",
+    "fayette"
+   ],
+   "lat": 33.501846,
+   "lon": -84.382236,
+   "mi_atl": 17.4
+  },
+  "30240": {
+   "counties": [
+    "heard",
+    "troup"
+   ],
+   "lat": 33.036764,
+   "lon": -85.120092,
+   "mi_atl": 65.0
+  },
+  "30241": {
+   "counties": [
+    "troup",
+    "meriwether"
+   ],
+   "lat": 33.021712,
+   "lon": -84.95623,
+   "mi_atl": 60.2
+  },
+  "30248": {
+   "counties": [
+    "butts",
+    "henry",
+    "spalding"
+   ],
+   "lat": 33.35046,
+   "lon": -84.109119,
+   "mi_atl": 32.2
+  },
+  "30250": {
+   "counties": [
+    "clayton"
+   ],
+   "lat": 33.434846,
+   "lon": -84.306078,
+   "mi_atl": 22.6
+  },
+  "30251": {
+   "counties": [
+    "meriwether"
+   ],
+   "lat": 33.198174,
+   "lon": -84.698112,
+   "mi_atl": 42.3
+  },
+  "30252": {
+   "counties": [
+    "rockdale",
+    "henry"
+   ],
+   "lat": 33.473512,
+   "lon": -84.057165,
+   "mi_atl": 27.3
+  },
+  "30253": {
+   "counties": [
+    "henry"
+   ],
+   "lat": 33.453601,
+   "lon": -84.187167,
+   "mi_atl": 23.8
+  },
+  "30256": {
+   "counties": [
+    "upson",
+    "pike",
+    "lamar"
+   ],
+   "lat": 33.007484,
+   "lon": -84.3099,
+   "mi_atl": 51.8
+  },
+  "30257": {
+   "counties": [
+    "pike",
+    "lamar"
+   ],
+   "lat": 33.143414,
+   "lon": -84.18622,
+   "mi_atl": 43.8
+  },
+  "30258": {
+   "counties": [
+    "pike",
+    "upson"
+   ],
+   "lat": 32.990854,
+   "lon": -84.470041,
+   "mi_atl": 52.9
+  },
+  "30259": {
+   "counties": [
+    "coweta",
+    "meriwether"
+   ],
+   "lat": 33.265699,
+   "lon": -84.741743,
+   "mi_atl": 39.3
+  },
+  "30260": {
+   "counties": [
+    "clayton"
+   ],
+   "lat": 33.587165,
+   "lon": -84.334307,
+   "mi_atl": 12.0
+  },
+  "30263": {
+   "counties": [
+    "heard",
+    "coweta"
+   ],
+   "lat": 33.388415,
+   "lon": -84.858937,
+   "mi_atl": 36.9
+  },
+  "30265": {
+   "counties": [
+    "coweta"
+   ],
+   "lat": 33.418686,
+   "lon": -84.713164,
+   "mi_atl": 29.7
+  },
+  "30268": {
+   "counties": [
+    "fulton",
+    "coweta"
+   ],
+   "lat": 33.54643,
+   "lon": -84.722632,
+   "mi_atl": 23.9
+  },
+  "30269": {
+   "counties": [
+    "fayette"
+   ],
+   "lat": 33.393891,
+   "lon": -84.569301,
+   "mi_atl": 26.9
+  },
+  "30272": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.623122,
+   "lon": -84.501756,
+   "mi_atl": 11.1
+  },
+  "30273": {
+   "counties": [
+    "henry",
+    "clayton"
+   ],
+   "lat": 33.583798,
+   "lon": -84.271027,
+   "mi_atl": 13.6
+  },
+  "30274": {
+   "counties": [
+    "clayton"
+   ],
+   "lat": 33.557264,
+   "lon": -84.400508,
+   "mi_atl": 13.6
+  },
+  "30275": {
+   "counties": [
+    "coweta"
+   ],
+   "lat": 33.430654,
+   "lon": -84.867864,
+   "mi_atl": 35.4
+  },
+  "30276": {
+   "counties": [
+    "meriwether",
+    "fayette",
+    "coweta"
+   ],
+   "lat": 33.263314,
+   "lon": -84.583456,
+   "mi_atl": 35.7
+  },
+  "30277": {
+   "counties": [
+    "coweta"
+   ],
+   "lat": 33.375308,
+   "lon": -84.649196,
+   "mi_atl": 30.1
+  },
+  "30281": {
+   "counties": [
+    "rockdale",
+    "clayton",
+    "henry"
+   ],
+   "lat": 33.556897,
+   "lon": -84.195159,
+   "mi_atl": 17.7
+  },
+  "30284": {
+   "counties": [
+    "spalding"
+   ],
+   "lat": 33.340288,
+   "lon": -84.288571,
+   "mi_atl": 29.2
+  },
+  "30285": {
+   "counties": [
+    "pike",
+    "upson",
+    "lamar"
+   ],
+   "lat": 32.987673,
+   "lon": -84.258191,
+   "mi_atl": 53.5
+  },
+  "30286": {
+   "counties": [
+    "upson"
+   ],
+   "lat": 32.881118,
+   "lon": -84.333168,
+   "mi_atl": 60.4
+  },
+  "30288": {
+   "counties": [
+    "clayton",
+    "dekalb"
+   ],
+   "lat": 33.652897,
+   "lon": -84.327107,
+   "mi_atl": 7.9
+  },
+  "30289": {
+   "counties": [
+    "coweta"
+   ],
+   "lat": 33.323596,
+   "lon": -84.633698,
+   "mi_atl": 32.9
+  },
+  "30290": {
+   "counties": [
+    "fayette"
+   ],
+   "lat": 33.476407,
+   "lon": -84.589704,
+   "mi_atl": 22.3
+  },
+  "30291": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.575883,
+   "lon": -84.543771,
+   "mi_atl": 15.1
+  },
+  "30292": {
+   "counties": [
+    "spalding",
+    "pike"
+   ],
+   "lat": 33.168489,
+   "lon": -84.393225,
+   "mi_atl": 40.5
+  },
+  "30293": {
+   "counties": [
+    "meriwether"
+   ],
+   "lat": 32.979078,
+   "lon": -84.596302,
+   "mi_atl": 54.8
+  },
+  "30294": {
+   "counties": [
+    "rockdale",
+    "clayton",
+    "henry",
+    "dekalb"
+   ],
+   "lat": 33.636692,
+   "lon": -84.264986,
+   "mi_atl": 10.9
+  },
+  "30295": {
+   "counties": [
+    "lamar",
+    "pike"
+   ],
+   "lat": 33.090342,
+   "lon": -84.317583,
+   "mi_atl": 46.0
+  },
+  "30296": {
+   "counties": [
+    "fulton",
+    "clayton"
+   ],
+   "lat": 33.56316,
+   "lon": -84.441157,
+   "mi_atl": 13.5
+  },
+  "30297": {
+   "counties": [
+    "clayton"
+   ],
+   "lat": 33.614988,
+   "lon": -84.371672,
+   "mi_atl": 9.7
+  },
+  "30303": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.752845,
+   "lon": -84.390226,
+   "mi_atl": 0.1
+  },
+  "30305": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.834063,
+   "lon": -84.392063,
+   "mi_atl": 5.5
+  },
+  "30306": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.78814,
+   "lon": -84.352625,
+   "mi_atl": 3.2
+  },
+  "30307": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.771079,
+   "lon": -84.3336,
+   "mi_atl": 3.5
+  },
+  "30308": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.770959,
+   "lon": -84.377736,
+   "mi_atl": 1.4
+  },
+  "30309": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.799851,
+   "lon": -84.385837,
+   "mi_atl": 3.2
+  },
+  "30310": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.726889,
+   "lon": -84.428926,
+   "mi_atl": 2.9
+  },
+  "30311": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.723262,
+   "lon": -84.475994,
+   "mi_atl": 5.4
+  },
+  "30312": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.744616,
+   "lon": -84.375814,
+   "mi_atl": 1.1
+  },
+  "30313": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.763613,
+   "lon": -84.39767,
+   "mi_atl": 0.8
+  },
+  "30314": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.757861,
+   "lon": -84.431963,
+   "mi_atl": 2.4
+  },
+  "30315": {
+   "counties": [
+    "fulton",
+    "dekalb"
+   ],
+   "lat": 33.702741,
+   "lon": -84.382853,
+   "mi_atl": 3.6
+  },
+  "30316": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.716794,
+   "lon": -84.331343,
+   "mi_atl": 4.3
+  },
+  "30317": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.747989,
+   "lon": -84.315586,
+   "mi_atl": 4.3
+  },
+  "30318": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.79266,
+   "lon": -84.44801,
+   "mi_atl": 4.2
+  },
+  "30319": {
+   "counties": [
+    "fulton",
+    "dekalb"
+   ],
+   "lat": 33.875954,
+   "lon": -84.334763,
+   "mi_atl": 9.0
+  },
+  "30322": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.794605,
+   "lon": -84.325247,
+   "mi_atl": 4.7
+  },
+  "30324": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.818405,
+   "lon": -84.358175,
+   "mi_atl": 4.8
+  },
+  "30326": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.849615,
+   "lon": -84.363508,
+   "mi_atl": 6.8
+  },
+  "30327": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.869694,
+   "lon": -84.4173,
+   "mi_atl": 8.1
+  },
+  "30328": {
+   "counties": [
+    "fulton",
+    "dekalb"
+   ],
+   "lat": 33.933259,
+   "lon": -84.386656,
+   "mi_atl": 12.4
+  },
+  "30329": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.827245,
+   "lon": -84.322148,
+   "mi_atl": 6.4
+  },
+  "30331": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.705468,
+   "lon": -84.544125,
+   "mi_atl": 9.4
+  },
+  "30332": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.777618,
+   "lon": -84.404348,
+   "mi_atl": 1.8
+  },
+  "30334": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.748652,
+   "lon": -84.387894,
+   "mi_atl": 0.4
+  },
+  "30336": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.735444,
+   "lon": -84.568978,
+   "mi_atl": 10.3
+  },
+  "30337": {
+   "counties": [
+    "fulton",
+    "clayton"
+   ],
+   "lat": 33.640141,
+   "lon": -84.450081,
+   "mi_atl": 8.6
+  },
+  "30338": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.946218,
+   "lon": -84.318119,
+   "mi_atl": 13.9
+  },
+  "30339": {
+   "counties": [
+    "cobb",
+    "fulton"
+   ],
+   "lat": 33.86757,
+   "lon": -84.4646,
+   "mi_atl": 8.9
+  },
+  "30340": {
+   "counties": [
+    "gwinnett",
+    "dekalb"
+   ],
+   "lat": 33.897873,
+   "lon": -84.252804,
+   "mi_atl": 12.7
+  },
+  "30341": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.888505,
+   "lon": -84.289532,
+   "mi_atl": 11.0
+  },
+  "30342": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.88435,
+   "lon": -84.374964,
+   "mi_atl": 9.1
+  },
+  "30344": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.676636,
+   "lon": -84.461601,
+   "mi_atl": 6.7
+  },
+  "30345": {
+   "counties": [
+    "dekalb"
+   ],
+   "lat": 33.851652,
+   "lon": -84.283685,
+   "mi_atl": 9.1
+  },
+  "30346": {
+   "counties": [
+    "dekalb",
+    "fulton"
+   ],
+   "lat": 33.924273,
+   "lon": -84.338776,
+   "mi_atl": 12.1
+  },
+  "30349": {
+   "counties": [
+    "fulton",
+    "clayton"
+   ],
+   "lat": 33.622488,
+   "lon": -84.523908,
+   "mi_atl": 11.9
+  },
+  "30350": {
+   "counties": [
+    "dekalb",
+    "fulton",
+    "gwinnett"
+   ],
+   "lat": 33.980254,
+   "lon": -84.330016,
+   "mi_atl": 16.0
+  },
+  "30354": {
+   "counties": [
+    "fulton",
+    "clayton"
+   ],
+   "lat": 33.660361,
+   "lon": -84.386502,
+   "mi_atl": 6.5
+  },
+  "30360": {
+   "counties": [
+    "gwinnett",
+    "dekalb"
+   ],
+   "lat": 33.933885,
+   "lon": -84.272034,
+   "mi_atl": 14.2
+  },
+  "30363": {
+   "counties": [
+    "fulton"
+   ],
+   "lat": 33.791478,
+   "lon": -84.398892,
+   "mi_atl": 2.6
+  },
+  "30501": {
+   "counties": [
+    "hall"
+   ],
+   "lat": 34.319037,
+   "lon": -83.814399,
+   "mi_atl": 51.1
+  },
+  "30504": {
+   "counties": [
+    "hall"
+   ],
+   "lat": 34.266502,
+   "lon": -83.888646,
+   "mi_atl": 45.6
+  },
+  "30506": {
+   "counties": [
+    "forsyth",
+    "hall"
+   ],
+   "lat": 34.346938,
+   "lon": -83.895627,
+   "mi_atl": 49.8
+  },
+  "30507": {
+   "counties": [
+    "hall"
+   ],
+   "lat": 34.264685,
+   "lon": -83.769391,
+   "mi_atl": 50.1
+  },
+  "30510": {
+   "counties": [
+    "hall",
+    "banks",
+    "habersham"
+   ],
+   "lat": 34.444872,
+   "lon": -83.570707,
+   "mi_atl": 66.9
+  },
+  "30511": {
+   "counties": [
+    "habersham",
+    "banks",
+    "stephens"
+   ],
+   "lat": 34.449686,
+   "lon": -83.486689,
+   "mi_atl": 70.6
+  },
+  "30512": {
+   "counties": [
+    "lumpkin",
+    "fannin",
+    "union"
+   ],
+   "lat": 34.856753,
+   "lon": -83.967998,
+   "mi_atl": 79.9
+  },
+  "30513": {
+   "counties": [
+    "fannin",
+    "gilmer"
+   ],
+   "lat": 34.821043,
+   "lon": -84.322383,
+   "mi_atl": 73.8
+  },
+  "30516": {
+   "counties": [
+    "hart",
+    "franklin"
+   ],
+   "lat": 34.380913,
+   "lon": -83.030697,
+   "mi_atl": 89.1
+  },
+  "30517": {
+   "counties": [
+    "jackson",
+    "barrow",
+    "gwinnett",
+    "hall"
+   ],
+   "lat": 34.130296,
+   "lon": -83.797289,
+   "mi_atl": 42.8
+  },
+  "30518": {
+   "counties": [
+    "gwinnett",
+    "hall"
+   ],
+   "lat": 34.133933,
+   "lon": -84.022544,
+   "mi_atl": 33.7
+  },
+  "30519": {
+   "counties": [
+    "hall",
+    "gwinnett"
+   ],
+   "lat": 34.08741,
+   "lon": -83.945059,
+   "mi_atl": 34.4
+  },
+  "30520": {
+   "counties": [
+    "hart",
+    "franklin"
+   ],
+   "lat": 34.339924,
+   "lon": -83.082702,
+   "mi_atl": 85.1
+  },
+  "30521": {
+   "counties": [
+    "banks",
+    "franklin"
+   ],
+   "lat": 34.362448,
+   "lon": -83.292322,
+   "mi_atl": 75.6
+  },
+  "30522": {
+   "counties": [
+    "fannin",
+    "gilmer"
+   ],
+   "lat": 34.78368,
+   "lon": -84.34373,
+   "mi_atl": 71.2
+  },
+  "30523": {
+   "counties": [
+    "rabun",
+    "white",
+    "habersham"
+   ],
+   "lat": 34.713154,
+   "lon": -83.551309,
+   "mi_atl": 81.8
+  },
+  "30525": {
+   "counties": [
+    "rabun",
+    "towns"
+   ],
+   "lat": 34.907223,
+   "lon": -83.369347,
+   "mi_atl": 98.7
+  },
+  "30527": {
+   "counties": [
+    "hall",
+    "white"
+   ],
+   "lat": 34.480907,
+   "lon": -83.781838,
+   "mi_atl": 61.1
+  },
+  "30528": {
+   "counties": [
+    "white",
+    "lumpkin",
+    "hall"
+   ],
+   "lat": 34.609088,
+   "lon": -83.775997,
+   "mi_atl": 68.7
+  },
+  "30529": {
+   "counties": [
+    "banks",
+    "jackson"
+   ],
+   "lat": 34.217179,
+   "lon": -83.482653,
+   "mi_atl": 61.1
+  },
+  "30530": {
+   "counties": [
+    "jackson",
+    "franklin",
+    "madison",
+    "banks"
+   ],
+   "lat": 34.222921,
+   "lon": -83.393799,
+   "mi_atl": 65.7
+  },
+  "30531": {
+   "counties": [
+    "habersham",
+    "hall"
+   ],
+   "lat": 34.512602,
+   "lon": -83.592206,
+   "mi_atl": 69.5
+  },
+  "30533": {
+   "counties": [
+    "hall",
+    "lumpkin",
+    "white",
+    "dawson"
+   ],
+   "lat": 34.570958,
+   "lon": -84.013764,
+   "mi_atl": 60.4
+  },
+  "30534": {
+   "counties": [
+    "lumpkin",
+    "gilmer",
+    "forsyth",
+    "dawson",
+    "pickens",
+    "cherokee"
+   ],
+   "lat": 34.4311,
+   "lon": -84.144329,
+   "mi_atl": 48.9
+  },
+  "30535": {
+   "counties": [
+    "habersham"
+   ],
+   "lat": 34.573655,
+   "lon": -83.574769,
+   "mi_atl": 73.4
+  },
+  "30536": {
+   "counties": [
+    "dawson",
+    "gilmer",
+    "pickens"
+   ],
+   "lat": 34.652002,
+   "lon": -84.359442,
+   "mi_atl": 62.1
+  },
+  "30538": {
+   "counties": [
+    "stephens",
+    "franklin"
+   ],
+   "lat": 34.500986,
+   "lon": -83.263844,
+   "mi_atl": 82.6
+  },
+  "30539": {
+   "counties": [
+    "gilmer"
+   ],
+   "lat": 34.680607,
+   "lon": -84.470127,
+   "mi_atl": 64.2
+  },
+  "30540": {
+   "counties": [
+    "gilmer",
+    "pickens",
+    "murray"
+   ],
+   "lat": 34.728127,
+   "lon": -84.543528,
+   "mi_atl": 67.9
+  },
+  "30541": {
+   "counties": [
+    "fannin"
+   ],
+   "lat": 34.917258,
+   "lon": -84.517744,
+   "mi_atl": 80.7
+  },
+  "30542": {
+   "counties": [
+    "hall"
+   ],
+   "lat": 34.179847,
+   "lon": -83.910081,
+   "mi_atl": 40.3
+  },
+  "30543": {
+   "counties": [
+    "jackson",
+    "banks",
+    "hall"
+   ],
+   "lat": 34.302214,
+   "lon": -83.657973,
+   "mi_atl": 56.5
+  },
+  "30545": {
+   "counties": [
+    "white"
+   ],
+   "lat": 34.762318,
+   "lon": -83.762118,
+   "mi_atl": 78.4
+  },
+  "30546": {
+   "counties": [
+    "towns"
+   ],
+   "lat": 34.908448,
+   "lon": -83.717767,
+   "mi_atl": 88.5
+  },
+  "30547": {
+   "counties": [
+    "banks"
+   ],
+   "lat": 34.362021,
+   "lon": -83.455617,
+   "mi_atl": 68.0
+  },
+  "30548": {
+   "counties": [
+    "barrow",
+    "hall",
+    "jackson",
+    "gwinnett"
+   ],
+   "lat": 34.089396,
+   "lon": -83.763599,
+   "mi_atl": 42.8
+  },
+  "30549": {
+   "counties": [
+    "jackson"
+   ],
+   "lat": 34.107959,
+   "lon": -83.577478,
+   "mi_atl": 52.6
+  },
+  "30552": {
+   "counties": [
+    "rabun"
+   ],
+   "lat": 34.77383,
+   "lon": -83.470718,
+   "mi_atl": 87.9
+  },
+  "30553": {
+   "counties": [
+    "franklin",
+    "hart"
+   ],
+   "lat": 34.443759,
+   "lon": -83.084067,
+   "mi_atl": 88.6
+  },
+  "30554": {
+   "counties": [
+    "hall",
+    "white",
+    "banks"
+   ],
+   "lat": 34.398088,
+   "lon": -83.661905,
+   "mi_atl": 61.0
+  },
+  "30555": {
+   "counties": [
+    "fannin"
+   ],
+   "lat": 34.969398,
+   "lon": -84.419515,
+   "mi_atl": 84.0
+  },
+  "30557": {
+   "counties": [
+    "franklin",
+    "stephens"
+   ],
+   "lat": 34.479752,
+   "lon": -83.184905,
+   "mi_atl": 85.3
+  },
+  "30558": {
+   "counties": [
+    "banks",
+    "jackson"
+   ],
+   "lat": 34.264049,
+   "lon": -83.566829,
+   "mi_atl": 58.9
+  },
+  "30559": {
+   "counties": [
+    "fannin"
+   ],
+   "lat": 34.95786,
+   "lon": -84.274335,
+   "mi_atl": 83.4
+  },
+  "30560": {
+   "counties": [
+    "union",
+    "fannin"
+   ],
+   "lat": 34.876771,
+   "lon": -84.204706,
+   "mi_atl": 78.3
+  },
+  "30562": {
+   "counties": [
+    "rabun"
+   ],
+   "lat": 34.918996,
+   "lon": -83.38368,
+   "mi_atl": 98.9
+  },
+  "30563": {
+   "counties": [
+    "habersham",
+    "stephens"
+   ],
+   "lat": 34.55896,
+   "lon": -83.461828,
+   "mi_atl": 76.9
+  },
+  "30564": {
+   "counties": [
+    "white",
+    "lumpkin",
+    "hall"
+   ],
+   "lat": 34.463965,
+   "lon": -83.889312,
+   "mi_atl": 56.8
+  },
+  "30565": {
+   "counties": [
+    "madison",
+    "jackson"
+   ],
+   "lat": 34.086204,
+   "lon": -83.411482,
+   "mi_atl": 60.6
+  },
+  "30566": {
+   "counties": [
+    "hall"
+   ],
+   "lat": 34.238656,
+   "lon": -83.896897,
+   "mi_atl": 43.8
+  },
+  "30567": {
+   "counties": [
+    "jackson",
+    "hall"
+   ],
+   "lat": 34.180798,
+   "lon": -83.676554,
+   "mi_atl": 50.4
+  },
+  "30571": {
+   "counties": [
+    "white",
+    "habersham"
+   ],
+   "lat": 34.71633,
+   "lon": -83.682028,
+   "mi_atl": 77.8
+  },
+  "30572": {
+   "counties": [
+    "union",
+    "fannin"
+   ],
+   "lat": 34.735793,
+   "lon": -84.072507,
+   "mi_atl": 70.2
+  },
+  "30573": {
+   "counties": [
+    "rabun"
+   ],
+   "lat": 34.741262,
+   "lon": -83.393476,
+   "mi_atl": 88.9
+  },
+  "30575": {
+   "counties": [
+    "hall",
+    "jackson"
+   ],
+   "lat": 34.207636,
+   "lon": -83.713474,
+   "mi_atl": 49.9
+  },
+  "30576": {
+   "counties": [
+    "rabun"
+   ],
+   "lat": 34.834589,
+   "lon": -83.452139,
+   "mi_atl": 91.9
+  },
+  "30577": {
+   "counties": [
+    "stephens",
+    "habersham",
+    "franklin",
+    "banks"
+   ],
+   "lat": 34.556243,
+   "lon": -83.328905,
+   "mi_atl": 82.2
+  },
+  "30581": {
+   "counties": [
+    "rabun"
+   ],
+   "lat": 34.796301,
+   "lon": -83.424477,
+   "mi_atl": 90.7
+  },
+  "30582": {
+   "counties": [
+    "union",
+    "towns"
+   ],
+   "lat": 34.956451,
+   "lon": -83.909789,
+   "mi_atl": 87.5
+  },
+  "30597": {
+   "counties": [
+    "lumpkin"
+   ],
+   "lat": 34.527577,
+   "lon": -83.984589,
+   "mi_atl": 58.3
+  },
+  "30598": {
+   "counties": [
+    "stephens"
+   ],
+   "lat": 34.5966,
+   "lon": -83.354162,
+   "mi_atl": 83.1
+  },
+  "30601": {
+   "counties": [
+    "madison",
+    "jackson",
+    "clarke"
+   ],
+   "lat": 33.999151,
+   "lon": -83.346993,
+   "mi_atl": 62.2
+  },
+  "30602": {
+   "counties": [
+    "clarke"
+   ],
+   "lat": 33.943919,
+   "lon": -83.373855,
+   "mi_atl": 59.8
+  },
+  "30605": {
+   "counties": [
+    "oconee",
+    "clarke"
+   ],
+   "lat": 33.904289,
+   "lon": -83.325592,
+   "mi_atl": 62.0
+  },
+  "30606": {
+   "counties": [
+    "oconee",
+    "clarke"
+   ],
+   "lat": 33.940299,
+   "lon": -83.433583,
+   "mi_atl": 56.4
+  },
+  "30607": {
+   "counties": [
+    "clarke",
+    "jackson"
+   ],
+   "lat": 34.017305,
+   "lon": -83.447551,
+   "mi_atl": 57.1
+  },
+  "30609": {
+   "counties": [
+    "clarke"
+   ],
+   "lat": 33.933102,
+   "lon": -83.372322,
+   "mi_atl": 59.7
+  },
+  "30619": {
+   "counties": [
+    "oconee",
+    "oglethorpe"
+   ],
+   "lat": 33.855797,
+   "lon": -83.244711,
+   "mi_atl": 66.2
+  },
+  "30620": {
+   "counties": [
+    "walton",
+    "gwinnett",
+    "barrow"
+   ],
+   "lat": 33.929472,
+   "lon": -83.758457,
+   "mi_atl": 38.2
+  },
+  "30621": {
+   "counties": [
+    "morgan",
+    "oconee"
+   ],
+   "lat": 33.796813,
+   "lon": -83.471175,
+   "mi_atl": 52.9
+  },
+  "30622": {
+   "counties": [
+    "clarke",
+    "jackson",
+    "oconee",
+    "barrow"
+   ],
+   "lat": 33.921282,
+   "lon": -83.53083,
+   "mi_atl": 50.7
+  },
+  "30623": {
+   "counties": [
+    "morgan"
+   ],
+   "lat": 33.728681,
+   "lon": -83.513005,
+   "mi_atl": 50.4
+  },
+  "30624": {
+   "counties": [
+    "madison",
+    "elbert",
+    "hart"
+   ],
+   "lat": 34.181024,
+   "lon": -83.037941,
+   "mi_atl": 82.9
+  },
+  "30625": {
+   "counties": [
+    "morgan",
+    "putnam"
+   ],
+   "lat": 33.520284,
+   "lon": -83.33353,
+   "mi_atl": 62.9
+  },
+  "30627": {
+   "counties": [
+    "oglethorpe",
+    "madison"
+   ],
+   "lat": 33.972176,
+   "lon": -82.963748,
+   "mi_atl": 83.2
+  },
+  "30628": {
+   "counties": [
+    "oglethorpe",
+    "madison"
+   ],
+   "lat": 34.032089,
+   "lon": -83.215974,
+   "mi_atl": 70.0
+  },
+  "30629": {
+   "counties": [
+    "madison",
+    "oglethorpe"
+   ],
+   "lat": 34.077983,
+   "lon": -83.110367,
+   "mi_atl": 76.7
+  },
+  "30630": {
+   "counties": [
+    "oglethorpe"
+   ],
+   "lat": 33.90036,
+   "lon": -83.145329,
+   "mi_atl": 72.2
+  },
+  "30631": {
+   "counties": [
+    "wilkes",
+    "taliaferro",
+    "greene"
+   ],
+   "lat": 33.558262,
+   "lon": -82.866495,
+   "mi_atl": 88.7
+  },
+  "30633": {
+   "counties": [
+    "banks",
+    "madison",
+    "franklin"
+   ],
+   "lat": 34.180903,
+   "lon": -83.249172,
+   "mi_atl": 71.7
+  },
+  "30634": {
+   "counties": [
+    "hart",
+    "elbert"
+   ],
+   "lat": 34.202177,
+   "lon": -82.942226,
+   "mi_atl": 88.6
+  },
+  "30635": {
+   "counties": [
+    "elbert",
+    "hart"
+   ],
+   "lat": 34.105769,
+   "lon": -82.793148,
+   "mi_atl": 94.7
+  },
+  "30639": {
+   "counties": [
+    "franklin"
+   ],
+   "lat": 34.282737,
+   "lon": -83.152397,
+   "mi_atl": 79.8
+  },
+  "30641": {
+   "counties": [
+    "walton",
+    "morgan"
+   ],
+   "lat": 33.769567,
+   "lon": -83.56475,
+   "mi_atl": 47.4
+  },
+  "30642": {
+   "counties": [
+    "greene",
+    "morgan"
+   ],
+   "lat": 33.544289,
+   "lon": -83.183971,
+   "mi_atl": 70.9
+  },
+  "30643": {
+   "counties": [
+    "hart"
+   ],
+   "lat": 34.365452,
+   "lon": -82.911872,
+   "mi_atl": 94.6
+  },
+  "30646": {
+   "counties": [
+    "clarke",
+    "madison",
+    "jackson"
+   ],
+   "lat": 34.085682,
+   "lon": -83.302513,
+   "mi_atl": 66.5
+  },
+  "30648": {
+   "counties": [
+    "oglethorpe"
+   ],
+   "lat": 33.870769,
+   "lon": -83.038175,
+   "mi_atl": 78.1
+  },
+  "30650": {
+   "counties": [
+    "morgan",
+    "greene",
+    "putnam",
+    "walton"
+   ],
+   "lat": 33.590645,
+   "lon": -83.467554,
+   "mi_atl": 54.3
+  },
+  "30655": {
+   "counties": [
+    "walton"
+   ],
+   "lat": 33.780196,
+   "lon": -83.692512,
+   "mi_atl": 40.1
+  },
+  "30656": {
+   "counties": [
+    "barrow",
+    "walton"
+   ],
+   "lat": 33.862137,
+   "lon": -83.716175,
+   "mi_atl": 39.4
+  },
+  "30660": {
+   "counties": [
+    "taliaferro",
+    "wilkes",
+    "oglethorpe"
+   ],
+   "lat": 33.782663,
+   "lon": -82.931267,
+   "mi_atl": 83.8
+  },
+  "30662": {
+   "counties": [
+    "franklin",
+    "hart",
+    "elbert",
+    "madison"
+   ],
+   "lat": 34.266966,
+   "lon": -83.137564,
+   "mi_atl": 80.0
+  },
+  "30663": {
+   "counties": [
+    "walton",
+    "morgan"
+   ],
+   "lat": 33.615505,
+   "lon": -83.600295,
+   "mi_atl": 46.4
+  },
+  "30664": {
+   "counties": [
+    "taliaferro"
+   ],
+   "lat": 33.556259,
+   "lon": -82.798319,
+   "mi_atl": 92.6
+  },
+  "30665": {
+   "counties": [
+    "greene"
+   ],
+   "lat": 33.537349,
+   "lon": -83.073991,
+   "mi_atl": 77.2
+  },
+  "30666": {
+   "counties": [
+    "barrow",
+    "jackson",
+    "oconee"
+   ],
+   "lat": 33.962087,
+   "lon": -83.584602,
+   "mi_atl": 48.4
+  },
+  "30667": {
+   "counties": [
+    "oglethorpe"
+   ],
+   "lat": 33.796889,
+   "lon": -83.175513,
+   "mi_atl": 69.8
+  },
+  "30668": {
+   "counties": [
+    "wilkes",
+    "lincoln"
+   ],
+   "lat": 33.895747,
+   "lon": -82.697208,
+   "mi_atl": 97.7
+  },
+  "30669": {
+   "counties": [
+    "oglethorpe",
+    "taliaferro",
+    "greene"
+   ],
+   "lat": 33.676431,
+   "lon": -83.118117,
+   "mi_atl": 73.3
+  },
+  "30673": {
+   "counties": [
+    "wilkes",
+    "taliaferro"
+   ],
+   "lat": 33.72809,
+   "lon": -82.716244,
+   "mi_atl": 96.2
+  },
+  "30677": {
+   "counties": [
+    "greene",
+    "oconee"
+   ],
+   "lat": 33.783202,
+   "lon": -83.373342,
+   "mi_atl": 58.5
+  },
+  "30678": {
+   "counties": [
+    "taliaferro",
+    "hancock",
+    "greene"
+   ],
+   "lat": 33.453017,
+   "lon": -83.065918,
+   "mi_atl": 79.0
+  },
+  "30680": {
+   "counties": [
+    "gwinnett",
+    "barrow",
+    "jackson",
+    "oconee"
+   ],
+   "lat": 33.995173,
+   "lon": -83.697488,
+   "mi_atl": 43.1
+  },
+  "30683": {
+   "counties": [
+    "oglethorpe",
+    "clarke",
+    "madison"
+   ],
+   "lat": 33.946841,
+   "lon": -83.257109,
+   "mi_atl": 66.4
+  },
+  "30701": {
+   "counties": [
+    "gordon",
+    "floyd"
+   ],
+   "lat": 34.494395,
+   "lon": -84.954177,
+   "mi_atl": 60.5
+  },
+  "30705": {
+   "counties": [
+    "gordon",
+    "gilmer",
+    "murray"
+   ],
+   "lat": 34.747542,
+   "lon": -84.748401,
+   "mi_atl": 71.6
+  },
+  "30707": {
+   "counties": [
+    "catoosa",
+    "walker"
+   ],
+   "lat": 34.778911,
+   "lon": -85.3653,
+   "mi_atl": 90.1
+  },
+  "30708": {
+   "counties": [
+    "murray"
+   ],
+   "lat": 34.939899,
+   "lon": -84.667565,
+   "mi_atl": 83.4
+  },
+  "30710": {
+   "counties": [
+    "catoosa",
+    "whitfield"
+   ],
+   "lat": 34.938823,
+   "lon": -84.917315,
+   "mi_atl": 87.2
+  },
+  "30711": {
+   "counties": [
+    "murray"
+   ],
+   "lat": 34.931766,
+   "lon": -84.768643,
+   "mi_atl": 84.2
+  },
+  "30720": {
+   "counties": [
+    "whitfield"
+   ],
+   "lat": 34.733645,
+   "lon": -85.000824,
+   "mi_atl": 76.1
+  },
+  "30721": {
+   "counties": [
+    "gordon",
+    "murray",
+    "whitfield"
+   ],
+   "lat": 34.792977,
+   "lon": -84.908686,
+   "mi_atl": 77.6
+  },
+  "30724": {
+   "counties": [
+    "murray"
+   ],
+   "lat": 34.825178,
+   "lon": -84.757885,
+   "mi_atl": 76.9
+  },
+  "30725": {
+   "counties": [
+    "walker"
+   ],
+   "lat": 34.924777,
+   "lon": -85.352675,
+   "mi_atl": 97.8
+  },
+  "30726": {
+   "counties": [
+    "catoosa"
+   ],
+   "lat": 34.974872,
+   "lon": -85.141048,
+   "mi_atl": 94.6
+  },
+  "30728": {
+   "counties": [
+    "walker"
+   ],
+   "lat": 34.684875,
+   "lon": -85.22579,
+   "mi_atl": 80.1
+  },
+  "30730": {
+   "counties": [
+    "chattooga"
+   ],
+   "lat": 34.36377,
+   "lon": -85.416023,
+   "mi_atl": 72.3
+  },
+  "30731": {
+   "counties": [
+    "walker",
+    "dade",
+    "chattooga"
+   ],
+   "lat": 34.564178,
+   "lon": -85.471885,
+   "mi_atl": 83.4
+  },
+  "30733": {
+   "counties": [
+    "floyd",
+    "gordon"
+   ],
+   "lat": 34.414593,
+   "lon": -85.050554,
+   "mi_atl": 59.2
+  },
+  "30734": {
+   "counties": [
+    "pickens",
+    "gordon",
+    "gilmer"
+   ],
+   "lat": 34.532807,
+   "lon": -84.714892,
+   "mi_atl": 56.9
+  },
+  "30735": {
+   "counties": [
+    "gordon",
+    "murray",
+    "whitfield"
+   ],
+   "lat": 34.602883,
+   "lon": -84.882661,
+   "mi_atl": 65.0
+  },
+  "30736": {
+   "counties": [
+    "catoosa",
+    "walker",
+    "whitfield"
+   ],
+   "lat": 34.902401,
+   "lon": -85.134056,
+   "mi_atl": 90.0
+  },
+  "30738": {
+   "counties": [
+    "dade",
+    "walker"
+   ],
+   "lat": 34.796552,
+   "lon": -85.480936,
+   "mi_atl": 95.2
+  },
+  "30739": {
+   "counties": [
+    "catoosa",
+    "walker"
+   ],
+   "lat": 34.805906,
+   "lon": -85.215958,
+   "mi_atl": 86.6
+  },
+  "30740": {
+   "counties": [
+    "whitfield",
+    "walker"
+   ],
+   "lat": 34.757368,
+   "lon": -85.072012,
+   "mi_atl": 79.5
+  },
+  "30741": {
+   "counties": [
+    "walker",
+    "catoosa"
+   ],
+   "lat": 34.952695,
+   "lon": -85.281295,
+   "mi_atl": 97.2
+  },
+  "30742": {
+   "counties": [
+    "walker",
+    "catoosa"
+   ],
+   "lat": 34.935597,
+   "lon": -85.244842,
+   "mi_atl": 95.1
+  },
+  "30746": {
+   "counties": [
+    "gordon",
+    "walker"
+   ],
+   "lat": 34.592095,
+   "lon": -85.032872,
+   "mi_atl": 68.6
+  },
+  "30747": {
+   "counties": [
+    "floyd",
+    "chattooga",
+    "walker"
+   ],
+   "lat": 34.504087,
+   "lon": -85.292786,
+   "mi_atl": 73.1
+  },
+  "30750": {
+   "counties": [
+    "walker",
+    "dade"
+   ],
+   "lat": 34.936814,
+   "lon": -85.388204,
+   "mi_atl": 99.6
+  },
+  "30751": {
+   "counties": [
+    "murray"
+   ],
+   "lat": 34.984504,
+   "lon": -84.73269,
+   "mi_atl": 87.2
+  },
+  "30753": {
+   "counties": [
+    "chattooga",
+    "walker"
+   ],
+   "lat": 34.58228,
+   "lon": -85.2858,
+   "mi_atl": 76.8
+  },
+  "30755": {
+   "counties": [
+    "whitfield",
+    "catoosa"
+   ],
+   "lat": 34.869366,
+   "lon": -85.040664,
+   "mi_atl": 85.5
+  },
+  "30756": {
+   "counties": [
+    "whitfield"
+   ],
+   "lat": 34.901059,
+   "lon": -84.974588,
+   "mi_atl": 86.0
+  },
+  "30821": {
+   "counties": [
+    "mcduffie",
+    "warren"
+   ],
+   "lat": 33.492107,
+   "lon": -82.737994,
+   "mi_atl": 96.8
+  },
+  "31004": {
+   "counties": [
+    "monroe"
+   ],
+   "lat": 32.951665,
+   "lon": -83.805316,
+   "mi_atl": 64.9
+  },
+  "31005": {
+   "counties": [
+    "houston"
+   ],
+   "lat": 32.544622,
+   "lon": -83.593676,
+   "mi_atl": 95.4
+  },
+  "31006": {
+   "counties": [
+    "taylor",
+    "talbot"
+   ],
+   "lat": 32.58072,
+   "lon": -84.250738,
+   "mi_atl": 81.5
+  },
+  "31008": {
+   "counties": [
+    "houston",
+    "peach",
+    "crawford"
+   ],
+   "lat": 32.665355,
+   "lon": -83.786087,
+   "mi_atl": 82.9
+  },
+  "31016": {
+   "counties": [
+    "upson",
+    "monroe",
+    "crawford",
+    "lamar"
+   ],
+   "lat": 32.829319,
+   "lon": -84.091558,
+   "mi_atl": 66.2
+  },
+  "31020": {
+   "counties": [
+    "bibb",
+    "twiggs"
+   ],
+   "lat": 32.654482,
+   "lon": -83.498453,
+   "mi_atl": 91.8
+  },
+  "31024": {
+   "counties": [
+    "jasper",
+    "putnam"
+   ],
+   "lat": 33.322978,
+   "lon": -83.370015,
+   "mi_atl": 65.9
+  },
+  "31028": {
+   "counties": [
+    "houston"
+   ],
+   "lat": 32.63284,
+   "lon": -83.68393,
+   "mi_atl": 87.6
+  },
+  "31029": {
+   "counties": [
+    "monroe",
+    "lamar",
+    "butts"
+   ],
+   "lat": 33.043571,
+   "lon": -83.93535,
+   "mi_atl": 55.7
+  },
+  "31030": {
+   "counties": [
+    "peach",
+    "houston",
+    "macon",
+    "crawford"
+   ],
+   "lat": 32.568973,
+   "lon": -83.89188,
+   "mi_atl": 86.8
+  },
+  "31031": {
+   "counties": [
+    "baldwin",
+    "twiggs",
+    "jones",
+    "wilkinson"
+   ],
+   "lat": 32.866283,
+   "lon": -83.328348,
+   "mi_atl": 86.7
+  },
+  "31032": {
+   "counties": [
+    "jones"
+   ],
+   "lat": 33.011996,
+   "lon": -83.573289,
+   "mi_atl": 69.7
+  },
+  "31033": {
+   "counties": [
+    "baldwin",
+    "jones"
+   ],
+   "lat": 33.079307,
+   "lon": -83.434007,
+   "mi_atl": 72.2
+  },
+  "31034": {
+   "counties": [
+    "baldwin"
+   ],
+   "lat": 33.054623,
+   "lon": -83.225513,
+   "mi_atl": 82.8
+  },
+  "31038": {
+   "counties": [
+    "jones",
+    "putnam",
+    "jasper"
+   ],
+   "lat": 33.142498,
+   "lon": -83.621399,
+   "mi_atl": 61.2
+  },
+  "31039": {
+   "counties": [
+    "taylor"
+   ],
+   "lat": 32.604098,
+   "lon": -84.379104,
+   "mi_atl": 79.5
+  },
+  "31041": {
+   "counties": [
+    "taylor",
+    "macon"
+   ],
+   "lat": 32.382361,
+   "lon": -84.167801,
+   "mi_atl": 95.6
+  },
+  "31042": {
+   "counties": [
+    "wilkinson",
+    "laurens"
+   ],
+   "lat": 32.743643,
+   "lon": -83.189114,
+   "mi_atl": 98.4
+  },
+  "31044": {
+   "counties": [
+    "wilkinson",
+    "twiggs"
+   ],
+   "lat": 32.656173,
+   "lon": -83.390884,
+   "mi_atl": 95.4
+  },
+  "31045": {
+   "counties": [
+    "warren",
+    "hancock"
+   ],
+   "lat": 33.282948,
+   "lon": -82.794508,
+   "mi_atl": 97.5
+  },
+  "31046": {
+   "counties": [
+    "monroe",
+    "jones"
+   ],
+   "lat": 33.053612,
+   "lon": -83.796274,
+   "mi_atl": 59.3
+  },
+  "31050": {
+   "counties": [
+    "crawford"
+   ],
+   "lat": 32.721537,
+   "lon": -83.937295,
+   "mi_atl": 76.0
+  },
+  "31052": {
+   "counties": [
+    "bibb",
+    "crawford"
+   ],
+   "lat": 32.789015,
+   "lon": -83.840075,
+   "mi_atl": 73.9
+  },
+  "31054": {
+   "counties": [
+    "wilkinson"
+   ],
+   "lat": 32.889861,
+   "lon": -83.214067,
+   "mi_atl": 90.4
+  },
+  "31057": {
+   "counties": [
+    "macon"
+   ],
+   "lat": 32.429781,
+   "lon": -83.944276,
+   "mi_atl": 95.1
+  },
+  "31058": {
+   "counties": [
+    "taylor",
+    "marion",
+    "schley"
+   ],
+   "lat": 32.488651,
+   "lon": -84.410396,
+   "mi_atl": 87.4
+  },
+  "31061": {
+   "counties": [
+    "hancock",
+    "jones",
+    "putnam",
+    "baldwin",
+    "wilkinson"
+   ],
+   "lat": 33.059054,
+   "lon": -83.226413,
+   "mi_atl": 82.5
+  },
+  "31062": {
+   "counties": [
+    "baldwin"
+   ],
+   "lat": 33.043376,
+   "lon": -83.215814,
+   "mi_atl": 83.7
+  },
+  "31064": {
+   "counties": [
+    "newton",
+    "jasper"
+   ],
+   "lat": 33.286454,
+   "lon": -83.702299,
+   "mi_atl": 51.1
+  },
+  "31066": {
+   "counties": [
+    "crawford",
+    "bibb",
+    "monroe"
+   ],
+   "lat": 32.80241,
+   "lon": -83.97815,
+   "mi_atl": 69.9
+  },
+  "31068": {
+   "counties": [
+    "schley",
+    "macon",
+    "taylor"
+   ],
+   "lat": 32.332739,
+   "lon": -84.11113,
+   "mi_atl": 99.5
+  },
+  "31069": {
+   "counties": [
+    "houston",
+    "macon",
+    "peach"
+   ],
+   "lat": 32.440068,
+   "lon": -83.748603,
+   "mi_atl": 98.1
+  },
+  "31076": {
+   "counties": [
+    "taylor",
+    "macon",
+    "peach"
+   ],
+   "lat": 32.549678,
+   "lon": -84.104974,
+   "mi_atl": 84.8
+  },
+  "31078": {
+   "counties": [
+    "crawford"
+   ],
+   "lat": 32.694814,
+   "lon": -84.075661,
+   "mi_atl": 75.4
+  },
+  "31081": {
+   "counties": [
+    "taylor",
+    "macon",
+    "schley"
+   ],
+   "lat": 32.412399,
+   "lon": -84.284047,
+   "mi_atl": 92.9
+  },
+  "31085": {
+   "counties": [
+    "jasper"
+   ],
+   "lat": 33.427349,
+   "lon": -83.6277,
+   "mi_atl": 49.4
+  },
+  "31087": {
+   "counties": [
+    "hancock",
+    "baldwin",
+    "washington"
+   ],
+   "lat": 33.251362,
+   "lon": -83.001031,
+   "mi_atl": 87.3
+  },
+  "31088": {
+   "counties": [
+    "houston"
+   ],
+   "lat": 32.586171,
+   "lon": -83.655082,
+   "mi_atl": 91.2
+  },
+  "31093": {
+   "counties": [
+    "houston"
+   ],
+   "lat": 32.647873,
+   "lon": -83.657206,
+   "mi_atl": 87.4
+  },
+  "31097": {
+   "counties": [
+    "upson",
+    "lamar",
+    "monroe"
+   ],
+   "lat": 32.890411,
+   "lon": -84.166895,
+   "mi_atl": 61.0
+  },
+  "31098": {
+   "counties": [
+    "houston"
+   ],
+   "lat": 32.614825,
+   "lon": -83.578435,
+   "mi_atl": 91.7
+  },
+  "31201": {
+   "counties": [
+    "bibb"
+   ],
+   "lat": 32.806321,
+   "lon": -83.61786,
+   "mi_atl": 79.2
+  },
+  "31204": {
+   "counties": [
+    "bibb"
+   ],
+   "lat": 32.848511,
+   "lon": -83.674745,
+   "mi_atl": 75.0
+  },
+  "31206": {
+   "counties": [
+    "bibb"
+   ],
+   "lat": 32.793366,
+   "lon": -83.684573,
+   "mi_atl": 77.9
+  },
+  "31207": {
+   "counties": [
+    "bibb"
+   ],
+   "lat": 32.828602,
+   "lon": -83.649299,
+   "mi_atl": 76.9
+  },
+  "31210": {
+   "counties": [
+    "bibb",
+    "monroe"
+   ],
+   "lat": 32.907633,
+   "lon": -83.735052,
+   "mi_atl": 69.7
+  },
+  "31211": {
+   "counties": [
+    "jones",
+    "bibb"
+   ],
+   "lat": 32.904267,
+   "lon": -83.598526,
+   "mi_atl": 74.4
+  },
+  "31213": {
+   "counties": [
+    "bibb"
+   ],
+   "lat": 32.840081,
+   "lon": -83.63935,
+   "mi_atl": 76.6
+  },
+  "31216": {
+   "counties": [
+    "bibb"
+   ],
+   "lat": 32.732373,
+   "lon": -83.671449,
+   "mi_atl": 81.9
+  },
+  "31217": {
+   "counties": [
+    "jones",
+    "bibb",
+    "twiggs"
+   ],
+   "lat": 32.844147,
+   "lon": -83.500044,
+   "mi_atl": 81.2
+  },
+  "31220": {
+   "counties": [
+    "monroe",
+    "bibb"
+   ],
+   "lat": 32.884462,
+   "lon": -83.818148,
+   "mi_atl": 68.6
+  },
+  "31801": {
+   "counties": [
+    "marion",
+    "talbot",
+    "muscogee"
+   ],
+   "lat": 32.519338,
+   "lon": -84.594755,
+   "mi_atl": 86.1
+  },
+  "31804": {
+   "counties": [
+    "muscogee",
+    "harris"
+   ],
+   "lat": 32.664402,
+   "lon": -84.878409,
+   "mi_atl": 80.4
+  },
+  "31807": {
+   "counties": [
+    "harris"
+   ],
+   "lat": 32.644701,
+   "lon": -84.804532,
+   "mi_atl": 80.3
+  },
+  "31808": {
+   "counties": [
+    "harris",
+    "muscogee"
+   ],
+   "lat": 32.63161,
+   "lon": -85.01055,
+   "mi_atl": 85.4
+  },
+  "31810": {
+   "counties": [
+    "talbot"
+   ],
+   "lat": 32.568261,
+   "lon": -84.524881,
+   "mi_atl": 82.3
+  },
+  "31811": {
+   "counties": [
+    "harris"
+   ],
+   "lat": 32.737356,
+   "lon": -84.937436,
+   "mi_atl": 77.0
+  },
+  "31812": {
+   "counties": [
+    "taylor",
+    "talbot"
+   ],
+   "lat": 32.634887,
+   "lon": -84.42509,
+   "mi_atl": 77.3
+  },
+  "31816": {
+   "counties": [
+    "talbot",
+    "meriwether"
+   ],
+   "lat": 32.878917,
+   "lon": -84.601311,
+   "mi_atl": 61.7
+  },
+  "31820": {
+   "counties": [
+    "muscogee",
+    "harris"
+   ],
+   "lat": 32.575774,
+   "lon": -84.829099,
+   "mi_atl": 85.3
+  },
+  "31822": {
+   "counties": [
+    "meriwether",
+    "troup",
+    "harris"
+   ],
+   "lat": 32.864979,
+   "lon": -84.910348,
+   "mi_atl": 68.4
+  },
+  "31823": {
+   "counties": [
+    "harris"
+   ],
+   "lat": 32.797846,
+   "lon": -84.811418,
+   "mi_atl": 70.4
+  },
+  "31826": {
+   "counties": [
+    "talbot",
+    "harris"
+   ],
+   "lat": 32.800237,
+   "lon": -84.703065,
+   "mi_atl": 68.3
+  },
+  "31827": {
+   "counties": [
+    "talbot"
+   ],
+   "lat": 32.695522,
+   "lon": -84.503751,
+   "mi_atl": 73.4
+  },
+  "31829": {
+   "counties": [
+    "muscogee",
+    "harris"
+   ],
+   "lat": 32.566221,
+   "lon": -84.725442,
+   "mi_atl": 84.3
+  },
+  "31830": {
+   "counties": [
+    "harris",
+    "meriwether"
+   ],
+   "lat": 32.900708,
+   "lon": -84.729063,
+   "mi_atl": 62.1
+  },
+  "31831": {
+   "counties": [
+    "harris",
+    "talbot"
+   ],
+   "lat": 32.666859,
+   "lon": -84.704799,
+   "mi_atl": 77.3
+  },
+  "31833": {
+   "counties": [
+    "troup",
+    "harris"
+   ],
+   "lat": 32.8429,
+   "lon": -85.091845,
+   "mi_atl": 74.9
+  },
+  "31836": {
+   "counties": [
+    "talbot"
+   ],
+   "lat": 32.796402,
+   "lon": -84.53509,
+   "mi_atl": 66.7
+  },
+  "31901": {
+   "counties": [
+    "muscogee"
+   ],
+   "lat": 32.46435,
+   "lon": -84.980144,
+   "mi_atl": 95.4
+  },
+  "31903": {
+   "counties": [
+    "muscogee"
+   ],
+   "lat": 32.414148,
+   "lon": -84.954244,
+   "mi_atl": 98.2
+  },
+  "31904": {
+   "counties": [
+    "muscogee"
+   ],
+   "lat": 32.554339,
+   "lon": -85.009468,
+   "mi_atl": 90.3
+  },
+  "31905": {
+   "counties": [
+    "muscogee",
+    "chattahoochee"
+   ],
+   "lat": 32.372789,
+   "lon": -84.843361,
+   "mi_atl": 99.0
+  },
+  "31906": {
+   "counties": [
+    "muscogee"
+   ],
+   "lat": 32.467811,
+   "lon": -84.950173,
+   "mi_atl": 94.6
+  },
+  "31907": {
+   "counties": [
+    "muscogee"
+   ],
+   "lat": 32.484404,
+   "lon": -84.899945,
+   "mi_atl": 92.5
+  },
+  "31909": {
+   "counties": [
+    "muscogee"
+   ],
+   "lat": 32.548807,
+   "lon": -84.924106,
+   "mi_atl": 88.8
+  }
+ }
+}
