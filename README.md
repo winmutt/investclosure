@@ -111,6 +111,11 @@ python3 -m scraper --status          # DB stats
 python3 -m scraper --new             # New properties
 python3 -m scraper --archive         # Archive small parcels
 
+# Forest-adjacency report (standalone; never writes the properties table)
+python3 -m scraper.forest_report     # 15 NC mountain counties, ≥2 ac, ≤$300k, ≥1,700 ft
+python3 -m scraper.forest_report --stage sweep --county jackson   # one county
+python3 -m scraper.forest_report --refresh-index                 # re-fetch public parcels
+
 # Continuous mode
 python3 -m scraper --cron            # Daily at 4 AM & 4 PM America/New_York (--cron-hours to override)
 ```
