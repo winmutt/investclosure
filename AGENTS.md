@@ -70,7 +70,10 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/backfill_newspaper.py` | Re-derives newspaper row type/address/city/zip/auction-date from `raw_source_text` |
 | `scraper/al_publicnotice.py` | AL public-notice foreclosure scraper — alabamapublicnotices.com (IPA WebForms: per-category select + per-county checkbox), full notice text as raw source; no statewide parcel service → Maps links only |
 | `scraper/ky_publicnotice.py` | **RETIRED 2026-11-17** (all 5 KY counties outside the radius) — kypublicnotice.com (Newz Group CodeIgniter app, NOT WebForms: POST search + hidden `page` pagination), full newspaper-page PDF text as raw source, Master-Commissioner anchor-window extraction; Maps links only. Module kept, unregistered in `run.py` |
-| `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties; `street_only`/`has_house_number` address prep, `search_owner_parcels_in_nc1map` multi-parcel tracts |
+| `scraper/nc_gis_lookup.py` | NC OneMap parcel lookup — statewide service for all 100 NC counties; `street_only`/`has_house_number` address prep, `search_owner_parcels_in_nc1map` multi-parcel tracts, `_like_patterns` (case-folded + padded-spacing LIKE ladder), `enrich_properties(backlog=N)` retries the older NC backlog |
+| `scraper/ga_gis_enrich.py` | GA acreage enrichment — drives each county's own qPublic parcel/address SEARCH through camoufox (no guessed `KeyValue`), verifies the record it returns, settles "county publishes no acreage" as `acres_source='qpublic_none'`, discovers and caches search pages in `scraper/ga_qpublic_apps.json` |
+| `scraper/ga_qpublic_apps.json` | Runtime registry: each GA county's discovered qPublic search page (`AppID`/`LayerID`/`PageID`), `found: false` for counties with none |
+| `scraper/street_canon.py` | Shared street-word canonicalization (MTN/MOUNTAIN, DRIVE/DR …) used by the NC, TN, Knox and GA enrichers |
 | `scraper/elevation.py` | Per-parcel ground elevation from USGS 3DEP (key-free) — fills `elevation_ft`, archives below `MIN_ELEVATION` |
 | `scraper/forest_adjacency.py` | Forest adjacency — description screening + client-side polygon gap to NC OneMap public parcels >200 ac (strict Intersects is unusable here, see below) |
 | `scraper/forest_report.py` | Forest-adjacency report CLI — Zillow NC sweep (≥2 ac, ≤$300k), 3DEP elevation, adjacency verdicts, `reports/forest_adjacency.md` |
@@ -225,7 +228,7 @@ A broader reference set `GA_FORECLOSURE_COUNTIES` (11) is also defined: `dawson,
 - **SC** (4): `anderson, greenville, oconee, pickens`
 - **TN** (35): mountain counties only (see `TN_FORECLOSURE_COUNTIES`)
 
-**GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources). `ga_publicnotice` acreage is enriched per-county from qPublic parcel reports via camoufox page loads (`scraper/ga_gis_enrich.py`, auto-run after each GA scrape); plain HTTP gets Cloudflare-403 so reports are browser-only. Rabun Sky Valley lots report Acres 0 at source and keep `acres=NULL`.
+**GA note**: Georgia has no statewide parcel data hub (data-hub.gio.georgia.gov returns 0 sources). Acreage for both GA sources is enriched from **each county's own qPublic search** in the camoufox browser (`scraper/ga_gis_enrich.py`, auto-run after each GA scrape); plain HTTP gets Cloudflare-403, so this is browser-only. The county's form returns the record **and** its own `KeyValue`, so no deep-link spelling is guessed (the old guessed `KeyValue` silently matched nothing — see 2026-11-22 under Recent Updates). Counties whose record publishes `Acres 0` (Rabun Sky Valley lots, Barrow platted lots) keep `acres=NULL` and are marked `acres_source='qpublic_none'` so the queue stops re-running them. See **`ga_county_summary.md`** for the form contract and per-county search pages.
 
 ## Dashboard Boards, Tabs and Filters
 
@@ -326,6 +329,20 @@ acres, ≤ $300,000**, measure ground at each listing's **resolved parcel
 centroid** (USGS 3DEP), and keep listings adjacent to public land over **200
 acres** — listing-description evidence first, GIS neighbour test second.
 
+- **A subject polygon must be acreage-plausible or it is not used.** The
+  address and pin paths happily return a neighbour's lot (live QA: a 10.66 ac
+  listing bound to a 4.53 ac parcel; a 2.0 ac listing to the 214,157 ac Great
+  Smoky polygon; a 3.02 ac new lot to the 813 ac parent parcel it was carved
+  from). `resolve_subject_parcel()` accepts a polygon only when its `gisacres`
+  is within **40%** of the listing's acreage (unknown acreage skips the gate),
+  tries the ownership group first when a tract spans several tax parcels
+  (`search_owner_parcels_in_nc1map`, **±12%** on the group total, geometry
+  required for every parcel or the merge is abandoned), and otherwise falls
+  back to **`point-only`**: the Zillow pin is measured, the rejected polygons
+  are recorded in `acreage_mismatch`, and **no GIS adjacency is claimed** —
+  the row appears under “Pin-only proximity”, never in the count.  A wrong
+  polygon can therefore never credit a listing with a neighbour's forest line,
+  and a pin (a geocode, not a boundary) can never create a claim either.
 - **Owner strings measured in NC OneMap** (`ownname`, layer 1): `USDA FOREST
   SERVICE`, `US FOREST SERVICE`, `USFS`, `UNITED STATES OF AMERICA` / `THE
   UNITED STATES OF AMERICA` / `UNITED STATES OF AMERICIA` (typo in the rolls),
@@ -354,7 +371,14 @@ acres** — listing-description evidence first, GIS neighbour test second.
 - **Description screening is sentence-scoped**: a forest name must share its
   sentence with adjacency wording ("borders", "adjoins", "abuts", "inholding",
   "bounded by"); distance marketing ("10 minutes from Pisgah"), denials and
-  bare mentions are recorded as *mentions*, never adjacency.
+  bare mentions are recorded as *mentions*, never adjacency.  `U.S.`/`N.C.`
+  are protected from the sentence splitter (splitting on the abbreviation's
+  full stop threw away "bordered … by U.S. Forest Service"), strong boundary
+  verbs count alone while marketing forms ("direct access to", "surrounded
+  by", "gateway to") must be followed by the forest within ~70 chars, and
+  scenery whose subject is the lake / region / subdivision ("much of it
+  surrounded by national forest", "a small gated community surrounded by
+  national forest") is vetoed — that copy says nothing about the parcel.
 - **Scope is the resolved county, not the searched one.** Zillow's county
   search leaks neighbours and `geo_lookup` re-hangs some rows on Rutherford or
   Cleveland (both outside the pruned 15), so `_in_scope()` drops anything whose
@@ -534,6 +558,8 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_RADIUS_MILES` | `180.0` | Distance filter from the origin address, statute miles; `0` disables |
 | `INVESTCLOSURE_ORIGIN_LAT` | `33.989302009439` | Origin latitude — 1690 Little Willeo Rd, Marietta GA 30068 |
 | `INVESTCLOSURE_ORIGIN_LON` | `-84.401895017854` | Origin longitude (same address) |
+| `INVESTCLOSURE_NC_ENRICH_BACKLOG` | `25` | Older active NC rows (no acres/links) the post-run OneMap pass retries, oldest first; `0` disables |
+| `INVESTCLOSURE_GA_ENRICH_LIMIT` | `15` | GA rows one qPublic enrichment pass attempts (~20-30 s per row in camoufox) |
 | `INVESTCLOSURE_RENT_RADIUS_MILES` | `100.0` | Rentals vertical: distance from downtown Atlanta, statute miles; `0` disables |
 | `INVESTCLOSURE_RENT_ORIGIN_LAT` / `_LON` | `33.7540` / `-84.3905` | Rentals origin — downtown Atlanta (Five Points) |
 | `INVESTCLOSURE_RENT_TARGET_MIN_RENT` / `_MAX_RENT` | `800` / `1200` | Zip screen: small-home market rent band, $/month |
@@ -544,6 +570,130 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `NCONEMAP_TLS_STRICT` | *(unset)* | Set `1` to refuse the unverified NC OneMap fallback while their cert is expired |
 
 ## Recent Updates
+
+- **2026-11-22 (both acreage enrichers were silently doing nothing)**: GA and NC
+  rows kept `acres=NULL` for two different invisible failures. Both were
+  measured live first, then fixed, then re-run against the real counties.
+  - **GA — the enricher had never filled a single row.** `acres_source` was
+    NULL on **all 673 GA rows**. `ga_gis_enrich` deep-linked each county's
+    parcel report with a **guessed** `KeyValue` spelling (`space_at` /
+    `space_count` in `gis_urls.GA_QPUBLIC_APPS`), and a wrong guess is not an
+    error: qPublic answers its own app chrome ("No Global Search Results"),
+    which carries no "Acres" label, so every county looked quietly empty.
+    Lumpkin's `059-029` was being requested as `KeyValue=059++++-029` (the dash
+    survived); the app's real key is `059++++029`.
+  - **Rewritten to search through the county's own form**, which returns both
+    the record and the key the app itself uses. Measured contract — every step
+    was reproduced as a failure first (full recipe in `ga_county_summary.md`
+    §Acreage enrichment): find the `PageTypeID=2` page whose form exposes
+    `txtParcelID` (the link label varies — Barrow "Search", Gilmer "Real
+    Property Search", Lumpkin "Property Search"); assign the value **from
+    inside `page.evaluate`**, because `page.fill()` dispatches the input events
+    the app's typeahead answers by *clearing the field* and the search then
+    posts an empty value ("500 Results (Maximum)"); click that same pane's
+    `btnSearch` with `el.click()` (`page.click()` times out on Playwright's
+    actionability checks behind an overlay); a **unique** hit lands straight on
+    the record (`PageTypeID=4`), a **non-unique** one on the list
+    (`PageTypeID=3`) whose rows carry the app's own `KeyValue`.
+  - **Verify before writing**: the record's `Parcel Number` (letters+digits
+    only) or `Location Address` (house number + canonical street words) must
+    equal the property asked for. Lumpkin's *map* page printed an "Acres" value
+    belonging to no parcel, so acreage is read from two-cell label/value rows
+    only — the improvement table under the record repeats "Acres" as a **column
+    header**, and a body-wide regex found it.
+  - **Discovery replaces the hand-verified registry.** Each county's search
+    page is found from its landing page and cached in
+    `scraper/ga_qpublic_apps.json` (`found: false` when a county publishes no
+    parcel search at all). Counties cached `found: false` are excluded
+    **before** the row budget is taken — 94 unanswerable rentals rows were
+    filling the whole `LIMIT` window every run and starving the 7 that had
+    answers.
+  - **Discovery answers, it does not guess.** `discover_county` has THREE
+    outcomes — found, ``{"found": false}`` (the county's pages rendered and
+    none is a parcel/address search), and `None` (the landing failed, linked no
+    app pages, or no candidate rendered) — and **only the first two are cached**.
+    Caching a browser bad minute as "this county has no parcel search" would
+    take a county off the queue silently forever. A county is asked at most once
+    per pass, and `app_landing_url` keeps the app's own capitalisation
+    (`App=DeKalbCountyGA`, `App=McIntoshCountyGA`; lowercase answers an error
+    page). Live discovery: Barrow 635/11218/4614, Gilmer 672/11357/4736, White
+    982/19945/8692, Fannin 714/11449/5402.
+  - **`acres_source='qpublic_none'`** settles a record that publishes
+    `Acres 0` (Barrow's platted subdivision lots, Rabun's Sky Valley lots):
+    NULL acreage is the truth there, and the marker stops the queue re-paying a
+    browser session for the same answer each run. A record with **no** Acres
+    field at all is left open — a page that failed to render looks identical,
+    and a wrong verdict is worse than a retry.
+  - `street_canon` gained street **types** (DRIVE/DR, ROAD/RD, AVENUE/AVE, …).
+    NC abbreviates suffixes in its own normalize step and the module assumed
+    everyone did; GA does not, so the correct answer `37 LAFAYETTE DR` was
+    being **refused** for a listing written "37 Lafayette Drive".
+  - Live first passes: **10 filled** — White *32 Bear Ridge Rd* 5.0 ac and
+    Gilmer *37 Lafayette Drive* 0.89 ac through the **address** search (the
+    mountain notices print no PIN), plus Barrow rentals lots at 0.01–0.74 ac
+    (verified against the records: `WN20 382` really does read `Acres 0.15`,
+    `WN19E 066` really does read `0.01`) — **13 settled no-acres**, 99 rows left
+    in the queue. #5994 was reaped `below_min_acres (qpublic)` while its 0.34 ac
+    `ga_tax_rentals` twin stayed active: the rentals vertical is exempt, a small
+    town lot IS that product. One pass costs `config.GA_ENRICH_LIMIT` rows
+    (default 15, ~20-30 s each), so the post-run hook stays inside the scrape
+    window and the queue drains over runs.
+  - **NC — five separate reasons a OneMap hit was being lost:**
+    - `LIKE` is **case-sensitive** on the statewide service and the rolls store
+      situs addresses UPPER CASE, while `street_canon` hands back lowercase
+      abbreviations — so the last-resort tier had never matched anything. New
+      `_like_patterns()` upper-cases every pattern, builds a `%`-gap copy per
+      spelling variant (the rolls pad *and* abbreviate: `177   PIGEON CREEK
+      TRL`), and adds a house-anchored tier (`177%PIGEON%CREEK`) as the loosest
+      reachable form. #5658 Swain *177 Pigeon Creek Trail* → 3.06 ac.
+    - **Buncombe publishes `gisacres = 0.0` on every parcel** and keeps acreage
+      in `recareano`, which the address query never requested — a correct hit
+      was discarded by `_clean_features` (#6050, *81 Eastview Cir*, 0.46 ac).
+      Every `outFields` list now asks for it.
+    - `_parcel_variants()` re-spells a bare digit PIN with the dashes the
+      county keeps (10-digit → 4-2-4, 15-digit → 4-2-4-5): #6052 held
+      `7564515920` while Jackson stores `7564-51-5920`.
+    - `_nc1map_query()` **retries a failed request once at `max(timeout, 10)`**.
+      The service p50 is ~2.3 s but intermittently answers past the 5 s
+      timeout, and a transport error looked exactly like "no match" — it lost
+      the most specific pattern in the ladder. A service `error` payload is
+      still not retried, and an empty result is empty.
+    - **`enrich_properties(backlog=N)`**: the post-run pass is scoped to
+      `id > min_id`, so a lookup that failed before a fix landed stayed NULL
+      forever. `config.NC_ENRICH_BACKLOG` (env
+      `INVESTCLOSURE_NC_ENRICH_BACKLOG`, default 25 ≈ 10 s per lookup) drains
+      the oldest active NC rows without acres or links; `run.py` prints
+      "backlog retried". Scoped to NC-state rows — OneMap answers no other
+      state, and a TN row must not eat the budget.
+  - Live: six NC rows OneMap had held all along resolved — #5658 Swain 3.06 ac,
+    #6050 Buncombe 0.46 ac (`recareano`), #5531 Buncombe 0.46 ac (same parcel,
+    Zillow-spelled address), #6052 Jackson 0.88 ac, #6084 Macon 0.67 ac, #5657
+    Jackson 0.27 ac — four of them then reaped `below_min_acres`, which is the
+    same behaviour NC has always had. **What is left is honest**: 13 active
+    NULL-acre NC rows, 8 of which have neither an address nor a parcel (no GIS
+    answer exists) and two are the same *1384 Lake Emory Road* tract whose
+    Macon roll entry carries no situs address — the address search returned the
+    whole road and the house-number guard **rejected** every neighbour. A wrong
+    parcel's acreage would archive a good listing.
+  - **Repo bug found on the way:** `enrich_db` writes its discovered-app cache
+    to the volume-mounted `scraper/ga_qpublic_apps.json`, so the new unit
+    tests' canned `https://q/<county>` search URLs landed in the committed
+    registry. The fixtures now stub `save_apps`/`load_apps` and the poisoned
+    entries were removed — a test that writes repo runtime data is a defect
+    regardless of what it asserts.
+  - 55 new tests: `tests/test_ga_gis_enrich.py` (record field/acre parsing,
+    `KeyValue`-based row identity, address matching, the no-acres marker, the
+    LIMIT-starvation rule, rentals exemption, and that discovery only blacklists
+    a county on evidence) and `tests/test_nc_enrich_patterns.py` (LIKE casing /
+    gap / anchored tiers, `recareano` acceptance, retry-vs-service-error,
+    backlog scope, order and bound), plus suffix matching in
+    `test_tax_mtg_tabs.py`. Full suite **1,098 pass, 8 skipped**.
+  - **Open**: the GA queue still holds 99 active NULL-acre rows (Bibb 33,
+    Barrow 33, Gwinnett 16 — those counties publish acreage, the enricher simply
+    has not reached them) and drains 15 per pass; `ga_publicnotice` writes a PIN
+    into the `address` column for some Fannin rows
+    (`address='Parcel 0016 012C'`), so those rows search by address with a PIN
+    string — a parser defect, not an enrichment one.
 
 - **2026-11-21 (Rentals vertical — GA tax sales near Atlanta, RentCast-screened)**:
   The second active product line: **inexpensive small homes bought at Georgia

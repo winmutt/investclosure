@@ -1294,11 +1294,23 @@ class TestStreetCanonShared:
 
     def test_pattern_variants_spelled_out_source(self):
         from scraper.street_canon import pattern_variants
+        # Street TYPES became variants on 2026-11-22 (GA's qPublic answers
+        # "37 LAFAYETTE DR" for a listing written "37 Lafayette Drive"), so a
+        # suffixed source is no longer variant-free.
         vs = pattern_variants("915 MAPLEWOOD AVE", limit=5)
-        # no variants for any token -> only the original
-        assert vs == ["915 MAPLEWOOD AVE"]
+        assert vs[0] == "915 MAPLEWOOD AVE"
+        assert "915 MAPLEWOOD AVENUE" in vs
+        # A source with nothing to expand still yields only the original.
+        assert pattern_variants("915 SUGAR MAPLE", limit=5) == ["915 SUGAR MAPLE"]
         vs2 = pattern_variants("5 CREEK XING RD", limit=5)
         assert "5 CRK XING RD" in vs2 or "5 CREEK XING RD" == vs2[0]
+
+    def test_suffix_abbreviations_match_their_spelled_out_form(self):
+        from scraper.street_canon import tokens_match
+        assert tokens_match({"LAFAYETTE", "DRIVE"}, {"LAFAYETTE", "DR"})
+        assert tokens_match({"BEAR", "RIDGE", "RD"}, {"BEAR", "RIDGE", "ROAD"})
+        # "RD" (road) must not collapse into "RDG" (ridge).
+        assert not tokens_match({"BEAR", "RD"}, {"BEAR", "RDGE"})
 
     def test_tokens_match_canonical(self):
         from scraper.street_canon import tokens_match

@@ -385,11 +385,16 @@ class TestResolveSubjectParcel:
     def test_pin_in_a_road_gap_never_borrows_a_neighbours_polygon(
             self, monkeypatch):
         # 3 acres is not this 40-acre listing, so using that polygon would
-        # attribute the neighbour's forest line to the listing.
+        # attribute the neighbour's forest line to the listing.  The pin is
+        # still a location, so the GIS test may measure from it — but the
+        # rejected polygon must be recorded, never used.
         self._patch(monkeypatch,
                     [self._hit_feature("NEIGHBOUR", 3.0, -83.002, 34.999)])
-        assert fa.resolve_subject_parcel(35.01, -83.001, county="Jackson",
-                                         expected_acres=40.0) is None
+        got = fa.resolve_subject_parcel(35.01, -83.001, county="Jackson",
+                                        expected_acres=40.0)
+        assert got["method"] == "point-only"
+        assert got["rings"] is None
+        assert got["acreage_mismatch"][0]["parno"] == "NEIGHBOUR"
 
     def test_pin_in_a_road_gap_with_matching_acres_is_point_near(
             self, monkeypatch):
@@ -400,14 +405,104 @@ class TestResolveSubjectParcel:
         assert got["parno"] == "OWN"
         assert got["method"] == "point-near"
 
+    def test_inside_a_public_polygon_far_too_big_is_point_only(
+            self, monkeypatch):
+        # Live QA: a 2.0 ac listing's pin sat inside the 214,157 ac Great
+        # Smoky polygon, and that polygon became the "subject".
+        self._patch(monkeypatch,
+                    [self._hit_feature("GSMP", 214_157.0, -83.5, 35.4)])
+        got = fa.resolve_subject_parcel(35.4, -83.5, county="Swain",
+                                        expected_acres=2.0)
+        assert got["method"] == "point-only"
+        assert got["rings"] is None
+
+    def test_address_hit_with_wrong_acreage_is_not_used(self, monkeypatch):
+        # Live QA: a 10.66 ac listing resolved through its address to a
+        # 4.53 ac parcel (a different owner's lot on the same road).
+        feats = [self._hit_feature("WRONG", 4.53, -83.002, 34.999)]
+        monkeypatch.setattr("scraper.nc_gis_lookup._nc1map_query",
+                            lambda *a, **k: feats)
+        monkeypatch.setattr(
+            "scraper.nc_gis_lookup.search_address_in_nc1map",
+            lambda *a, **k: {"parno": "WRONG"})
+        got = fa.resolve_subject_parcel(35.0, -83.0, address="3215 Grape Crk",
+                                        county="Cherokee",
+                                        expected_acres=10.66)
+        assert got["method"] == "point-only"
+        assert any(r["parno"] == "WRONG" for r in got["acreage_mismatch"])
+
+    def test_address_hit_with_matching_acreage_is_used(self, monkeypatch):
+        feats = [self._hit_feature("RIGHT", 10.5, -83.002, 34.999)]
+        monkeypatch.setattr("scraper.nc_gis_lookup._nc1map_query",
+                            lambda *a, **k: feats)
+        monkeypatch.setattr(
+            "scraper.nc_gis_lookup.search_owner_parcels_in_nc1map",
+            lambda *a, **k: None)
+        monkeypatch.setattr(
+            "scraper.nc_gis_lookup.search_address_in_nc1map",
+            lambda *a, **k: {"parno": "RIGHT"})
+        got = fa.resolve_subject_parcel(None, None, address="3215 Grape Crk",
+                                        county="Cherokee",
+                                        expected_acres=10.66)
+        assert got["parno"] == "RIGHT"
+        assert got["method"] == "address"
+
+    def test_multi_parcel_tract_is_merged_by_ownership_group(
+            self, monkeypatch):
+        # 26.02 ac listing = 23.0 ac + 3.02 ac, same owner (the #2739 case):
+        # both polygons make up the subject, so the forest line is measured
+        # against the whole tract.
+        geoms = {"111": self._hit_feature("111", 23.0, -83.002, 34.999),
+                 "222": self._hit_feature("222", 3.02, -83.010, 34.995)}
+        monkeypatch.setattr(
+            "scraper.nc_gis_lookup._nc1map_query",
+            lambda params, **k: (
+                [geoms[params["where"].split("'")[1]]]
+                if params.get("where", "").startswith("parno=") else []))
+        monkeypatch.setattr(
+            "scraper.nc_gis_lookup.search_owner_parcels_in_nc1map",
+            lambda *a, **k: {"parno": "111", "acres": 26.02,
+                             "parcels": [{"parno": "111", "acres": 23.0},
+                                         {"parno": "222", "acres": 3.02}]})
+        got = fa.resolve_subject_parcel(35.01, -83.03, address="0 Leon Barron",
+                                        county="Jackson",
+                                        expected_acres=26.02)
+        assert got["method"] == "parcel-group"
+        assert got["acres"] == 26.02
+        assert len(got["rings"]) == 2
+        assert [p["parno"] for p in got["parcels"]] == ["111", "222"]
+
     def test_no_coordinates_and_no_parcel_returns_none(self):
         assert fa.resolve_subject_parcel(None, None,
                                          county="Jackson") is None
 
 
+class TestSubjectPlausibility:
+    def test_point_only_is_plausible(self):
+        # No polygon, so nothing about it can belong to a neighbour.
+        assert fa.subject_is_plausible({"method": "point-only"}, 5.0)
+
+    def test_missing_subject_is_not(self):
+        assert not fa.subject_is_plausible(None, 5.0)
+
+    def test_a_grossly_wrong_polygon_is_not(self):
+        # Live QA: 2.0 ac listing bound to the 214,157 ac Great Smoky polygon.
+        assert not fa.subject_is_plausible(
+            {"method": "point", "acres": 214_157.0}, 2.0)
+
+    def test_a_matching_polygon_is(self):
+        assert fa.subject_is_plausible({"method": "address",
+                                        "acres": 10.5}, 10.66)
+
+    def test_an_unknown_method_is_not(self):
+        assert not fa.subject_is_plausible({"method": "guess", "acres": 5.0},
+                                           5.0)
+
+
 class TestAdjacencyTodo:
-    def _cand(self, zpid):
-        return {"id": zpid, "county": "Jackson", "state": "NC"}
+    def _cand(self, zpid, acres=None):
+        return {"id": zpid, "county": "Jackson", "state": "NC",
+                "acres": acres}
 
     def test_unjudged_candidates_are_pending(self):
         got = fr.adjacency_todo([self._cand(1)], {}, {})
@@ -415,7 +510,7 @@ class TestAdjacencyTodo:
 
     def test_judged_candidate_is_skipped_when_description_is_unchanged(self):
         details = {1: {"description": "abc"}}
-        done = {1: {"verdict": "no", "desc_len": 3}}
+        done = {1: {"verdict": "no", "desc_len": 3, "subject_method": "none"}}
         assert fr.adjacency_todo([self._cand(1)], details, done) == []
 
     def test_verdict_recorded_before_the_description_is_rejudged(self):
@@ -428,6 +523,28 @@ class TestAdjacencyTodo:
         details = {1: {"description": "abc"}}
         done = {1: {"verdict": "no"}}
         assert len(fr.adjacency_todo([self._cand(1)], details, done)) == 1
+
+    def test_legacy_verdict_with_implausible_subject_is_rejudged(self):
+        # Checkpoints written before the acreage guard bound a 2 ac listing
+        # to the 214,157 ac Great Smoky polygon.
+        details = {1: {"description": "abc"}}
+        done = {1: {"verdict": "adjacent", "desc_len": 3,
+                    "subject": {"method": "point", "acres": 214_157.0}}}
+        assert len(fr.adjacency_todo([self._cand(1, acres=2.0)],
+                                     details, done)) == 1
+
+    def test_legacy_verdict_with_plausible_subject_is_kept(self):
+        details = {1: {"description": "abc"}}
+        done = {1: {"verdict": "adjacent", "desc_len": 3,
+                    "subject": {"method": "address", "acres": 10.5}}}
+        assert fr.adjacency_todo([self._cand(1, acres=10.66)],
+                                 details, done) == []
+
+    def test_current_point_only_verdict_is_stable(self):
+        details = {1: {"description": "abc"}}
+        done = {1: {"verdict": "no", "desc_len": 3, "subject_method":
+                    "point-only", "subject": {"method": "point-only"}}}
+        assert fr.adjacency_todo([self._cand(1)], details, done) == []
 
 
 class TestAdjacencyGuard:
@@ -449,6 +566,89 @@ class TestAdjacencyGuard:
 
         with pytest.raises(RuntimeError):
             fr.stage_adjacency(Args())
+
+
+class TestGisAdjacencyNeedsAParcel:
+    def _why(self, verdict=None):
+        return fa.DescriptionEvidence(verdict=verdict)
+
+    def test_a_polygon_subject_makes_the_gis_claim(self):
+        verdict, source, withheld = fr.judge_verdict(
+            self._why(), {"gap_ft": 12.0},
+            {"method": "point", "acres": 5.0}, 150.0)
+        assert (verdict, source, withheld) == ("adjacent", "gis", False)
+
+    def test_a_pin_only_subject_cannot_make_the_gis_claim(self):
+        # Live QA: the pin sat 9 ft from the Great Smoky polygon, but the
+        # roll had no acreage-plausible parcel for this listing.
+        verdict, source, withheld = fr.judge_verdict(
+            self._why(), {"gap_ft": 9.0},
+            {"method": "point-only", "acres": None}, 150.0)
+        assert (verdict, source, withheld) == ("no", None, True)
+
+    def test_an_unresolved_subject_cannot_make_the_gis_claim(self):
+        verdict, source, withheld = fr.judge_verdict(
+            self._why(), {"gap_ft": 0.0}, None, 150.0)
+        assert (verdict, source, withheld) == ("no", None, True)
+
+    def test_a_description_claim_needs_no_polygon(self):
+        verdict, source, withheld = fr.judge_verdict(
+            self._why("adjacent"), None, None, 150.0)
+        assert (verdict, source, withheld) == ("adjacent", "description", False)
+
+    def test_outside_the_tolerance_is_no(self):
+        verdict, source, withheld = fr.judge_verdict(
+            self._why(), {"gap_ft": 400.0},
+            {"method": "point", "acres": 5.0}, 150.0)
+        assert (verdict, source, withheld) == ("no", None, False)
+
+    def test_a_mention_is_recorded_when_nothing_is_close(self):
+        verdict, source, withheld = fr.judge_verdict(
+            self._why("mention"), None, None, 150.0)
+        assert (verdict, source, withheld) == ("mention", None, False)
+
+
+class TestPostingDedupe:
+    def _row(self, address=None, acres=2.0, price=100_000, parno=None,
+             county="Cherokee"):
+        return {"address": address, "acres": acres, "price": price,
+                "county": county, "subject": {"parno": parno} if parno else None}
+
+    def test_the_same_parcel_reposted_under_a_new_zpid_collapses(self):
+        rows = [self._row("247 Rice Ln, Marble, NC 28905", 2.01, 80_000,
+                          parno="553300294609000"),
+                self._row("247 Rice Lane LOT 4, Murphy, NC 28906", 2.01, 80_000,
+                          parno="553300294609000")]
+        kept, dropped = fr.dedupe_adjacent(rows)
+        assert dropped == 1
+        assert kept[0]["address"].startswith("247 Rice Ln")
+
+    def test_two_different_parcels_on_one_street_stay(self):
+        rows = [self._row("10 Roaming Deer Rd", 2.94, 39_900, parno="A"),
+                self._row("12 Roaming Deer Rd", 2.94, 39_900, parno="B")]
+        kept, dropped = fr.dedupe_adjacent(rows)
+        assert dropped == 0 and len(kept) == 2
+
+    def test_one_parcel_with_a_different_price_stays(self):
+        rows = [self._row("1 Ridge Rd", 5.0, 100_000, parno="A"),
+                self._row("1 Ridge Rd", 5.0, 120_000, parno="A")]
+        kept, dropped = fr.dedupe_adjacent(rows)
+        assert dropped == 0 and len(kept) == 2
+
+    def test_without_a_parcel_the_street_suffix_is_normalised(self):
+        a = self._row("247 Rice Ln, Marble, NC 28905")
+        b = self._row("247 Rice Lane LOT 4, Murphy, NC 28906")
+        assert fr.posting_key(a) == fr.posting_key(b)
+        kept, dropped = fr.dedupe_adjacent([a, b])
+        assert dropped == 1
+
+    def test_unknown_acres_do_not_collide_on_street_alone(self):
+        a = self._row("9 Creek Rd", None, 50_000)
+        b = self._row("9 Creek Rd", None, 50_000)
+        # Same street, same price, two postings with no acreage → a duplicate
+        # is still the honest reading (0 == 0 acres).
+        kept, dropped = fr.dedupe_adjacent([a, b])
+        assert dropped == 1
 
 
 class TestNearMisses:
@@ -498,3 +698,13 @@ class TestFormatting:
         text = fr._evidence(row)
         assert text.startswith("“")
         assert "borders Pisgah" in text
+
+    @pytest.mark.parametrize("kind,expected", [
+        ("federal_forest", "national forest (unnamed in listing)"),
+        ("federal_park", "national park (unnamed in listing)"),
+        ("state", "state land (unnamed in listing)"),
+        ("county", "county forest (unnamed in listing)"),
+        (None, "public land (unnamed in listing)"),
+    ])
+    def test_kind_label_never_invents_an_owner(self, kind, expected):
+        assert fr._kind_label(kind) == expected

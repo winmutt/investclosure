@@ -390,15 +390,19 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     # Log scrape run completion
     _end_logging(conn, run_id, len(properties), new_count, dup_count, "completed")
 
-    # Auto-enrich newly-found properties with NC OneMap GIS data
+    # Auto-enrich newly-found properties with NC OneMap GIS data, plus a
+    # bounded slice of the older NC backlog (a row whose lookup failed before
+    # a fix landed would otherwise stay NULL forever).
     try:
         from scraper.nc_gis_lookup import enrich_properties
         enrich_result = enrich_properties(source=scraper_name,
-                                          min_id=before_max_id)
+                                          min_id=before_max_id,
+                                          backlog=config.NC_ENRICH_BACKLOG)
         if isinstance(enrich_result, dict):
             print(f"  Enriched: {enrich_result.get('enriched', 0)}, "
                   f"skipped(no parcel): {enrich_result.get('skipped_no_parcel', 0)}, "
-                  f"failed: {enrich_result.get('failed', 0)}")
+                  f"failed: {enrich_result.get('failed', 0)}, "
+                  f"backlog retried: {enrich_result.get('backlog', 0)}")
     except Exception as e:
         logger.error("Auto-enrich failed: %s", e, exc_info=True)
         try:
@@ -439,9 +443,10 @@ def run_scraper(conn: sqlite3.Connection, scraper_name: str, scraper_class,
     if scraper_name in ("ga_publicnotice", "ga_tax_rentals"):
         try:
             from scraper.ga_gis_enrich import enrich_db as enrich_ga_acres
-            ga_result = enrich_ga_acres()
+            ga_result = enrich_ga_acres(limit=config.GA_ENRICH_LIMIT)
             print(f"  GA qPublic acres: {ga_result.get('updated', 0)} filled, "
-                  f"{ga_result.get('zero_or_missing', 0)} zero/missing, "
+                  f"{ga_result.get('no_acres_published', 0)} publish no acreage, "
+                  f"{ga_result.get('unmatched', 0)} unmatched, "
                   f"{ga_result.get('skipped_no_app', 0)} no-app, "
                   f"{ga_result.get('failed', 0)} failed")
         except Exception as e:

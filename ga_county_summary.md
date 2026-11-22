@@ -1,10 +1,11 @@
 # GA County Property Record Card / Tax Lookup Systems
 
 > Scope: the 7 N GA mountain counties tracked by the `ga_publicnotice` scraper
-> (`fannin, gilmer, lumpkin, rabun, towns, union, white`). GA has **no
+> (`fannin, gilmer, lumpkin, rabun, towns, union, white`) plus the rentals
+> counties `ga_tax_rentals` walks (Barrow, Bibb, Gwinnett, …). GA has **no
 > statewide parcel/GIS hub** (data-hub.gio.georgia.gov returns 0 sources), so
-> there is no automated GIS *enrichment* for GA — the `gis_url` field for GA
-> properties is a clickable **qPublic (Schneider Corp) parcel link** only.
+> acreage comes from **each county's own qPublic search** —
+> `scraper/ga_gis_enrich.py` (2026-11-22, see "Acreage enrichment" below).
 >
 > GA tax sales are statutorily held on the **first Tuesday** of the month, and
 > GA has **no upset-bid period**.
@@ -20,7 +21,72 @@
   we intentionally **omit `Q`** and use the `KeyValue`-only link (returns 200).
 - **Fallback for unknown counties:** `App=<County>CountyGA&Layer=Parcels&PageType=Search`
   (generic parcel search landing — no direct parcel deep link).
-- Registry lives in `scraper/gis_urls.py` → `GA_QPUBLIC_APPS`.
+- Registry for the **static** deep links lives in `scraper/gis_urls.py` →
+  `GA_QPUBLIC_APPS`; the **discovered** search pages live in
+  `scraper/ga_qpublic_apps.json` (runtime data, written by the enricher).
+
+## Acreage enrichment (2026-11-22 — how a parcel is actually answered)
+
+The enricher used to deep-link a report page with a **guessed** `KeyValue`
+spelling per county (`space_at` / `space_count`). A wrong guess is invisible —
+the app answers its own chrome ("No Global Search Results"), which contains no
+"Acres" label, so the row was simply reported as unanswered. Measured before
+the fix: `acres_source` was NULL on **all 673 GA rows** — zero had ever been
+filled. Lumpkin `059-029` had been requested as `KeyValue=059++++-029`
+(the dash survived); the app's real key is `059++++029`.
+
+So acreage is now obtained **through the county's own search form**, which
+returns the key the app itself uses. Verified live recipe (all four steps
+needed — each failure mode was reproduced):
+
+1. **Find the search page:** `Application.aspx?App=<County>CountyGA` links its
+   `PageTypeID=2` pages; the one whose form contains
+   `ctlBodyPane_ctlNN_ctl01_txtParcelID` is the parcel search (the link label
+   varies: Barrow "Search", Gilmer "Real Property Search", Lumpkin "Property
+   Search"). Discovered and cached in `scraper/ga_qpublic_apps.json`.
+2. **Fill it silently:** `page.fill()` dispatches the input events that the
+   app's typeahead answers by **clearing the field** — the search then posts an
+   empty value and returns "500 Results (Maximum)". Assign `el.value` from
+   inside `page.evaluate` and submit.
+3. **Click the SAME pane's button** (`ctlBodyPane_ctlNN_ctl01_btnSearch`) with
+   `el.click()`; `page.click()` times out on Playwright's actionability checks
+   because an overlay covers it. A **unique** hit lands straight on the record
+   (`PageTypeID=4`); a **non-unique** one lands on the list (`PageTypeID=3`)
+   whose rows carry the app's own `KeyValue` — follow that link.
+4. **Verify before writing:** the record's `Parcel Number` (or
+   `Location Address`) must equal the property asked for. Lumpkin's *map* page
+   (PageID 8779) printed an "Acres" value that belonged to no parcel — read the
+   two-cell label/value rows, never a body-wide regex (the improvement table
+   below the record repeats "Acres" as a column header).
+
+| County | AppID | LayerID | Parcel-search PageID | Verified |
+|---|---|---|---|---|
+| Barrow | 635 | 11218 | 4614 | 2026-11-22 (record `AU02B++006`) |
+| Bibb | 702 | 11410 | 4866 | 2026-11-22 (form contract) |
+| Fannin | 714 | 11449 | 5402 | 2026-11-22 (discovered by the enricher) |
+| Gilmer | 672 | 11357 | 4736 | 2026-11-22 (record `3051K++001`) |
+| Lumpkin | 991 | 20168 | 8780 | 2026-11-22 (record `059++++029`, Acres 0.7) |
+| Union | 773 | 11809 | 5644 | 2026-11-22 (record `056C+++074+A`, Acres 1.22) |
+| White | 982 | 19945 | 8692 | 2026-11-22 (address search, Acres 5.0 → #5844) |
+
+- **Discovery has three outcomes and only two are cached:** the search page was
+  found; the county's pages rendered and none is a parcel/address search
+  (`found: false`, cached, and its rows stop occupying the queue); or discovery
+  **could not answer** (landing failed, linked no app pages, or no candidate
+  rendered) — never cached, because a browser bad minute must not blacklist a
+  county forever. A county is discovered at most once per pass.
+- **The `App=` slug keeps the county's own capitalisation:** `App=DeKalbCountyGA`
+  and `App=McIntoshCountyGA` (`app_landing_url`); lowercase answers an error page.
+
+- **Platted lots publish no acreage:** Barrow returns `Acres 0` for its
+  subdivision lots (as Rabun does for Sky Valley). That is the truth, so the
+  row is settled with `acres_source='qpublic_none'` and stops occupying the
+  queue; a record with **no** Acres field at all is left open (a page that
+  failed to render looks identical, and a wrong verdict is worse than a retry).
+- **Address search exists on the same form** (`..._txtAddress`), which matters
+  because the mountain notices print no PIN: 32 Bear Ridge Rd (White) and
+  37 Lafayette Drive (Gilmer) were answered that way on the first live run.
+
 
 ---
 

@@ -68,32 +68,42 @@ def _nc1map_query(post_data: dict, timeout: int = 15) -> Optional[list[dict]]:
     Geometry is always requested (EPSG:4326) so callers can compute a
     parcel centroid for map centering even if a caller only set
     ``returnGeometry`` to "false".
+
+    A transport failure is retried once with a longer timeout. The service
+    answers a typical query in 2-3 s but regularly takes longer, and every
+    caller treats ``None`` as "this pattern found nothing" and moves to the
+    next one — so one slow response silently throws away the MOST specific
+    LIKE pattern of an address search (measured live: the first query of both
+    a Buncombe and a Swain lookup came back ``None`` at timeout=5). An empty
+    result stays empty; only a failed request is retried.
     """
     data = dict(post_data)
     data["returnGeometry"] = "true"
     data["outSR"] = "4326"
-    try:
-        # nconemap_net falls back to an unverified connection while the state's
-        # TLS certificate is expired (2026-11-05) instead of silently losing
-        # every parcel/acreage lookup.
-        from scraper import nconemap_net
-        resp = nconemap_net.post(
-            NC_ONEMAP_URL,
-            data=data,
-            timeout=timeout,
-        )
-        if resp.status_code != 200:
-            logger.debug("NC1Map HTTP %d", resp.status_code)
-            return None
-        data = resp.json()
-        if data.get("error"):
-            logger.debug("NC1Map error: %s", data["error"])
-            return None
-        feats = data.get("features", [])
-        return [f for f in feats if f.get("attributes")] if feats else []
-    except Exception as e:
-        logger.debug("NC1Map query failed: %s", e)
-        return None
+    # nconemap_net falls back to an unverified connection while the state's
+    # TLS certificate is expired (2026-11-05) instead of silently losing
+    # every parcel/acreage lookup.
+    from scraper import nconemap_net
+
+    for attempt, budget in enumerate((timeout, max(int(timeout), 10))):
+        try:
+            resp = nconemap_net.post(
+                NC_ONEMAP_URL,
+                data=data,
+                timeout=budget,
+            )
+            if resp.status_code != 200:
+                logger.debug("NC1Map HTTP %d", resp.status_code)
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            payload = resp.json()
+            if payload.get("error"):
+                logger.debug("NC1Map error: %s", payload["error"])
+                return None
+            feats = payload.get("features", [])
+            return [f for f in feats if f.get("attributes")] if feats else []
+        except Exception as e:  # noqa: BLE001 - transient, retried once
+            logger.debug("NC1Map query failed (attempt %d): %s", attempt + 1, e)
+    return None
 
 
 # ---------------------------------------------------------------
@@ -387,6 +397,19 @@ def _parcel_variants(parcel: str) -> list[str]:
             trailing = digits + "00000"
             if trailing not in variants:
                 variants.append(trailing)
+    # The mirror image: a PIN stored WITHOUT the dashes its county roll keeps.
+    # Jackson holds '7564-51-5920' in OneMap while the source page printed
+    # '7564515920' (#6052, acres NULL forever — de-dashing can never add the
+    # dashes back). Re-dash a bare digit string in the county spellings this
+    # table is known to use: 4-2-4 (Jackson) and 4-2-4-5 (Buncombe). Appended
+    # last, and every query stays county-filtered, so an exact-string match on
+    # a re-dashed PIN is still the parcel it names.
+    bare = re.fullmatch(r"\d+", cleaned) and cleaned
+    if bare and len(bare) in (10, 15):
+        dashed = (f"{bare[:4]}-{bare[4:6]}-{bare[6:]}" if len(bare) == 10
+                  else f"{bare[:4]}-{bare[4:6]}-{bare[6:10]}-{bare[10:]}")
+        if dashed not in variants:
+            variants.append(dashed)
     return variants
 
 
@@ -736,7 +759,8 @@ def _apply_parcel_data(rec: dict, parcel_data: dict, address: str, city: str, gi
 def enrich_properties(source: Optional[str] = None,
                       status: str = "active",
                       min_id: Optional[int] = None,
-                      ids: Optional[list] = None) -> dict:
+                      ids: Optional[list] = None,
+                      backlog: Optional[int] = None) -> dict:
     """Enrich properties in DB with GIS data.
 
     Queries NC OneMap for all properties that have a parcel_number but no GIS acres.
@@ -751,9 +775,13 @@ def enrich_properties(source: Optional[str] = None,
             rows (zillow after pagination) must not replay the whole
             backlog every run — pass the highest id from before the
             insert to enrich only this run's new rows.
+        backlog: Optional count of OLDER NC rows (id <= min_id) to retry in
+            the same pass, oldest first. Without it a failed lookup is
+            permanent even when the reason for the failure is later fixed.
 
     Returns:
-        dict with counts: enriched, skipped_no_parcel, skipped_already_gis, failed
+        dict with counts: enriched, skipped_no_parcel, skipped_already_gis,
+        failed, backlog
     """
     try:
         import sqlite3
@@ -794,6 +822,13 @@ def enrich_properties(source: Optional[str] = None,
     if status and status != "all":
         where += " AND status = ?"
         params.append(status)
+
+    # The backlog query needs the same filters WITHOUT the id window, so the
+    # scope is captured here and the window is appended separately.
+    base_where, base_params = where, list(params)
+    columns = ("id, source, county, parcel_number, address, city, state, "
+               "acres_source, gis_url, google_maps_url, acres")
+
     if min_id is not None:
         where += " AND id > ?"
         params.append(int(min_id))
@@ -805,16 +840,40 @@ def enrich_properties(source: Optional[str] = None,
         params.extend(id_list)
 
     # Get properties (with a parcel OR an address) that need GIS enrichment
-    rows = conn.execute(
-        f"SELECT id, source, county, parcel_number, address, city, state, acres_source, gis_url, google_maps_url, acres "
-        f"FROM properties WHERE {where}",
+    rows = list(conn.execute(
+        f"SELECT {columns} FROM properties WHERE {where}",
         params,
-    ).fetchall()
+    ).fetchall())
+
+    # Drain a slice of the older backlog too. A lookup that fails once used to
+    # be permanent: this hook is scoped to ``id > min_id`` (a 4,000-row run may
+    # not replay history), so a row that failed for a reason we later FIXED —
+    # a new PIN variant, a case-folded LIKE, a county that started publishing
+    # recareano — stayed NULL forever (#6084, #5657 resolved on a direct call
+    # while the auto pass left them alone). Oldest first, NC only (OneMap
+    # covers no other state), and bounded: a slow night of retries must not
+    # turn a scrape run into an all-day GIS crawl.
+    backlog_rows: list = []
+    if backlog and min_id is not None and not ids:
+        backlog_rows = list(conn.execute(
+            f"SELECT {columns} FROM properties WHERE {base_where}"
+            " AND id <= ?"
+            " AND (state IS NULL OR TRIM(state) = '' OR UPPER(state) = 'NC')"
+            " ORDER BY id ASC LIMIT ?",
+            base_params + [int(min_id), int(backlog)],
+        ).fetchall())
+        fresh_ids = {r[0] for r in rows}
+        backlog_rows = [r for r in backlog_rows if r[0] not in fresh_ids]
+        if backlog_rows:
+            logger.info("Retrying %s older NC row(s) that still need "
+                        "enrichment", len(backlog_rows))
+    rows.extend(backlog_rows)
 
     if not rows:
         logger.info("No properties need GIS enrichment")
         conn.close()
-        return {"enriched": 0, "url_updated": 0, "skipped_no_parcel": 0, "failed": 0}
+        return {"enriched": 0, "url_updated": 0, "skipped_no_parcel": 0,
+                "failed": 0, "backlog": len(backlog_rows)}
 
     enriched = 0
     url_updated = 0
@@ -963,6 +1022,7 @@ def enrich_properties(source: Optional[str] = None,
         "enriched": enriched,
         "url_updated": url_updated,
         "skipped_no_parcel": skipped_no_parcel,
+        "backlog": len(backlog_rows),
         "failed": failed,
     }
     logger.info(f"Enrichment complete: {enriched} gis-acres, {url_updated} url-only, "
@@ -1113,6 +1173,68 @@ def _gap_variant(pattern: str) -> Optional[str]:
     return "%".join(tokens)
 
 
+def _like_patterns(street: str, house_num: Optional[str] = None) -> list[str]:
+    """Ordered LIKE patterns for a street, most specific first.
+
+    Two measured properties of the NC OneMap situs field drive this:
+
+    * ``LIKE`` is CASE-SENSITIVE on that service — ``siteadd LIKE
+      '%pigeon%creek%'`` returns 0 rows while ``'%PIGEON%CREEK%'`` returns 3.
+      ``street_canon`` hands back lowercase abbreviations, so every pattern
+      built from it was dead code. Everything is upper-cased here.
+    * values are padded AND abbreviated at once ("177   PIGEON CREEK TRL"),
+      so the space-agnostic ``%``-join has to be built from EACH spelling
+      variant: the padded form of the un-abbreviated phrase still cannot
+      match a roll that abbreviates (row #5658, "177 Pigeon Creek Trail").
+
+    Priority (still bounded — the address fallback never searches deeper than
+    the first TWO street words):
+      1. house number + full pattern and each spelling variant, gap form
+         included (a gap form is a superset: ``%`` matches a single space too),
+      2. the same patterns unanchored,
+      3. house number + first street word,
+      4. canon-joined first TWO street words (wildcard between).
+    """
+    from .street_canon import canon_tokens, pattern_variants
+
+    street = " ".join((street or "").split()).upper()
+    patterns: list[str] = []
+
+    def add(pattern: Optional[str]) -> None:
+        # Upper-case, not as-written: the rolls store situs addresses in
+        # upper case and the service's LIKE is case-sensitive (see above), so
+        # a lowercase pattern — which is what canon_tokens() returns — finds
+        # nothing at all.
+        pattern = (pattern or "").strip().upper()
+        if pattern and pattern not in patterns:
+            patterns.append(pattern)
+
+    variants = ([street, *pattern_variants(street, limit=4)[1:]] if street
+                else [])
+    if house_num:
+        for variant in variants:
+            add(f"{house_num} {variant}")
+            add(_gap_variant(f"{house_num} {variant}"))
+    for variant in variants:
+        add(variant)
+        add(_gap_variant(variant))
+    first_word = street.split()[0] if street.split() else ""
+    if house_num and first_word:
+        add(f"{house_num} {first_word}")
+    if street:
+        two_tokens = "%".join(canon_tokens(street)[:2])
+        # House-anchored version of the loosest tier, and gap-joined from the
+        # house number out: Swain's roll stores "177   PIGEON CREEK TRL",
+        # where neither "177 PIGEON" (padded space) nor an abbreviated street
+        # (the roll abbreviates the TYPE, which street_canon does not map)
+        # can reach it — "177%PIGEON%CREEK" does, and the house number still
+        # anchors the match (#5658, 177 Pigeon Creek Trail).
+        if house_num and two_tokens:
+            add(f"{house_num}%{two_tokens}")
+        add(two_tokens)
+    return patterns
+
+
 def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     """Try to find a parcel by normalized street address in NC OneMap.
 
@@ -1139,8 +1261,6 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     if not fips:
         return None
 
-    from .street_canon import canon_tokens, pattern_variants
-
     m = re.match(r"^\s*(\d+)\s+", address)
     house_num = m.group(1) if m else None
 
@@ -1164,32 +1284,12 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
     # Query with wildcards between words
     like_parts = " ".join(normalized.split())
 
-    # Pattern priority (all bounded — address fallback never searches
-    # beyond the first TWO street words):
-    #   1. anchored full pattern (house number + normalized street),
-    #      plus bounded alternate-spelling variants ("MTN"/"MOUNTAIN",
-    #      "VLY"/"VALLEY", ...) from the shared street_canon map,
-    #   2. unanchored full pattern,
-    #   3. house number + first street word,
-    #   4. canon-joined first TWO street words (wildcard between).
-    first_word = like_parts.split()[0] if like_parts.split() else ""
-    two_tokens = "%".join(canon_tokens(like_parts)[:2])
-    patterns: list[str] = []
-    if house_num:
-        patterns.append(f"{house_num} {like_parts}")
-        for variant in pattern_variants(like_parts, limit=6)[1:]:
-            patterns.append(f"{house_num} {variant}")
-        gap = _gap_variant(f"{house_num} {like_parts}")
-        if gap:
-            patterns.append(gap)
-    patterns.extend([like_parts, *pattern_variants(like_parts, limit=4)[1:]])
-    gap = _gap_variant(like_parts)
-    if gap:
-        patterns.append(gap)
-    if house_num and first_word:
-        patterns.append(f"{house_num} {first_word}")
-    if two_tokens:
-        patterns.append(two_tokens)
+    # Patterns (case-folded, padded-spacing-aware) come from _like_patterns:
+    # house-anchored full pattern and spelling variants first, then the same
+    # unanchored, then house number + first street word, then the canon-joined
+    # first TWO street words. Address fallback never searches deeper than two
+    # street words; acceptance is still guarded by the house number below.
+    patterns = _like_patterns(like_parts, house_num)
     for pattern in patterns:
         if not pattern:
             continue
@@ -1197,7 +1297,12 @@ def search_address_in_nc1map(address: str, county: str) -> Optional[dict]:
         resp = _nc1map_query(
             {
                 "where": where_str,
-                "outFields": "parno,siteadd,gisacres,ownname,sourceref,altparno",
+                # recareano is the acreage Buncombe County publishes (its
+                # gisacres is 0.0 on every parcel) — without it a correct hit
+                # was thrown away by _clean_features and the row kept NULL.
+                "outFields": ("parno,altparno,nparno,cntyname,cntyfips,"
+                              "gisacres,recareano,siteadd,ownname,"
+                              "parusecd2,parusedsc2"),
                 "returnGeometry": "false",
                 "f": "json",
                 "resultRecordCount": "10",
@@ -1240,16 +1345,11 @@ def search_owner_parcels_in_nc1map(address: str, county: str,
     if not fips:
         return None
 
-    from .street_canon import canon_tokens, pattern_variants
-
     like_parts = " ".join(normalized.split())
-    patterns = [like_parts, *pattern_variants(like_parts, limit=4)[1:]]
-    gap = _gap_variant(like_parts)
-    if gap and gap not in patterns:
-        patterns.append(gap)
-    two_tokens = "%".join(canon_tokens(like_parts)[:2])
-    if two_tokens and two_tokens not in patterns:
-        patterns.append(two_tokens)
+    # Same case-folded, padded-spacing-aware pattern ladder as the address
+    # search (the old list was lowercase on its canon tier and never built a
+    # gap form for the abbreviated variants, so both tiers were dead).
+    patterns = _like_patterns(like_parts)
 
     seen: dict[str, dict] = {}
     for pattern in patterns:

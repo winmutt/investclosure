@@ -17,12 +17,23 @@ in camoufox. Rate limit: 2 requests/second (project rule).
 Auth: ``X-Api-Key`` header from ``config.RENTCAST_API_KEY``
 (``RENTCAST_API_KEY`` env). Without a key every call raises — the market
 scan CLI refuses politely so an empty key never looks like empty data.
+
+Budget: the free plan is capped per MONTHLY billing window
+(``config.RENTCAST_MONTHLY_BUDGET``, default 50). Every attempt is counted
+in ``data/rentcast_usage.json`` BEFORE the request goes out — attempts, not
+successes, because a 429/5xx still reached the meter, and a free-plan
+account must never discover its overage after the fact. Past the cap every
+call raises :class:`BudgetExhausted`; the window rolls automatically.
 """
 from __future__ import annotations
 
+import calendar
+import json
 import logging
+import os
 import threading
 import time
+from datetime import date
 from typing import Any, Dict, Optional
 
 from .config import config
@@ -32,6 +43,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.rentcast.io/v1"
 REQUEST_TIMEOUT_S = 30
 MIN_INTERVAL_S = 0.55  # <= 2 requests/second, project-wide rate rule
+USAGE_FILENAME = "rentcast_usage.json"
 
 _lock = threading.Lock()
 _last_call = [0.0]
@@ -39,6 +51,75 @@ _last_call = [0.0]
 
 class RentCastError(RuntimeError):
     """Transport or API failure (non-404). 404 raises LookupError instead."""
+
+
+class BudgetExhausted(RuntimeError):
+    """The monthly RentCast request budget is spent — retry after the
+    billing window rolls (or raise RENTCAST_MONTHLY_BUDGET knowingly)."""
+
+
+# ---- monthly usage ledger (data/rentcast_usage.json) -----------------------
+
+def _add_month(d: date) -> date:
+    """Same day next month, clamped (Jan 31 -> Feb 28)."""
+    y, m = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def usage_path() -> str:
+    return os.path.join(str(config.data_dir), USAGE_FILENAME)
+
+
+def budget_status(today: Optional[date] = None) -> Dict[str, Any]:
+    """Ledger rolled into the current billing window (counts nothing).
+
+    First use anchors the window at today (the plan's billing date); a
+    stored window rolls forward whole months until it contains today,
+    resetting the count exactly as the provider's monthly quota does.
+    """
+    today = today or date.today()
+    try:
+        with open(usage_path(), encoding="utf-8") as fh:
+            usage = json.load(fh)
+    except FileNotFoundError:
+        usage = {}
+    except (OSError, ValueError) as e:
+        logger.warning("cannot read rentcast usage ledger: %s", e)
+        usage = {}
+    try:
+        window = date.fromisoformat(usage.get("window_start") or "")
+    except ValueError:
+        window = today
+    calls = int(usage.get("calls") or 0)
+    while today >= _add_month(window):
+        window, calls = _add_month(window), 0
+    budget = int(config.RENTCAST_MONTHLY_BUDGET or 0)
+    return {"window_start": window.isoformat(), "calls": calls,
+            "budget": budget,
+            "remaining": (budget - calls) if budget else None}
+
+
+def _count_call() -> Dict[str, Any]:
+    """Record one API attempt and return the post-increment status.
+
+    Counted BEFORE the request goes out and counting every attempt (a
+    transport retry may still have been metered server-side): on a capped
+    plan an undercount is the expensive failure.
+    """
+    with _lock:
+        status = budget_status()
+        usage = {"window_start": status["window_start"],
+                 "calls": status["calls"] + 1}
+        path = usage_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(usage, fh)
+        os.replace(tmp, path)
+        status["calls"] += 1
+        status["remaining"] = ((status["budget"] - status["calls"])
+                               if status["budget"] else None)
+        return status
 
 
 def _throttle() -> None:
@@ -51,6 +132,13 @@ def _throttle() -> None:
 
 def get_json(path: str, params: Dict[str, Any]) -> dict:
     """One authenticated GET against the RentCast API; JSON dict back."""
+    status = budget_status()
+    if status["budget"] and status["calls"] >= status["budget"]:
+        raise BudgetExhausted(
+            f"RentCast monthly budget exhausted "
+            f"({status['calls']}/{status['budget']} calls since "
+            f"{status['window_start']}) — wait for the window to roll or "
+            f"raise RENTCAST_MONTHLY_BUDGET")
     key = (config.RENTCAST_API_KEY or "").strip()
     if not key:
         raise RentCastError(
@@ -60,6 +148,11 @@ def get_json(path: str, params: Dict[str, Any]) -> dict:
     last_err: Optional[Exception] = None
     for attempt in (1, 2):
         _throttle()
+        used = _count_call()
+        if (used["budget"] and used["remaining"] is not None
+                and used["remaining"] <= 3):
+            logger.warning("rentcast budget low: %d/%d this window",
+                           used["calls"], used["budget"])
         try:
             resp = curl_requests.get(
                 url, params=params, headers={"X-Api-Key": key},

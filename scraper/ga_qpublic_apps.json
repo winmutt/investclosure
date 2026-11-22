@@ -1,0 +1,30 @@
+{
+ "barrow": {
+  "app_id": "635",
+  "found": true,
+  "layer_id": "11218",
+  "search_page_id": "4614",
+  "search_url": "https://qpublic.schneidercorp.com/Application.aspx?AppID=635&LayerID=11218&PageTypeID=2&PageID=4614"
+ },
+ "fannin": {
+  "app_id": "714",
+  "found": true,
+  "layer_id": "11449",
+  "search_page_id": "5402",
+  "search_url": "https://qpublic.schneidercorp.com/Application.aspx?AppID=714&LayerID=11449&PageTypeID=2&PageID=5402"
+ },
+ "gilmer": {
+  "app_id": "672",
+  "found": true,
+  "layer_id": "11357",
+  "search_page_id": "4736",
+  "search_url": "https://qpublic.schneidercorp.com/Application.aspx?AppID=672&LayerID=11357&PageTypeID=2&PageID=4736"
+ },
+ "white": {
+  "app_id": "982",
+  "found": true,
+  "layer_id": "19945",
+  "search_page_id": "8692",
+  "search_url": "https://qpublic.schneidercorp.com/Application.aspx?AppID=982&LayerID=19945&PageTypeID=2&PageID=8692"
+ }
+}

@@ -18,6 +18,15 @@ Usage (container)::
 Refresh cadence: monthly is plenty (the underlying listing aggregates move
 slowly, and each pass costs ~one call per zip). Verdicts checkpoint after
 every fetch, so an interrupted run resumes where it stopped.
+
+Budget: the plan allows ``config.RENTCAST_MONTHLY_BUDGET`` calls per
+monthly window (50 today) while the universe is ~427 zips — so the queue
+is ordered by the FREE Census ranks (``scraper/acs_zips.json``, see
+:mod:`scraper.fetch_acs_ranks`): in-band median gross rent first, thin
+stock and out-of-band markets last. The client's ledger (:func:`scraper.
+rentcast.budget_status`) then hard-stops the walk at the cap; whatever
+remains queued waits for the next window (verdicts are cached, so each
+month the walk continues down the list).
 """
 from __future__ import annotations
 
@@ -27,19 +36,24 @@ import logging
 import os
 import sys
 from datetime import date, datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from .config import config
 from .rent_scope import ZIPS_PATH
-from .rentcast import RentCastError, judge, market_for_zip
+from .rentcast import (BudgetExhausted, RentCastError, budget_status, judge,
+                       market_for_zip)
 
 logger = logging.getLogger(__name__)
 
 MARKETS_PATH = os.path.join(os.path.dirname(__file__), "rent_markets.json")
+ACS_PATH = os.path.join(os.path.dirname(__file__), "acs_zips.json")
 REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                            "reports", "rent_markets.md")
 REFRESH_DAYS = 28
 CHECKPOINT_EVERY = 10
+# ZCTAs under this many housing units rarely hold RENT_MIN_RENT_LISTINGS
+# rental listings — RentCast would spend a paid call answering no_data.
+MIN_UNITS = 300
 
 _VERDICT_RANK = {"pass": 0, "borderline": 1, "no_data": 2, "fail": 3}
 
@@ -71,11 +85,56 @@ def _is_fresh(entry: dict, refresh_days: int) -> bool:
     return when > datetime.now() - timedelta(days=refresh_days)
 
 
+def rank_key(zip_code: str, zips: Dict[str, dict], acs: Dict[str, dict],
+             rent_min: float, rent_max: float) -> tuple:
+    """Queue order for a capped budget: best RentCast-ROI zip first.
+
+    Tier 0..2 — ACS median gross rent in the target band, in the ±20%
+    near-band, or further out; tier 3..5 the same three with thin housing
+    stock (< ``MIN_UNITS`` — RentCast would likely answer no_data, but
+    unknown stock counts as fine); tier 6 — no ACS estimate, ordered
+    nearest-Atlanta-first (closer zips tend to have listing coverage).
+    Within a tier, ascending distance from the band, then bigger stock.
+    """
+    entry = acs.get(zip_code) or {}
+    rent = entry.get("rent")
+    units = entry.get("units") or 0
+    mi = (zips.get(zip_code) or {}).get("mi_atl")
+    mi = 999.0 if mi is None else float(mi)
+    if not rent:
+        return (6, 0, 0, mi, zip_code)
+    in_band = rent_min <= rent <= rent_max
+    near = 0.8 * rent_min <= rent <= 1.2 * rent_max
+    band_tier = 0 if in_band else (1 if near else 2)
+    thin = 0 < units < MIN_UNITS
+    dist = (0 if in_band
+            else min(abs(rent - rent_min), abs(rent - rent_max)))
+    return (band_tier + (3 if thin else 0), dist, -units, mi, zip_code)
+
+
+def rank_queue(queued: List[str], zips: Dict[str, dict],
+               acs: Dict[str, dict], *,
+               rent_min: Optional[float] = None,
+               rent_max: Optional[float] = None) -> List[str]:
+    """Order the queue by :func:`rank_key` (band default from config)."""
+    rent_min = (config.RENT_TARGET_MIN_RENT if rent_min is None
+                else rent_min)
+    rent_max = (config.RENT_TARGET_MAX_RENT if rent_max is None
+                else rent_max)
+    return sorted(queued,
+                  key=lambda z: rank_key(z, zips, acs, rent_min, rent_max))
+
+
 def screen(zips: Dict[str, dict], existing: Dict[str, dict], *,
            refresh: bool, limit: Optional[int], only: Optional[set],
            only_county: Optional[str], refresh_days: int,
-           on_progress) -> Dict[str, dict]:
-    """Fetch + judge each queued zip; ``on_progress`` checkpoints results."""
+           on_progress, acs: Optional[Dict[str, dict]] = None,
+           ) -> Dict[str, dict]:
+    """Fetch + judge each queued zip; ``on_progress`` checkpoints results.
+
+    With ``acs`` the queue is walked best-ACS-rank first, so a budget
+    stop (``BudgetExhausted``) spends the cap where the payoff is.
+    """
     today = date.today().isoformat()
     queued = []
     for zip_code, meta in sorted(zips.items()):
@@ -87,10 +146,23 @@ def screen(zips: Dict[str, dict], existing: Dict[str, dict], *,
         if not refresh and _is_fresh(existing.get(zip_code), refresh_days):
             continue
         queued.append(zip_code)
+    if acs:
+        queued = rank_queue(queued, zips, acs)
     if limit:
         queued = queued[:limit]
+
+    status = budget_status()
     logger.info("%d zips queued (%d cached fresh)", len(queued),
                 len(zips) - len(queued))
+    if status["budget"]:
+        logger.info("rentcast budget: %d/%d calls used since %s — %d left",
+                    status["calls"], status["budget"],
+                    status["window_start"], status["remaining"])
+        if len(queued) > status["remaining"]:
+            logger.warning(
+                "queue exceeds the remaining monthly budget — walking in "
+                "rank order and stopping at the cap; the rest waits for "
+                "the next window")
 
     done = 0
     for zip_code in queued:
@@ -100,6 +172,9 @@ def screen(zips: Dict[str, dict], existing: Dict[str, dict], *,
             entry = judge(summary)
         except LookupError:
             entry = {"verdict": "no_data", "note": "rentcast has no market"}
+        except BudgetExhausted as e:
+            logger.warning("%s — pass stops here", e)
+            break
         except RentCastError as e:
             logger.error("rentcast fetch failed for %s: %s — stopping pass",
                          zip_code, e)
@@ -164,6 +239,7 @@ def main() -> int:
     parser.add_argument("--report-only", action="store_true",
                         help="regenerate the report from cached verdicts")
     parser.add_argument("--markets-path", default=MARKETS_PATH)
+    parser.add_argument("--acs-path", default=ACS_PATH)
     parser.add_argument("--report-path", default=REPORT_PATH)
     args = parser.parse_args()
 
@@ -190,8 +266,19 @@ def main() -> int:
               "(get one at rentcast.io/api) and rerun.", file=sys.stderr)
         return 2
 
+    status = budget_status()
+    if status["budget"]:
+        print(f"RentCast budget: {status['calls']}/{status['budget']} calls "
+              f"used since {status['window_start']} — {status['remaining']} "
+              f"left this window")
+    acs = _load(args.acs_path).get("zips") or {}
+    if not acs:
+        logger.warning("no ACS ranks (%s) — queue stays alphabetical; run "
+                       "python3 -m scraper.fetch_acs_ranks so the capped "
+                       "budget goes to the best zips first", args.acs_path)
+
     def checkpoint(done: int, total: int, zip_code: str, entry: dict) -> None:
-        if done % 25 == 0 or done == total:
+        if done % 10 == 0 or done == total:
             print(f"  [{done}/{total}] {zip_code}: "
                   f"${entry.get('rent') or 0:.0f} {entry.get('verdict')}")
         if done % CHECKPOINT_EVERY == 0:
@@ -201,7 +288,7 @@ def main() -> int:
                      only=set((args.zips or "").split(",")) - {""},
                      only_county=(args.county or "").lower() or None,
                      refresh_days=args.refresh_days,
-                     on_progress=checkpoint)
+                     on_progress=checkpoint, acs=acs or None)
 
     _save_markets({
         "generated": date.today().isoformat(),
@@ -217,6 +304,11 @@ def main() -> int:
     write_report(markets, args.report_path)
 
     from .rent_scope import describe_scope
+    status = budget_status()
+    if status["budget"]:
+        print(f"RentCast budget after run: {status['calls']}/{status['budget']}"
+              f" — {status['remaining']} left until "
+              f"{status['window_start']} + 1 month")
     print(f"\n{describe_scope()}")
     return 0
 

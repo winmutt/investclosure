@@ -326,8 +326,21 @@ class TestParcelVariants:
         variants = nc_gis_lookup._parcel_variants("1234-AB-5678")
         assert variants == ["1234-AB-5678", "1234AB5678"]
 
-    def test_plain_digit_parcel_no_trailing_change(self):
-        # A parcel already ending in '0000' is left alone (suffixing more
-        # zeros could form a different parcel).
+    def test_plain_digit_parcel_gets_the_dashed_county_spelling(self):
+        # A bare digit string is also retried WITH dashes, because NC OneMap
+        # stores some counties' PINs that way and de-dashing can never add
+        # them back (live: #6052 stored '7564515920' while Jackson holds
+        # '7564-51-5920' — acres stayed NULL through every lookup).
         variants = nc_gis_lookup._parcel_variants("977539234200000")
-        assert variants == ["977539234200000"]
+        assert variants == ["977539234200000", "9775-39-2342-00000"]
+
+    def test_bare_10_digit_pin_gets_4_2_4_variant(self):
+        variants = nc_gis_lookup._parcel_variants("7564515920")
+        assert variants == ["7564515920", "7564-51-5920"]
+
+    def test_dashed_pin_is_not_re_dashed(self):
+        # Already-dashed input gains no duplicate (the re-dashed form is the
+        # string it already starts with).
+        variants = nc_gis_lookup._parcel_variants("7564-51-5920")
+        assert variants[0] == "7564-51-5920"
+        assert variants.count("7564-51-5920") == 1

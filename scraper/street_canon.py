@@ -2,15 +2,18 @@
 
 Listings spell compound street words out ("Hatcher Mountain Rd") while
 parcel layers may abbreviate them ("HATCHER MTN RD 2869") — and vice versa
-("WEBB CREEK" vs "webb crk"). Street-type suffixes (ST/RD/LN...) are
-already stripped by each enricher's normalize step; this module covers the
-compound DESCRIPTIVE words (mountain, valley, creek, ...) that survive.
+("WEBB CREEK" vs "webb crk"). Street-type suffixes (ST/RD/LN...) were
+originally left out because NC strips them in its own normalize step, but
+GA's qPublic needs them ("37 Lafayette Drive" vs the record's
+"37 LAFAYETTE DR"), so they are covered here too; enrichers that strip
+suffixes are simply unaffected.
 
-Used by tnmap.py (TN statewide), nc_gis_lookup.py (NC OneMap), and
-kgis_enrich.py (Knox KGIS) so every GIS enrichment applies the same
-abbreviation matching plus a bounded "house number + first word or two"
-fallback (enrichers must NOT search deeper than two street words on the
-fallback tier — deeper matching binds wrong neighboring parcels).
+Used by tnmap.py (TN statewide), nc_gis_lookup.py (NC OneMap),
+kgis_enrich.py (Knox KGIS) and ga_gis_enrich.py (Georgia county qPublic) so
+every GIS enrichment applies the same abbreviation matching plus a bounded
+"house number + first word or two" fallback (enrichers must NOT search deeper
+than two street words on the fallback tier — deeper matching binds wrong
+neighboring parcels).
 """
 from __future__ import annotations
 from typing import List
@@ -53,6 +56,18 @@ STREET_VARIANTS: dict = {
     "hollow": ("holw", "hollw"),
     "island": ("isl", "is"),
     "station": ("sta", "stn"),
+    # Street TYPES. NC strips suffixes in its own normalize step, which is why
+    # these were left out originally, but Georgia needs them: qPublic answers a
+    # listing written "37 Lafayette Drive" with the record "37 LAFAYETTE DR",
+    # and without these the two compare as different streets and a correct GA
+    # match is refused.
+    "drive": ("dr", "dre"),
+    "road": ("rd",),
+    "street": ("st",),
+    "avenue": ("ave", "av"),
+    "lane": ("ln",),
+    "circle": ("cir",),
+    "boulevard": ("blvd", "boul"),
 }
 
 # token -> canonical group key (reverse index, built once)

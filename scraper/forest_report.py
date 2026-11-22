@@ -35,16 +35,19 @@ import json
 import logging
 import os
 import random
+import re
 import time
 from typing import Optional
 
 from .config import NC_MOUNTAIN_COUNTIES
 from .elevation import elevations
 from .forest_adjacency import (
-    ADJACENCY_TOLERANCE_FT, MIN_PUBLIC_ACRES,
+    ADJACENCY_TOLERANCE_FT, MIN_PUBLIC_ACRES, POLYGON_METHODS,
     build_index, coverage_note, description_evidence, resolve_subject_parcel,
+    subject_is_plausible,
 )
 from .jsonl import append_record, load_done
+from .nc_gis_lookup import street_only
 from .zillow import ZillowScraper, county_display
 
 logger = logging.getLogger(__name__)
@@ -331,6 +334,12 @@ def adjacency_todo(candidates: list[dict], details: dict,
     A verdict is re-judged when it was recorded *before* the description
     arrived (``desc_len`` differs), so an interrupted details pass can never
     leave a listing judged on GIS alone while its description says otherwise.
+
+    A verdict recorded **before the acreage guard** is re-judged too when its
+    subject is missing or implausible: those checkpoints bound listings to a
+    neighbour's polygon (or to the parent parcel a new lot was carved from),
+    and resolution now falls back to measuring the pin instead.  Records
+    written by the current code carry ``subject_method``, so they are stable.
     """
     todo = []
     for cand in candidates:
@@ -339,7 +348,33 @@ def adjacency_todo(candidates: list[dict], details: dict,
         desc = (details.get(zpid) or {}).get("description") or ""
         if prev is None or prev.get("desc_len", 0) != len(desc):
             todo.append(cand)
+            continue
+        if "subject_method" not in prev and not subject_is_plausible(
+                prev.get("subject"), cand.get("acres")):
+            todo.append(cand)
     return todo
+
+
+def judge_verdict(why, nearest: Optional[dict], subject: Optional[dict],
+                  tolerance_ft: float) -> tuple[str, Optional[str], bool]:
+    """Decide a row's verdict — description first, then a POLYGON-only GIS test.
+
+    Returns ``(verdict, source, gis_withheld)``.  A GIS claim is about a
+    PARCEL, so it needs a parcel polygon: a pin-only subject has no
+    acreage-plausible parcel (see :func:`resolve_subject_parcel`) and a
+    geocode can drift hundreds of feet in the mountains, so its distance is
+    recorded for triage but never becomes an adjacency.
+    """
+    if why.verdict == "adjacent":
+        return "adjacent", "description", False
+    if nearest and nearest.get("gap_ft") is not None \
+            and nearest["gap_ft"] <= tolerance_ft:
+        if (subject or {}).get("method") in POLYGON_METHODS:
+            return "adjacent", "gis", False
+        return "no", None, True
+    if why.verdict == "mention":
+        return "mention", None, False
+    return "no", None, False
 
 
 def stage_adjacency(args) -> int:
@@ -369,6 +404,7 @@ def stage_adjacency(args) -> int:
         desc = detail.get("description")
         why = description_evidence(desc)
         subj = None
+        withheld = False
         try:
             subj = resolve_subject_parcel(
                 cand.get("latitude"), cand.get("longitude"),
@@ -389,15 +425,8 @@ def stage_adjacency(args) -> int:
                        "acres": p.acres, "county": p.county,
                        "gap_ft": geo["gap_ft"],
                        "geometry": geo["geometry"]}
-        if why.verdict == "adjacent":
-            verdict, source = "adjacent", "description"
-        elif nearest and nearest["gap_ft"] is not None and \
-                nearest["gap_ft"] <= args.tolerance_ft:
-            verdict, source = "adjacent", "gis"
-        elif why.verdict == "mention":
-            verdict, source = "mention", None
-        else:
-            verdict, source = "no", None
+        verdict, source, withheld = judge_verdict(why, nearest, subj,
+                                                  args.tolerance_ft)
         if verdict == "adjacent":
             found += 1
         centroid = None
@@ -414,6 +443,10 @@ def stage_adjacency(args) -> int:
             "subject_centroid": centroid,
             "subject": ({k: v for k, v in subj.items() if k != "rings"}
                         if subj else None),
+            "subject_method": (subj or {}).get("method") or "none",
+            # The pin came within the tolerance but no parcel polygon was
+            # plausible: proximity is recorded, adjacency is withheld.
+            "gis_withheld": withheld,
             "gis_coverage": ("none" if (cand.get("county") or "").lower()
                              in gap_counties else "ok"),
         })
@@ -456,10 +489,75 @@ def _evidence(row: dict) -> str:
         gap = near.get("gap_ft")
         owner = near.get("owner") or "public land"
         acres = _num(near.get("acres"), 0)
-        return f"{owner} ({acres} ac), {_num(gap, 0)} ft away"
+        method = (row.get("subject") or {}).get("method")
+        basis = "" if method in POLYGON_METHODS else " from the pin"
+        return f"{owner} ({acres} ac), {_num(gap, 0)} ft away{basis}"
     if ev.get("verdict") == "mention":
         return "description mentions forest, not adjacency"
     return "—"
+
+
+def _kind_label(kind: Optional[str]) -> str:
+    """Human label for a public-land kind (used when the quote names none)."""
+    return {"federal_forest": "national forest (unnamed in listing)",
+            "federal_park": "national park (unnamed in listing)",
+            "state": "state land (unnamed in listing)",
+            "county": "county forest (unnamed in listing)",
+            }.get(kind or "", "public land (unnamed in listing)")
+
+
+# Street-type spellings a re-posting may change ("247 Rice Ln" → "247 Rice
+# Lane LOT 4" was live: same parcel, owner, acreage and price, two zpids).
+_SUFFIX_ALIASES = {
+    "ln": "lane", "rd": "road", "st": "street", "dr": "drive",
+    "trl": "trail", "tr": "trail", "hwy": "highway", "av": "avenue",
+    "ave": "avenue", "blvd": "boulevard", "ct": "court", "cir": "circle",
+    "pkwy": "parkway", "pl": "place", "cv": "cove", "holw": "hollow",
+    "xing": "crossing", "mt": "mount", "crk": "creek", "br": "branch",
+}
+
+_LOT_TOKEN_RE = re.compile(r"\b(?:lot|lt|unit|ste)\s*[\w&-]+")
+_NON_WORD_RE = re.compile(r"[^a-z0-9 ]")
+
+
+def posting_key(row: dict) -> tuple:
+    """Identity of a property across Zillow re-postings.
+
+    A resolved subject parcel plus acreage and price is the strongest key
+    (same tax parcel, same deal).  Without one, the street line is normalised
+    — lot/unit tokens dropped, suffix abbreviations expanded — and paired
+    with the acreage and price.
+    """
+    acres = round(float(row.get("acres") or 0), 2)
+    price = float(row.get("price") or 0)
+    parno = (row.get("subject") or {}).get("parno")
+    if parno:
+        return ("parcel", parno, acres, price)
+    street = _LOT_TOKEN_RE.sub(" ",
+                               street_only(row.get("address") or "").lower())
+    street = _NON_WORD_RE.sub(" ", street)
+    tokens = [_SUFFIX_ALIASES.get(t, t) for t in street.split()]
+    return ("street", (row.get("county") or "").lower(),
+            " ".join(tokens), acres, price)
+
+
+def dedupe_adjacent(rows: list[dict]) -> tuple[list[dict], int]:
+    """Collapse the same property re-posted under a fresh Zillow id.
+
+    Zillow re-lists a parcel with a new zpid and sometimes a variant street
+    form, which would count one property twice in the headline number.
+    """
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    dropped = 0
+    for row in rows:
+        key = posting_key(row)
+        if key in seen:
+            dropped += 1
+            continue
+        seen.add(key)
+        out.append(row)
+    return out, dropped
 
 
 def near_misses(qualified: list[dict], tolerance_ft: float,
@@ -508,6 +606,7 @@ def stage_report(args) -> int:
     adjacent = [r for r in qualified if r.get("verdict") == "adjacent"]
     adjacent.sort(key=lambda r: (r.get("county") or "",
                                  r.get("price") or 0))
+    adjacent, duplicates = dedupe_adjacent(adjacent)
 
     by_county: dict[str, dict] = {}
     for row in rows:
@@ -530,13 +629,19 @@ def stage_report(args) -> int:
                    and r["elevation_ft"] < args.min_elevation)
     mentions = sum(1 for r in qualified
                    if r.get("verdict") == "mention")
+    # Pin-only proximity: the Zillow pin came within tolerance of public land
+    # but no acreage-plausible parcel polygon was found, so no GIS adjacency
+    # is claimed.  Listed separately as triage.
+    pin_only = [r for r in qualified if r.get("gis_withheld")]
+    pin_only.sort(key=lambda r: (r.get("nearest_public") or {})
+                  .get("gap_ft") or 1e9)
     # Public land just past the tolerance: not adjacency, but the band a
     # human should re-check (roll slivers and pin drift both live here).
     close_calls = near_misses(qualified, args.tolerance_ft)
     desc_harvested = sum(1 for r in rows if r.get("description"))
     parcels_resolved = sum(1 for r in rows
                            if (r.get("subject") or {}).get("method")
-                           in ("parcel", "address", "point"))
+                           in POLYGON_METHODS)
     point_only = sum(1 for r in rows
                      if ((r.get("nearest_public") or {}).get("geometry")
                          == "point"))
@@ -586,7 +691,10 @@ def stage_report(args) -> int:
     lines.append(f"| Elevation unknown (no coordinates) | {unknown_elev} |")
     lines.append(f"| **Adjacent (description)** | **{desc_n}** |")
     lines.append(f"| **Adjacent (GIS)** | **{gis_n}** |")
+    lines.append(f"| Same property re-posted (collapsed) | {duplicates} |")
     lines.append(f"| Forest mentioned, not adjacency | {mentions} |")
+    lines.append(f"| Pin within tolerance, no parcel polygon (not counted) | "
+                 f"{len(pin_only)} |")
     lines.append(f"| Public land 150–500 ft away (near miss) | "
                  f"{len(close_calls)} |")
     lines.append("")
@@ -602,7 +710,10 @@ def stage_report(args) -> int:
             near = row.get("nearest_public") or {}
             ev = row.get("description_evidence") or {}
             if row.get("source") == "description":
-                target = ev.get("unit") or near.get("owner") or "public forest"
+                # Name what the LISTING named.  Borrowing the GIS owner here
+                # would put "USDA FOREST SERVICE" under a quote that only says
+                # "borders national forest".
+                target = ev.get("unit") or _kind_label(ev.get("kind"))
             else:
                 target = near.get("owner") or "public forest"
             addr = row.get("address") or "—"
@@ -646,6 +757,37 @@ def stage_report(args) -> int:
             lines.append(f"_… {len(close_calls) - 25} more in the JSON "
                          f"output._")
         lines.append("")
+    if pin_only:
+        lines.append("## Pin-only proximity (not counted as adjacent)")
+        lines.append("")
+        lines.append("The Zillow pin came within the tolerance of public "
+                     "land, but no parcel polygon of a plausible acreage "
+                     "could be resolved — the roll offered a neighbour's lot "
+                     "or a parent parcel far larger than the listing. A pin "
+                     "is a geocode, not a boundary, so these are shown for "
+                     "triage and never counted.")
+        lines.append("")
+        lines.append("| County | Address | Acres | Price | Elev (ft) | "
+                     "Nearest public | Gap from pin (ft) | Listing |")
+        lines.append("|---|---|---:|---:|---:|---|---:|---|")
+        for row in pin_only[:15]:
+            near = row.get("nearest_public") or {}
+            addr = row.get("address") or "—"
+            city = row.get("city")
+            if city and city.lower() not in addr.lower():
+                addr = f"{addr}, {city}"
+            lines.append(
+                f"| {row.get('county') or '—'} | {addr} | "
+                f"{_num(row.get('acres'))} | {_money(row.get('price'))} | "
+                f"{_num(row.get('elevation_ft'), 0)} | "
+                f"{near.get('owner') or '—'} "
+                f"({_num(near.get('acres'), 0)} ac) | "
+                f"{_num(near.get('gap_ft'), 0)} | "
+                f"[Zillow]({row.get('url') or ''}) |")
+        if len(pin_only) > 15:
+            lines.append("")
+            lines.append(f"_… {len(pin_only) - 15} more in the JSON output._")
+        lines.append("")
     lines.append("## By county")
     lines.append("")
     lines.append("| County | Swept | Elevation-qualified | Adjacent |")
@@ -675,9 +817,15 @@ def stage_report(args) -> int:
                  "and bare mentions are recorded as *mentions*, never as "
                  "adjacency.")
     lines.append("- GIS adjacency is measured between the listing's **own "
-                 "parcel polygon** and the public parcel polygon. A centroid "
-                 "point is used only when the parcel polygon cannot be "
-                 "resolved, and is marked as such in the JSON.")
+                 "parcel polygon** and the public parcel polygon. A polygon "
+                 "is used only when its acreage is plausible for the listing "
+                 "(±40%): the roll will otherwise hand back a neighbour's lot "
+                 "or the parent parcel a new lot was carved from, and that "
+                 "polygon's forest line is not this listing's. When no "
+                 "plausible polygon is found the pin's distance is recorded "
+                 "but **no GIS adjacency is claimed** (a geocode is not a "
+                 "boundary); those rows are listed under “Pin-only "
+                 "proximity”.")
     lines.append("- NC OneMap's `IndexIntersects`/`EnvelopeIntersects` "
                  "relations test bounding boxes (a 214k-acre Great Smoky "
                  "polygon “intersects” most of Jackson County), so they are "
@@ -705,6 +853,8 @@ def stage_report(args) -> int:
                    "parcels_resolved": parcels_resolved,
                    "point_only_gis": point_only,
                    "near_misses": len(close_calls),
+                   "pin_only": len(pin_only),
+                   "duplicates_collapsed": duplicates,
                    "out_of_scope": _out_of_scope,
                    "counties_without_public_data": gap_counties},
         "coverage": coverage,

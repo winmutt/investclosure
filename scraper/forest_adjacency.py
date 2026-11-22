@@ -12,7 +12,11 @@ Two independent tests, in the order the product asks for them:
    ``US FOREST SERVICE``, ``USFS``, ``UNITED STATES OF AMERICA``,
    ``STATE OF NORTH CAROLINA``, ``GREAT SMOKY MTN NATI`` …), so adjacency
    is measured against their polygons.  Only parcels over
-   ``MIN_PUBLIC_ACRES`` count, per the product rule.
+   ``MIN_PUBLIC_ACRES`` count, per the product rule.  The listing's own side
+   of that measurement is a parcel polygon **only when the roll offers one at
+   a plausible acreage** (within 40% of the listing, one parcel or an
+   ownership group); otherwise the pin is measured for triage but no GIS
+   adjacency is claimed — see :func:`resolve_subject_parcel`.
 
 Why the distance is computed here instead of by the service: the layer's
 ``esriSpatialRelIndexIntersects`` / ``EnvelopeIntersects`` relations test
@@ -703,6 +707,32 @@ def _acreage_close(hit: Optional[dict], expected: Optional[float],
     return abs(float(got) - expected) <= max(expected * tolerance, 0.5)
 
 
+# Resolution methods that yield a POLYGON for the listing itself.  "point-only"
+# is deliberately absent: it means no acreage-plausible parcel was found, so
+# the GIS test measured the pin and the checkpoint records what was rejected.
+POLYGON_METHODS = frozenset({"parcel", "address", "point", "point-near",
+                             "parcel-group"})
+
+
+def subject_is_plausible(subject: Optional[dict],
+                         expected_acres: Optional[float]) -> bool:
+    """Does a resolved subject cover a plausible acreage for the listing?
+
+    A point-only marker is plausible by construction — it carries no polygon
+    that could belong to a neighbour.  A polygon grossly the wrong size is a
+    neighbour's lot (or the parent parcel a new lot was carved from), and
+    judging adjacency against it would credit the listing with somebody
+    else's forest line.
+    """
+    if not subject:
+        return False
+    if subject.get("method") == "point-only":
+        return True
+    if subject.get("method") not in POLYGON_METHODS:
+        return False
+    return _acreage_close(subject, expected_acres)
+
+
 def resolve_subject_parcel(lat: Optional[float], lon: Optional[float],
                            address: Optional[str] = None,
                            county: Optional[str] = None,
@@ -711,19 +741,41 @@ def resolve_subject_parcel(lat: Optional[float], lon: Optional[float],
                            ) -> Optional[dict]:
     """Find the listing's own parcel polygon in NC OneMap.
 
-    Order: known parcel number → the parcel containing the coordinate →
-    address match.  The coordinate path runs before the address path because
-    the address lookup issues a chain of LIKE queries (slow); it is still
-    consulted when the coordinate lands in an implausible parcel (Zillow
-    pins can drift into a neighbour, cf. #2739) or no polygon at all.
+    Order: known parcel number → the parcel containing the coordinate → the
+    ownership group at the address (a tract split across several tax parcels)
+    → a single address match.
 
-    Returns ``{parno, owner, acres, siteadd, county, rings, method}`` or None.
+    **Every accepted polygon must be acreage-plausible for the listing.**
+    The roll cheerfully returns a neighbour's lot when the address is vague
+    or the Zillow pin drifts (live QA: a 10.66 ac listing bound to a 4.53 ac
+    parcel, a 2.0 ac listing to the 214,157 ac Great Smoky polygon), and a
+    wrong polygon attributes a neighbour's forest line to this listing.  When
+    nothing is plausible the pin is measured alone and the rejected polygons
+    are recorded (``acreage_mismatch``) — a verdict then rests on a point,
+    never on somebody else's boundary.
+
+    Returns ``{parno, owner, acres, siteadd, county, rings, method}``, a
+    point-only marker (``rings=None, method="point-only"``), or None.
     """
     from .nc_gis_lookup import (_nc1map_query, _parcel_variants,
-                                search_address_in_nc1map)
+                                search_address_in_nc1map,
+                                search_owner_parcels_in_nc1map)
 
     county_key = (county or "").strip().lower().replace(" ", "_")
     fips = NC_COUNTY_FIPS_BY_NAME.get(county_key)
+    expected = float(expected_acres) if expected_acres else None
+    rejected: list[dict] = []
+
+    def close(hit: Optional[dict]) -> bool:
+        """Acreage-plausible?  Rejections are kept for the checkpoint."""
+        if hit is None:
+            return False
+        if _acreage_close(hit, expected):
+            return True
+        rejected.append({"parno": hit.get("parno"), "acres": hit.get("acres"),
+                         "method": hit.get("method"),
+                         "expected_acres": expected})
+        return False
 
     def by_pin(pin: str, method: str) -> Optional[dict]:
         for variant in _parcel_variants(pin)[:6]:
@@ -768,35 +820,80 @@ def resolve_subject_parcel(lat: Optional[float], lon: Optional[float],
             # hole in the roll.  Use a hit only when its acreage matches the
             # listing: otherwise the polygon belongs to a neighbour, and its
             # forest line would be reported as this listing's.
-            if expected_acres:
-                hits.sort(key=lambda p: abs((p.get("acres") or 0)
-                                            - float(expected_acres)))
-                if _acreage_close(hits[0], expected_acres):
-                    hits[0]["method"] = "point-near"
-                    return hits[0]
+            if expected is None:
+                return None
+            hits.sort(key=lambda p: abs((p.get("acres") or 0) - expected))
+            if _acreage_close(hits[0], expected):
+                hits[0]["method"] = "point-near"
+                return hits[0]
+            rejected.append({"parno": hits[0].get("parno"),
+                             "acres": hits[0].get("acres"),
+                             "method": "point-near",
+                             "expected_acres": expected})
             return None
         return None
 
     if parcel:
         got = by_pin(parcel, "parcel")
-        if got:
+        if close(got):
             return got
 
     point_hit = by_point()
-    if point_hit and point_hit["method"] == "point" \
-            and _acreage_close(point_hit, expected_acres):
+    if close(point_hit):
         return point_hit
+
+    def by_group() -> Optional[dict]:
+        """Merge a tract split across several tax parcels (same owner)."""
+        if not (address and expected and fips):
+            return None
+        group = search_owner_parcels_in_nc1map(address, county, expected)
+        wanted = (group or {}).get("parcels") or []
+        if not wanted:
+            return None
+        parts = []
+        for one in wanted:
+            got = by_pin(str(one.get("parno")), "parcel-group")
+            if got:
+                parts.append(got)
+        if len(parts) < len(wanted):
+            # Geometry for EVERY parcel is required — a partial merge would
+            # measure a forest line this listing only partly owns.
+            return None
+        if not parts:
+            return None
+        if len(parts) == 1:
+            parts[0]["method"] = "parcel-group"
+            return parts[0]
+        return {"parno": parts[0].get("parno"),
+                "owner": parts[0].get("owner"),
+                "acres": round(sum(float(p.get("acres") or 0)
+                                   for p in parts), 2),
+                "siteadd": parts[0].get("siteadd"),
+                "county": parts[0].get("county") or county,
+                "rings": [ring for part in parts for ring in part["rings"]],
+                "method": "parcel-group",
+                "parcels": [{"parno": p.get("parno"), "acres": p.get("acres")}
+                            for p in parts]}
+
+    group = by_group()
+    if close(group):
+        return group
 
     if address and fips:
         hit = search_address_in_nc1map(address, county)
         if hit and hit.get("parno"):
             addr_hit = by_pin(str(hit["parno"]), "address")
-            if addr_hit and (not point_hit
-                             or _acreage_close(addr_hit, expected_acres)
-                             or not _acreage_close(point_hit, expected_acres)):
+            if close(addr_hit):
                 return addr_hit
 
-    return point_hit
+    # Nothing acreage-plausible: measure from the pin alone and record what
+    # was rejected, so a neighbour's polygon can never produce adjacency.
+    if lat is not None and lon is not None:
+        return {"parno": None, "owner": None, "acres": None,
+                "siteadd": None, "county": county, "rings": None,
+                "method": "point-only",
+                "acreage_mismatch": rejected or None}
+    return None
 
 
 # County name (as the app spells it) → FIPS.  config uses "van_buren" etc.,

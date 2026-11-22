@@ -114,6 +114,7 @@ python3 -m scraper --archive         # Archive small parcels
 # Forest-adjacency report (standalone; never writes the properties table)
 python3 -m scraper.forest_report     # 15 NC mountain counties, ≥2 ac, ≤$300k, ≥1,700 ft
 python3 -m scraper.forest_report --stage sweep --county jackson   # one county
+python3 -m scraper.forest_report --stage adjacency                # re-judge pending rows
 python3 -m scraper.forest_report --refresh-index                 # re-fetch public parcels
 
 # Continuous mode
@@ -232,16 +233,44 @@ enriched = enrich_kania_record(kania_record)
 # Batch enrichment (after scrape)
 result = enrich_properties(source="kania_law")
 # Returns: {"enriched": N, "skipped_no_parcel": M, "failed": P}
+
+# Plus a bounded retry of the older NC backlog (rows whose lookup failed
+# before a fix landed) — this is what the post-run hook does:
+result = enrich_properties(source="kania_law", min_id=last_id,
+                           backlog=config.NC_ENRICH_BACKLOG)
+# Returns also: {"backlog": retried_count}
 ```
 
 Enriched fields:
 | Field | Description | Source |
 |---|---|---|
-| `acres` | GIS-sourced acreage (from gisacres) | NC1Map Parcels |
+| `acres` | GIS-sourced acreage (from gisacres, or recareano where a county zeroes it) | NC1Map Parcels |
 | `owner_name` | Property owner name | NC1Map Parcels |
 | `land_use` | Land use code/description | NC1Map Parcels |
 | `gis_url` | NC OneMap parcel viewer URL | NC1Map |
 | `google_maps_url` | Google Maps link | Google Maps |
+
+### Georgia acreage (county qPublic search)
+
+Georgia has no statewide parcel hub, so acreage comes from **each county's own
+qPublic search form** — run through camoufox (plain HTTP is Cloudflare-403)
+after every GA scrape. The form returns the record *and* the app's own
+`KeyValue`, so no deep-link spelling is guessed.
+
+```bash
+python3 -m scraper.ga_gis_enrich        # one pass (config.GA_ENRICH_LIMIT rows)
+python3 -m scraper.ga_gis_enrich 60     # longer manual pass through the queue
+```
+
+| Outcome | Meaning |
+|---|---|
+| `acres` + `acres_source='qpublic'` | the county's record, verified against our parcel key or address |
+| `acres_source='qpublic_none'` | the record publishes `Acres 0` (platted lots) — NULL is the truth |
+| untouched | no record reached, or the record reached was not our property |
+
+Discovered per-county search pages are cached in `scraper/ga_qpublic_apps.json`
+(`"found": false` = the county publishes no parcel search). See
+**`ga_county_summary.md`** for the measured form contract.
 
 ## DB Schema
 

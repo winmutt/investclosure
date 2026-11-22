@@ -401,6 +401,8 @@ class Config:
     RADIUS_MILES: float   # distance from ORIGIN, statute miles (0 = disabled)
     ORIGIN_LAT: float     # the product's origin address
     ORIGIN_LON: float
+    NC_ENRICH_BACKLOG: int  # older NC rows the enrichment pass retries (0 = off)
+    GA_ENRICH_LIMIT: int    # GA rows one qPublic enrichment pass attempts
 
     # ---- rentals vertical rules ----
     RENT_RADIUS_MILES: float     # from RENT_ORIGIN, statute miles (0 = disabled)
@@ -507,6 +509,21 @@ class Config:
         self.ORIGIN_LON = _opt_float("INVESTCLOSURE_ORIGIN_LON",
                                      -84.401895017854)
 
+        # NC OneMap enrichment: how many OLDER active NC rows (missing acres or
+        # links) the post-run enrichment pass retries besides this run's new
+        # rows, oldest first. A failed lookup used to be permanent because the
+        # pass is scoped to ids inserted after the run started; this drains the
+        # backlog at a bounded cost (~10s per lookup). 0 disables the retry.
+        # Env: INVESTCLOSURE_NC_ENRICH_BACKLOG.
+        self.NC_ENRICH_BACKLOG = _opt_int("INVESTCLOSURE_NC_ENRICH_BACKLOG", 25)
+
+        # GA qPublic enrichment: how many rows one pass attempts. Each row
+        # costs a camoufox round trip (~20-30 s including the app's own render
+        # waits), so the post-run hook has to stay inside the scrape window and
+        # the queue drains over runs instead. Env:
+        # INVESTCLOSURE_GA_ENRICH_LIMIT.
+        self.GA_ENRICH_LIMIT = _opt_int("INVESTCLOSURE_GA_ENRICH_LIMIT", 15)
+
         # Rentals vertical rules. Distance: RENT_RADIUS_MILES statute miles
         # from RENT_ORIGIN — downtown Atlanta, Five Points (the product is
         # "GA tax sales around Atlanta", deliberately a different origin from
@@ -533,6 +550,13 @@ class Config:
         # RENTCAST_API_KEY. Market scan caches per zip, so a monthly
         # refresh costs a few hundred calls.
         self.RENTCAST_API_KEY = _opt_str("RENTCAST_API_KEY", "")
+        # Hard cap on API calls per MONTHLY billing window (free plans bill
+        # overage the moment they cross it, so the guard is on by default —
+        # an unguarded --refresh walks all ~427 zips in one pass). The
+        # window starts at first use and rolls monthly; the ledger lives in
+        # data/rentcast_usage.json. Env: RENTCAST_MONTHLY_BUDGET, 0 disables.
+        self.RENTCAST_MONTHLY_BUDGET = _opt_int(
+            "RENTCAST_MONTHLY_BUDGET", 50)
 
         # Proxy (env overridable)
         proxy = _opt_str("INVESTCLOSURE_PROXY", "winmutt.com:8088")
