@@ -1,0 +1,43 @@
+# Opt-in overlay — makes the REAL client address visible to the dashboard.
+#
+#   podman-compose -f docker-compose.yml -f docker-compose.realip.yml up -d
+#
+# WHY THIS EXISTS (all of it measured on this host, 2026-11-21/22, rootless
+# Podman 5.7):
+#
+#   * On the compose-created bridge network ("investclosure_default"), the
+#     published-port path rewrites every inbound peer address to the container's
+#     OWN address: a request from this host to 192.168.1.154:5001 was logged by
+#     Flask as 10.89.0.23 (Nov 21) and 10.89.0.24 (Nov 22). The number even
+#     moves, so an access log on this network can neither name a client nor
+#     support a rate limit or a ban.
+#   * It is the NETWORK, not the container's age: a container created today on
+#     investclosure_default logged itself (10.89.0.25) for a host-origin request.
+#   * On `pasta` — which is already this user's Podman default — the same probe
+#     was logged as the true source: 192.168.1.154. Verified end to end with
+#     gunicorn serving the dashboard on port 5099.
+#
+# TRADEOFFS to decide deliberately:
+#   * Compose service DNS disappears: a pasta container could NOT resolve
+#     "flaresolverr" (measured). No scraper code uses that name (checked
+#     2026-11-22), so `depends_on` below is now ordering only. If a scraper ever
+#     needs FlareSolverr, address it as 127.0.0.1:8191 — it is published on the
+#     host — or keep the bridge network and accept the rewritten address.
+#   * Isolation is still materially better than host networking: from a pasta
+#     container the host's own loopback was NOT reachable (127.0.0.1:5001 gave
+#     connection refused, measured), whereas `network_mode: host` would let the
+#     container reach everything listening on the host.
+#   * The container's outbound identity becomes the host's address space; keep
+#     the scraper rate limits as they are.
+#
+# Keep INVESTCLOSURE_TRUST_PROXY at 0 with either variant: the peer address is
+# genuine, so an X-Forwarded-For header must NOT be believed. (If a reverse
+# proxy is ever put in front, that header becomes the source of truth and this
+# must become 1 — see _apply_proxy_fix in scraper/server.py.)
+services:
+  investclosure:
+    network_mode: pasta
+    environment:
+      # Keeps today's access path (winmutt.duckdns.org:5001, LAN, VPN) working,
+      # now with a truthful client address in the access log and the app.
+      INVESTCLOSURE_BIND: "0.0.0.0:5001"

@@ -53,6 +53,55 @@ app.secret_key = os.environ.get('SECRET_KEY', 'investclosure-secret-key-change-i
 app.jinja_env.auto_reload = True
 
 
+def _trusted_proxy_hops() -> int:
+    """How many reverse-proxy hops' ``X-Forwarded-For`` we believe.
+
+    ``INVESTCLOSURE_TRUST_PROXY`` — 0 (default) trusts none. Read straight from
+    the environment rather than ``config.py`` so it is settable per deployment
+    without touching scraper configuration.
+    """
+    raw = os.environ.get('INVESTCLOSURE_TRUST_PROXY', '0')
+    try:
+        hops = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return hops if hops > 0 else 0
+
+
+def _apply_proxy_fix(flask_app: Flask = app) -> Flask:
+    """Read the client address from ``X-Forwarded-For`` when a proxy sets it.
+
+    Disabled by default and it must stay that way. On this host the app's
+    compose-created bridge network rewrites every inbound peer to the
+    container's OWN address — measured: a request from this host to
+    192.168.1.154:5001 arrived as 10.89.0.23 on Nov 21 and 10.89.0.24 on Nov 22
+    — and the network is what does it, not the app: a fresh container on that
+    same network logged itself for the same request. Under ``pasta`` the true
+    source survives (measured 192.168.1.154), which is why
+    ``docker-compose.realip.yml`` exists. Turning this on while no proxy *sets*
+    the header would only let any client forge its own source IP, so enable it
+    only behind a reverse proxy that overwrites it.
+
+    Only ``X-Forwarded-For`` is consumed. Proto/host/prefix are left alone:
+    nothing here builds absolute URLs, and each extra trust is another forgery.
+    """
+    hops = _trusted_proxy_hops()
+    if not hops:
+        return flask_app
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    if isinstance(flask_app.wsgi_app, ProxyFix):
+        # Werkzeug refuses a second ProxyFix; re-running this (a reload, a test
+        # that flips the env) must be a no-op, not a startup crash.
+        return flask_app
+    flask_app.wsgi_app = ProxyFix(flask_app.wsgi_app, x_for=hops, x_proto=0,
+                                  x_host=0, x_port=0, x_prefix=0)
+    print(f"ProxyFix on: trusting {hops} proxy hop(s) for X-Forwarded-For")
+    return flask_app
+
+
+_apply_proxy_fix()
+
+
 @app.template_filter('fmt_num')
 def fmt_num(value):
     """Format a stored number for display: 2.0 -> '2', 2.5 -> '2.5'."""
@@ -1401,10 +1450,22 @@ def health():
 # ---- Main -----------------------------------------------------------------
 
 def main():
+    """Dev entry point — the Werkzeug development server.
+
+    Production serves through gunicorn (see ``entrypoint.sh``). Werkzeug's
+    ``app.run()`` is fine locally but is not a public-facing server: it has no
+    request-size/header-count limits, no worker or timeout supervision, and it
+    writes the raw bytes of malformed requests into the log — so on an
+    internet-facing port, strangers' binary probe payloads (TLS handshakes,
+    MongoDB frames) land in journald verbatim. Measured 2026-11-22 against
+    gunicorn, which answers the same probes 400 without echoing them.
+    Use this only for local work: ``INVESTCLOSURE_DEV_SERVER=1`` in the
+    container, or run it directly.
+    """
     port = int(os.environ.get('FLASK_PORT', 5001))
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     app_host = os.environ.get('FLASK_BIND', f'{host}:{port}')
-    print(f"Starting dashboard on {app_host}")
+    print(f"Starting dashboard (Werkzeug dev server) on {app_host}")
     app.run(host=host, port=port, debug=False)
 
 
