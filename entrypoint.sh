@@ -56,13 +56,16 @@ fi
 echo "Web server PID: ${SERVER_PID}"
 
 # Readiness probe. This image has no curl — the previous loop called it 30
-# times, failed 30 times and slept 30s before starting the scraper.
+# times, failed 30 times and slept 30s before starting the scraper. The port
+# comes from the bind so an INVESTCLOSURE_BIND override cannot send the probe
+# looking at the wrong socket.
+HEALTH_PORT="${WSGI_BIND##*:}"
 for i in $(seq 1 30); do
     if python -c "
 import urllib.request
-urllib.request.urlopen('http://127.0.0.1:${FLASK_PORT:-5001}/health', timeout=2).read()
+urllib.request.urlopen('http://127.0.0.1:${HEALTH_PORT}/health', timeout=2).read()
 " > /dev/null 2>&1; then
-        echo "Dashboard ready at http://127.0.0.1:${FLASK_PORT:-5001}"
+        echo "Dashboard ready at http://127.0.0.1:${HEALTH_PORT}"
         break
     fi
     sleep 1
