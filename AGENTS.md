@@ -82,11 +82,12 @@ sed -n '1000,$p' scraper/tmp/debug.log 2>/dev/null || tail -50 scraper/tmp/debug
 | `scraper/county_radius.json` | Committed USGS table: nearest boundary + centroid distance to the origin for all 587 counties of the six states. The runtime never hits the network |
 | `scraper/fetch_county_radius.py` | Rebuilds that table from USGS Governmental Unit Boundaries (govunits layer 23 polygons). Stores distances, not verdicts |
 | `scraper/backfill_radius.py` | CLI: report/apply the distance rule to existing rows (`--dry-run`, `--source`, `--radius`) |
-| `scraper/rentcast.py` | RentCast API client (`/markets` zip screen data, `/avm/rent` AVM) — curl_cffi code path, `RENTCAST_API_KEY`, 2 req/s |
-| `scraper/rent_market_scan.py` | CLI: screen GA zips near Atlanta for ~$1,000/mo small-home rents → `rent_markets.json` + `reports/rent_markets.md` (`--refresh`, `--county`, `--report-only`) |
+| `scraper/rentcast.py` | RentCast API client (`/markets` zip screen data, `/avm/rent` AVM) — curl_cffi code path, `RENTCAST_API_KEY`, 2 req/s, **monthly budget guard** (`data/rentcast_usage.json` ledger, `RENTCAST_MONTHLY_BUDGET`) |
+| `scraper/rent_market_scan.py` | CLI: screen GA zips near Atlanta for ~$1,000/mo small-home rents → `rent_markets.json` + `reports/rent_markets.md` (`--refresh`, `--county`, `--report-only`); walks the ACS-ranked queue and hard-stops at the monthly cap |
 | `scraper/rent_scope.py` | Rentals scrape-scope: RentCast-screened counties ∩ Atlanta radius; `county_rent()` stamps `market_rent_monthly` |
 | `scraper/fetch_ga_zips.py` | Rebuilds `ga_zips.json` (GA zips + Census gazetteer centroids inside `RENT_RADIUS_MILES`) |
-| `scraper/county_radius_atlanta.json` / `scraper/ga_zips.json` / `scraper/rent_markets.json` | Committed rentals runtime data (county distances / zip universe / market verdicts) |
+| `scraper/fetch_acs_ranks.py` | Rebuilds `acs_zips.json` (free Census ACS median rent/income/units per ZCTA) — ranks the capped RentCast queue; api.census.gov needs a key now, so it uses the key-free data.census.gov backend with a garbage guard |
+| `scraper/county_radius_atlanta.json` / `scraper/ga_zips.json` / `scraper/acs_zips.json` / `scraper/rent_markets.json` | Committed rentals runtime data (county distances / zip universe / ACS ranks / market verdicts) |
 | `scraper/config.py` | Central config — counties, thresholds, env-overridable |
 | `scraper/db.py` | SQLite CRUD — `insert_property()`, `get_stats()`, `archive_below_acres()` |
 | `scraper/run.py` | CLI runner — `python3 -m scraper --list` for commands |
@@ -147,28 +148,52 @@ per-state Tax/Mtg/Re category tabs (`property_category()`).
 
 ### Rentals pipeline (RentCast)
 
-What "rentable" means, measured rather than assumed — three committed
-runtime files + a monthly screen:
+What "rentable" means, measured rather than assumed — four committed
+runtime files + a **budget-capped** monthly screen:
 
 1. `scraper/fetch_ga_zips.py` → **`scraper/ga_zips.json`** — GA zips (universe
    = `town_county.json`) whose Census gazetteer centroid sits within
    `RENT_RADIUS_MILES` of `RENT_ORIGIN` (427 zips today).
 2. GA county distances to downtown Atlanta → **`scraper/county_radius_atlanta.json`**:
    `python3 -m scraper.fetch_county_radius --states GA --radius 120 --origin 33.7540,-84.3905 --origin-label "Downtown Atlanta (Five Points)" --out scraper/county_radius_atlanta.json` (83 counties inside 100 mi).
-3. `python3 -m scraper.rent_market_scan` (`scraper/rentcast.py` client) →
-   **`scraper/rent_markets.json`** + `reports/rent_markets.md` — one RentCast
-   `/v1/markets` call per zip (`RENTCAST_API_KEY` env; verdicts cached ~monthly,
-   crash-resumable). `judge()`: **pass** = 3bd/2bd median rent in
+3. `scraper/fetch_acs_ranks.py` → **`scraper/acs_zips.json`** (FREE): Census
+   ACS 5-year median gross rent (B25064), household income (B19013) and
+   housing units (B25002) for every GA ZCTA. The plan caps RentCast at
+   `RENTCAST_MONTHLY_BUDGET` (50) calls/month while the universe is 427
+   zips, so ACS decides **where the paid calls go**. api.census.gov now
+   requires a key for every request (measured 2026-11-27), so the fetcher
+   uses the key-free `data.census.gov/api/access` backend — undocumented,
+   therefore **validated**: columns located by name, estimates outside
+   $100–5,000 abort the fetch (an accidental B25062 query answered rent
+   columns with 6-figure garbage; the guard refuses that). Verified equal
+   to the rendered site (ZCTA 30517 = 1,810).
+4. `python3 -m scraper.rent_market_scan` (`scraper/rentcast.py` client) →
+   **`scraper/rent_markets.json`** + `reports/rent_markets.md` — walks the
+   ACS-ranked queue (in-band rent first, thin stock demoted within band,
+   no-ACS last) and **hard-stops at the budget**: `get_json` counts every
+   attempt in `data/rentcast_usage.json` before the request (attempts, not
+   successes — a 429 still reached the meter), raises `BudgetExhausted` at
+   the cap, and the window rolls monthly from first use. Fresh verdicts
+   skip refetching, so each window spends its calls on the next best
+   un-screened zips. `judge()`: **pass** = 3bd/2bd median rent in
    [`RENT_TARGET_MIN_RENT`, `RENT_TARGET_MAX_RENT`] off ≥ `RENT_MIN_RENT_LISTINGS`
    listings, median sale ≤ `RENT_MAX_MEDIAN_PRICE`; **borderline** = ±20% band,
    thin evidence, or price under 1.4× cap; rural zips with no rental aggregates
    are **no_data** (honest — never a fake "fail").
-4. `scraper/rent_scope.py` answers `target_counties()`: screened counties ∩
+5. `scraper/rent_scope.py` answers `target_counties()`: screened counties ∩
    radius; **fallback** to all in-radius counties while the scan hasn't run;
    **empty** (the scraper refuses to walk GA) when neither data file exists —
    and also when the screen answered "nothing qualifies". `county_rent()`
    stamps each inserted row's `market_rent_monthly` (median of the county's
    qualifying zips) — shown on tiles and the detail page.
+
+**First screen (2026-11-27, 45 calls):** 4 pass / 6 borderline / 35 fail →
+9 counties in scope — **Bibb (Macon)** $1,195 rent vs $97k median sale
+(14.8% gross yield) and **Muscogee (Columbus)** $1,050–1,093 vs $97k–175k
+are the thesis in numbers; Carroll, Henry/Spalding/Butts, Heard/Troup and
+Houston are borderline ($1,350–1,425 rents). 382 zips wait for later
+windows; ACS proved a good but imperfect guess (35 in-band ACS zips came
+back `fail` — median gross rent ≠ small-home median rent).
 
 The scraper `ga_tax_rentals` (below) subclasses `GAPublicNoticeScraper`:
 "Tax Sales" category only, `_is_mortgage_foreclosure` pinned False, and the
@@ -462,6 +487,7 @@ python3 -m scraper --status              # DB stats
 python3 -m scraper --new                 # New properties since last run
 python3 -m scraper --archive             # Archive below MIN_ACRES
 python3 -m scraper.rent_market_scan       # Rentals: RentCast zip screen (monthly; --refresh/--county/--report-only)
+python3 -m scraper.fetch_acs_ranks        # Rentals: rebuild free ACS ranks (where the capped calls go)
 python3 -m scraper.fetch_ga_zips          # Rentals: rebuild the GA zip universe (Census gazetteer)
 python3 -m scraper.backfill_elevation --dry-run   # Report ground elevation vs MIN_ELEVATION
 python3 -m scraper.backfill_radius --dry-run      # Report rows outside RADIUS_MILES
@@ -566,10 +592,54 @@ All paths configurable via env vars — **no hardcoded paths**:
 | `INVESTCLOSURE_RENT_MIN_RENT_LISTINGS` | `4` | Minimum rental listings before a zip's rent stats are trusted |
 | `INVESTCLOSURE_RENT_MAX_MEDIAN_PRICE` | `250000` | Zip screen: median sale-price ceiling (inexpensive homes) |
 | `RENTCAST_API_KEY` | *(unset)* | RentCast API key (`X-Api-Key`) — `rent_market_scan` + per-property rent AVM |
+| `RENTCAST_MONTHLY_BUDGET` | `50` | Hard cap on RentCast calls per monthly billing window (`data/rentcast_usage.json` ledger; `0` disables) — the free plan bills overage |
 | `INVESTCLOSURE_PROXY` | | Proxy `host:port` |
 | `NCONEMAP_TLS_STRICT` | *(unset)* | Set `1` to refuse the unverified NC OneMap fallback while their cert is expired |
 
 ## Recent Updates
+
+- **2026-11-27 (RentCast budget guard + first zip screen — 9 counties in
+  scope)**: The plan is free-tier: **50 requests per monthly billing
+  window** (billing started 2026-11-22) while the screen universe is 427
+  zips. Spending it blind was not an option, so ranking became free and
+  the cap became enforced-in-code.
+  - **Budget ledger** (`scraper/rentcast.py`): `data/rentcast_usage.json`
+    counts every ATTEMPT before the request goes out (a 429 still reached
+    the meter — an undercount on a capped plan is the expensive failure);
+    `get_json` raises `BudgetExhausted` at `RENTCAST_MONTHLY_BUDGET`
+    (default 50, `0` disables) before key or network handling; the window
+    anchors at first use and rolls monthly. The ledger was seeded at
+    2026-11-22, the actual billing anchor — anchoring at first call would
+    have over-reported the quota after Dec 22. `rent_market_scan` catches
+    the exhaustion and stops the walk cleanly, keeping every verdict won.
+  - **Free pre-rank** (`scraper/fetch_acs_ranks.py` → `acs_zips.json`,
+    752 GA ZCTAs, 632 with rents): Census ACS5 B25064 median gross rent /
+    B19013 income / B25002 units decide which zips earn paid calls —
+    `rank_key` tiers by ACS band proximity (thin stock demotes only WITHIN
+    a band: a small in-band zip can still earn borderline, a far one can
+    only fail). **api.census.gov now demands a key for every request**
+    (measured — even single-ZCTA); the fetcher uses the key-free
+    `data.census.gov/api/access` backend with hard validation (columns by
+    name, sane estimate bands, ≥300 ZCTAs) after a B25062 probe answered
+    rent columns with 6-figure garbage and the guard's band caught its own
+    false positive (`units=0` is real for empty ZCTAs). Backend values
+    verified against the rendered site (30517 → 1,810 both).
+  - **First screen: 45/50 calls, 0 errors.** 4 pass / 6 borderline /
+    35 fail → `rent_scope` now answers **9 counties** (was the 83-county
+    radius fallback): pass **Bibb** (Macon — $1,195 rent, $97k median
+    sale, 14.8% gross yield, 51 listings) and **Muscogee** (Columbus —
+    $1,050–1,093, $97k–175k); borderline Carroll, Henry/Spalding/Butts,
+    Heard/Troup, Houston. The thesis is measured, not assumed. 382 zips
+    queue for later windows (fresh verdicts never refetch); 5 calls left
+    in this window until Dec 22.
+  - 14 new tests (`TestRentCastBudget` window/roll/cap/no-network-before-
+    key, `TestRankQueue` tiering, `TestScanBudgetStop` halts mid-walk,
+    `TestAcsFetch` column parsing + garbage refusal). Full suite **1,112
+    pass, 8 skipped**.
+  - **Open**: run `ga_tax_rentals` over the 9 counties (first real rows);
+    next window (Dec 22) spends 50 more calls, continuing down the ACS
+    queue; container recreate pending for `RENTCAST_API_KEY` to reach the
+    cron/server env (scan runs pass it inline meanwhile).
 
 - **2026-11-22 (both acreage enrichers were silently doing nothing)**: GA and NC
   rows kept `acres=NULL` for two different invisible failures. Both were

@@ -329,3 +329,186 @@ class TestRentalsDashboard:
         with app.test_client() as client:
             html = client.get("/?vt=bogus&st=GA").get_data(as_text=True)
         assert "9 Mountain Rd" in html
+
+
+class TestRentCastBudget:
+    """The monthly request cap — a free plan must never see overage.
+
+    The ledger (data/rentcast_usage.json) is the single source of truth:
+    it anchors a window, counts ATTEMPTS (not successes), rolls monthly
+    exactly like the provider's quota, and get_json refuses past the cap
+    before any network or key handling happens.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "data_dir", tmp_path)
+        monkeypatch.setattr(config, "RENTCAST_MONTHLY_BUDGET", 50)
+
+    def test_first_use_anchors_window(self, tmp_path):
+        from datetime import date
+        from scraper.rentcast import budget_status
+        s = budget_status(today=date(2026, 11, 27))
+        assert s["window_start"] == "2026-11-27"
+        assert s["calls"] == 0 and s["remaining"] == 50
+
+    def test_add_month_clamps(self):
+        from datetime import date
+        from scraper.rentcast import _add_month
+        assert _add_month(date(2026, 1, 31)) == date(2026, 2, 28)
+        assert _add_month(date(2026, 12, 5)) == date(2027, 1, 5)
+
+    def test_window_rolls_on_the_billing_day(self, tmp_path):
+        from datetime import date
+        from scraper.rentcast import budget_status
+        (tmp_path / "rentcast_usage.json").write_text(
+            json.dumps({"window_start": "2026-11-22", "calls": 50}))
+        # Day before the roll: spent is spent.
+        s = budget_status(today=date(2026, 12, 21))
+        assert s["calls"] == 50 and s["remaining"] == 0
+        # The roll day itself: fresh window, zeroed count.
+        s = budget_status(today=date(2026, 12, 22))
+        assert s["window_start"] == "2026-12-22"
+        assert s["calls"] == 0 and s["remaining"] == 50
+
+    def test_count_call_persists(self, tmp_path):
+        from scraper.rentcast import _count_call, budget_status
+        s = _count_call()
+        assert s["calls"] == 1 and s["remaining"] == 49
+        _count_call()
+        assert budget_status()["calls"] == 2
+        assert json.loads(
+            (tmp_path / "rentcast_usage.json").read_text())["calls"] == 2
+
+    def test_get_json_refuses_past_cap_before_any_network(self, tmp_path,
+                                                          monkeypatch):
+        from scraper.rentcast import BudgetExhausted, get_json
+        (tmp_path / "rentcast_usage.json").write_text(
+            json.dumps({"window_start": "2026-11-22", "calls": 50}))
+        # A usable-looking key: if the guard mis-ordered, this would try the
+        # network instead — the BudgetExhausted type IS the no-network proof.
+        monkeypatch.setattr(config, "RENTCAST_API_KEY", "looks-valid")
+        with pytest.raises(BudgetExhausted):
+            get_json("/markets", {"zipCode": "30517"})
+
+    def test_missing_key_error_survives_when_budget_open(self, monkeypatch):
+        from scraper.rentcast import BudgetExhausted, RentCastError, get_json
+        monkeypatch.setattr(config, "RENTCAST_API_KEY", "")
+        with pytest.raises(RentCastError):
+            get_json("/markets", {"zipCode": "30517"})
+
+    def test_zero_budget_disables_the_guard(self, tmp_path, monkeypatch):
+        from scraper.rentcast import BudgetExhausted, RentCastError, get_json
+        monkeypatch.setattr(config, "RENTCAST_MONTHLY_BUDGET", 0)
+        (tmp_path / "rentcast_usage.json").write_text(
+            json.dumps({"window_start": "2026-11-22", "calls": 999}))
+        from scraper.rentcast import budget_status
+        assert budget_status()["remaining"] is None
+        with pytest.raises(RentCastError):  # key error, not budget error
+            get_json("/markets", {"zipCode": "30517"})
+
+
+class TestRankQueue:
+    """Census-rank order = where the 50 paid calls should go first."""
+
+    ZIPS = {"00001": {"counties": ["x"], "mi_atl": 50},
+            "00002": {"counties": ["x"], "mi_atl": 20},
+            "00003": {"counties": ["x"], "mi_atl": 90},
+            "00004": {"counties": ["x"], "mi_atl": 10},
+            "00005": {"counties": ["x"], "mi_atl": 70},
+            "00006": {"counties": ["x"], "mi_atl": 30}}
+
+    ACS = {"00001": {"rent": 1800, "units": 5000},   # far out, thick
+           "00002": {"rent": 1010, "units": 120},    # in band, THIN
+           "00003": {"rent": 700, "units": 800},     # near band (>=640)
+           "00004": {"rent": 1000, "units": 900},    # in band, thick
+           # 00005: no ACS at all
+           "00006": {"rent": None, "units": None}}   # ACS knows nothing
+
+    def test_band_leads_thin_demotes_within_band(self):
+        from scraper.rent_market_scan import rank_queue
+        q = rank_queue(["00005", "00006", "00001", "00003", "00002",
+                        "00004"], self.ZIPS, self.ACS,
+                       rent_min=800, rent_max=1200)
+        # in-band: thick 00004 then thin 00002; near-band 00003; far 00001;
+        # no-ACS last, nearest-Atlanta-first (00006 mi 30 < 00005 mi 70).
+        assert q == ["00004", "00002", "00003", "00001", "00006", "00005"]
+
+    def test_within_band_closer_to_band_wins(self):
+        from scraper.rent_market_scan import rank_queue
+        acs = {"a": {"rent": 810, "units": 900}, "b": {"rent": 1000,
+                                                       "units": 900}}
+        zips = {"a": {"counties": ["x"], "mi_atl": 10},
+                "b": {"counties": ["x"], "mi_atl": 10}}
+        # 1000 is mid-band (dist 0); 810 is in-band too (dist 0) —
+        # then -units tie, then zip: deterministic, no input-order leak.
+        assert rank_queue(["a", "b"], zips, acs,
+                          rent_min=800, rent_max=1200) == ["a", "b"]
+
+
+class TestScanBudgetStop:
+    """The screen walk must stop AT the cap, keeping what it learned."""
+
+    def test_pass_halts_on_budget_exhausted(self, monkeypatch):
+        from scraper import rent_market_scan as rms
+        from scraper.rentcast import BudgetExhausted
+
+        calls = []
+
+        def fake_market(zip_code):
+            calls.append(zip_code)
+            if len(calls) >= 2:
+                raise BudgetExhausted("50/50 since 2026-11-22")
+            return {"zip": zip_code, "rent_small_home": 1000,
+                    "rent_basis": "3bd", "rent_basis_listings": 9,
+                    "median_price": 120000}
+
+        monkeypatch.setattr(rms, "market_for_zip", fake_market)
+        zips = {str(i): {"counties": ["x"], "mi_atl": i} for i in range(1, 6)}
+        out = rms.screen(zips, {}, refresh=False, limit=None, only=None,
+                         only_county=None, refresh_days=28,
+                         on_progress=lambda *a: None)
+        assert "1" in out and out["1"]["verdict"] == "pass"
+        assert "2" not in out and "3" not in out  # the walk halted
+        assert calls == ["1", "2"]                # the 2nd was refused
+
+
+class TestAcsFetch:
+    """The free pre-rank feeds the paid screen — garbage in is refused."""
+
+    def test_backend_payload_locates_columns_by_name(self):
+        from scraper.fetch_acs_ranks import parse_backend_payload
+        payload = {"response": {"data": [
+            ["NAME", "GEO_ID", "B25064_001M", "B25064_001E"],
+            ["ZCTA5 30517", "860Z200US30517", "61", "1810"],
+            ["ZCTA5 30018", "860Z200US30018", None, "-666666666"],
+            ["ZCTA5 999", "040Z00USxx", "1", "5"],  # not a ZCTA row
+        ]}}
+        out = parse_backend_payload(payload, "B25064")
+        assert out == {"30517": 1810}          # sentinel and junk dropped
+
+    def test_backend_payload_wrong_shape_raises(self):
+        from scraper.fetch_acs_ranks import parse_backend_payload
+        with pytest.raises(ValueError):
+            parse_backend_payload({"response": {"data": [["GEO_ID"]]}},
+                                  "B25064")
+        with pytest.raises(ValueError):
+            parse_backend_payload({"response": {"data": [
+                ["GEO_ID", "B01003_001E"], ["860Z200US30517", "12"]]}},
+                "B25064")
+
+    def test_validate_refuses_semantically_broken_estimates(self):
+        from scraper.fetch_acs_ranks import _validate
+        good = {str(i): 900 for i in range(400)}
+        _validate("rent", good, (100, 5000), required=True)  # no raise
+        # The 2026-11-27 measured failure: a distribution table answered
+        # with 6-figure counts under a rent column name.
+        broken = {str(i): (900 if i % 10 else 278900) for i in range(400)}
+        with pytest.raises(RuntimeError, match="outside"):
+            _validate("rent", broken, (100, 5000), required=True)
+
+    def test_validate_refuses_partial_universe(self):
+        from scraper.fetch_acs_ranks import _validate
+        with pytest.raises(RuntimeError, match="partial"):
+            _validate("rent", {"3%02d" % i: 900 for i in range(50)},
+                      (100, 5000), required=True)

@@ -89,12 +89,13 @@ def rank_key(zip_code: str, zips: Dict[str, dict], acs: Dict[str, dict],
              rent_min: float, rent_max: float) -> tuple:
     """Queue order for a capped budget: best RentCast-ROI zip first.
 
-    Tier 0..2 — ACS median gross rent in the target band, in the ±20%
-    near-band, or further out; tier 3..5 the same three with thin housing
-    stock (< ``MIN_UNITS`` — RentCast would likely answer no_data, but
-    unknown stock counts as fine); tier 6 — no ACS estimate, ordered
-    nearest-Atlanta-first (closer zips tend to have listing coverage).
-    Within a tier, ascending distance from the band, then bigger stock.
+    ACS median gross rent leads: in the target band (tier 0), in the ±20%
+    near-band (tier 1), further out (tier 2), no ACS estimate (tier 6,
+    nearest-Atlanta-first — closer zips tend to have listing coverage).
+    Thin housing stock (< ``MIN_UNITS``) demotes only WITHIN its band tier:
+    a small in-band zip can still earn ``borderline`` (judge() downgrades
+    thin evidence rather than failing it) and pull its county into scope,
+    while a far-out-of-band market can only ever answer ``fail``.
     """
     entry = acs.get(zip_code) or {}
     rent = entry.get("rent")
@@ -102,14 +103,14 @@ def rank_key(zip_code: str, zips: Dict[str, dict], acs: Dict[str, dict],
     mi = (zips.get(zip_code) or {}).get("mi_atl")
     mi = 999.0 if mi is None else float(mi)
     if not rent:
-        return (6, 0, 0, mi, zip_code)
+        return (6, 0, 0, 0, mi, zip_code)
     in_band = rent_min <= rent <= rent_max
     near = 0.8 * rent_min <= rent <= 1.2 * rent_max
     band_tier = 0 if in_band else (1 if near else 2)
     thin = 0 < units < MIN_UNITS
     dist = (0 if in_band
             else min(abs(rent - rent_min), abs(rent - rent_max)))
-    return (band_tier + (3 if thin else 0), dist, -units, mi, zip_code)
+    return (band_tier, 1 if thin else 0, dist, -units, mi, zip_code)
 
 
 def rank_queue(queued: List[str], zips: Dict[str, dict],
@@ -148,12 +149,14 @@ def screen(zips: Dict[str, dict], existing: Dict[str, dict], *,
         queued.append(zip_code)
     if acs:
         queued = rank_queue(queued, zips, acs)
+    stale = len(queued)
     if limit:
         queued = queued[:limit]
 
     status = budget_status()
-    logger.info("%d zips queued (%d cached fresh)", len(queued),
-                len(zips) - len(queued))
+    logger.info("%d zips queued (%d fresh-skipped, %d waiting past the "
+                "cap for this pass)", len(queued), len(zips) - stale,
+                stale - len(queued))
     if status["budget"]:
         logger.info("rentcast budget: %d/%d calls used since %s — %d left",
                     status["calls"], status["budget"],
